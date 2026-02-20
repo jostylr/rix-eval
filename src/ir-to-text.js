@@ -1,11 +1,4 @@
-/**
- * IR to Text Serializer
- *
- * Converts IR trees { fn, args } into human-readable system function call text.
- *
- * Default mode:    ADD(LITERAL("3"), LITERAL("4"))
- * Language mode:   @_ADD(@_LITERAL("3"), @_LITERAL("4"))
- */
+import { posToLineCol } from "../../parser/src/tokenizer.js";
 
 /**
  * Serialize an IR node to human-readable text.
@@ -106,7 +99,19 @@ export function irListToText(irNodes, options = {}) {
         // Warn about unhandled BINOP nodes
         if (node.fn === "BINOP") {
             const op = node.args?.[0] ?? "?";
-            lines.push(`# PARSE WARNING: unrecognized operator "${op}" — check syntax near this position`);
+            let warning = `# PARSE WARNING: unrecognized operator "${op}"`;
+            if (node.pos && options.source) {
+                const { line, col } = posToLineCol(options.source, node.pos[0]);
+                const lineContent = options.source.split("\n")[line - 1];
+                warning += ` at line ${line}, column ${col}`;
+                if (lineContent) {
+                    warning += `\n#   ${lineContent.trim()}`;
+                    warning += `\n#   ${" ".repeat(col - 1)}^`;
+                }
+            } else {
+                warning += " — check syntax near this position";
+            }
+            lines.push(warning);
             continue;
         }
         const text = irToText(node, options);

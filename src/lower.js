@@ -60,7 +60,11 @@ export function lowerNode(node) {
   if (!handler) {
     throw new Error(`Unknown AST node type: ${node.type}`);
   }
-  return handler(node);
+  const result = handler(node);
+  if (result && typeof result === "object" && !Array.isArray(result) && node.pos) {
+    result.pos = node.pos;
+  }
+  return result;
 }
 
 // Per-node-type lowering functions

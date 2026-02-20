@@ -33,8 +33,9 @@ function parseAndLower(code) {
 
 function L(code) {
   const result = parseAndLower(code);
+  const stripped = strip(result);
   // Return first IR node (unwrapping single-element arrays)
-  return result.length === 1 ? result[0] : result;
+  return stripped.length === 1 ? stripped[0] : stripped;
 }
 
 // Strip pos/original metadata for cleaner comparisons

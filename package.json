@@ -1,7 +1,7 @@
 {
   "name": "rix-eval",
   "version": "0.1.0",
-  "description": "RiX language evaluator: AST lowering pass and system function execution",
+  "description": "RiX language evaluator: AST lowering pass, system function registry, and execution engine",
   "type": "module",
   "main": "index.js",
   "exports": {
@@ -13,12 +13,25 @@
     },
     "./ir": {
       "import": "./src/ir.js"
+    },
+    "./evaluator": {
+      "import": "./src/evaluator.js"
+    },
+    "./registry": {
+      "import": "./src/registry.js"
+    },
+    "./context": {
+      "import": "./src/context.js"
+    },
+    "./ir-to-text": {
+      "import": "./src/ir-to-text.js"
     }
   },
   "scripts": {
     "test": "bun test"
   },
   "dependencies": {
-    "rix-language-parser": "workspace:*"
+    "rix-language-parser": "workspace:*",
+    "@ratmath/core": "workspace:*"
   }
 }

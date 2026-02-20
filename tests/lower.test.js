@@ -290,6 +290,23 @@ describe("Lowering Pass", () => {
       expect(ir.args[2].fn).toBe("ADD");
     });
 
+    test("F(x) -> x + 1  (-> alias for :->)", () => {
+      const ir = L("F(x) -> x + 1;");
+      expect(ir.fn).toBe("FUNCDEF");
+      // params same as :-> version
+      expect(ir.args[1].positional[0].name).toBe("x");
+      expect(ir.args[2].fn).toBe("ADD");
+    });
+
+    test("Avg(a, b) -> (a+b)/2  (-> multi-arg alias)", () => {
+      const ir = L("Avg(a, b) -> (a + b) / 2;");
+      expect(ir.fn).toBe("FUNCDEF");
+      expect(ir.args[1].positional.length).toBe(2);
+      expect(ir.args[1].positional[0].name).toBe("a");
+      expect(ir.args[1].positional[1].name).toBe("b");
+      expect(ir.args[2].fn).toBe("DIV");
+    });
+
     test("lambda: (x) -> x^2", () => {
       const ir = L("(x) -> x^2;");
       expect(ir.fn).toBe("LAMBDA");

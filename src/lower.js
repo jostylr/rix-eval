@@ -146,6 +146,35 @@ const LOWERERS = {
       return ir("PIPE_OP", op, lowerNode(node.left), lowerNode(node.right));
     }
 
+    // Arrow operator -> used as alias for :-> in named function definitions
+    // F(x) -> body  is equivalent to  F(x) :-> body  (same as = vs :=)
+    // Detect: left is a FunctionCall with known name
+    if (op === "->") {
+      const left = node.left;
+      if (left.type === "FunctionCall" && left.function) {
+        const fn = left.function;
+        const funcName = fn.name || fn.value;
+        if (funcName) {
+          // Convert call-style args to param definitions
+          const positionalArgs = (left.arguments?.positional || []);
+          const paramPosArgs = positionalArgs.map((arg) => ({
+            name: arg.name || arg.value || String(arg),
+            defaultValue: null,
+          }));
+          const params = lowerParams({
+            positional: paramPosArgs,
+            keyword: [],
+            conditionals: [],
+            metadata: {},
+          });
+          const body = lowerNode(node.right);
+          return ir("FUNCDEF", funcName, params, body);
+        }
+      }
+      // Otherwise treat as lambda: (params) -> body is FunctionLambda, but
+      // if we get here it means an unrecognized left, fall through to BINOP
+    }
+
     // Fallback: generic binary operation
     return ir("BINOP", op, lowerNode(node.left), lowerNode(node.right));
   },

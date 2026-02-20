@@ -1,0 +1,530 @@
+import { describe, test, expect } from "bun:test";
+import { tokenize } from "../../parser/src/tokenizer.js";
+import { parse } from "../../parser/src/parser.js";
+import { lower, lowerNode } from "../src/lower.js";
+
+function testSystemLookup(name) {
+  const systemSymbols = {
+    SIN: { type: "function", arity: 1 },
+    COS: { type: "function", arity: 1 },
+    LOG: { type: "function", arity: 1 },
+    MAX: { type: "function", arity: -1 },
+    PI: { type: "constant", value: Math.PI },
+    E: { type: "constant", value: Math.E },
+    AND: { type: "operator", precedence: 40, associativity: "left", operatorType: "infix" },
+    OR: { type: "operator", precedence: 30, associativity: "left", operatorType: "infix" },
+    NOT: { type: "operator", precedence: 110, operatorType: "prefix" },
+    HELP: { type: "identifier" },
+    LOAD: { type: "identifier" },
+    CASE: { type: "identifier" },
+    LOOP: { type: "identifier" },
+    IF: { type: "identifier" },
+    F: { type: "identifier" },
+    G: { type: "identifier" },
+  };
+  return systemSymbols[name] || { type: "identifier" };
+}
+
+function parseAndLower(code) {
+  const tokens = tokenize(code);
+  const ast = parse(tokens, testSystemLookup);
+  return lower(ast);
+}
+
+function L(code) {
+  const result = parseAndLower(code);
+  // Return first IR node (unwrapping single-element arrays)
+  return result.length === 1 ? result[0] : result;
+}
+
+// Strip pos/original metadata for cleaner comparisons
+function strip(obj) {
+  if (Array.isArray(obj)) return obj.map(strip);
+  if (obj && typeof obj === "object") {
+    const { pos, original, ...rest } = obj;
+    const result = {};
+    for (const [key, value] of Object.entries(rest)) {
+      result[key] = strip(value);
+    }
+    return result;
+  }
+  return obj;
+}
+
+describe("Lowering Pass", () => {
+  describe("Literals", () => {
+    test("integer", () => {
+      const ir = L("42;");
+      expect(ir).toEqual({ fn: "LITERAL", args: ["42"] });
+    });
+
+    test("rational", () => {
+      const ir = L("3/4;");
+      expect(ir).toEqual({ fn: "LITERAL", args: ["3/4"] });
+    });
+
+    test("string", () => {
+      const ir = L('"hello";');
+      expect(ir).toEqual({ fn: "STRING", args: ["hello"] });
+    });
+
+    test("null", () => {
+      const ir = L("_;");
+      expect(ir).toEqual({ fn: "NULL", args: [] });
+    });
+
+    test("base prefix number", () => {
+      const ir = L("0xFF;");
+      expect(ir).toEqual({ fn: "LITERAL", args: ["0xFF"] });
+    });
+  });
+
+  describe("Variables", () => {
+    test("lowercase identifier → RETRIEVE", () => {
+      const ir = L("x;");
+      expect(ir).toEqual({ fn: "RETRIEVE", args: ["x"] });
+    });
+
+    test("uppercase identifier → RETRIEVE", () => {
+      const ir = L("PI;");
+      expect(ir).toEqual({ fn: "RETRIEVE", args: ["PI"] });
+    });
+
+    test("placeholder → PLACEHOLDER", () => {
+      const ir = L("_1;");
+      expect(ir).toEqual({ fn: "PLACEHOLDER", args: [1] });
+    });
+  });
+
+  describe("Assignment", () => {
+    test("x = 5", () => {
+      const ir = L("x = 5;");
+      expect(ir).toEqual({
+        fn: "ASSIGN",
+        args: ["x", { fn: "LITERAL", args: ["5"] }],
+      });
+    });
+
+    test("x := 5 (same as =)", () => {
+      const ir = L("x := 5;");
+      expect(ir).toEqual({
+        fn: "ASSIGN",
+        args: ["x", { fn: "LITERAL", args: ["5"] }],
+      });
+    });
+
+    test("chained assignment x = y = 3", () => {
+      const ir = L("x = y = 3;");
+      expect(ir.fn).toBe("ASSIGN");
+      expect(ir.args[0]).toBe("x");
+      expect(ir.args[1].fn).toBe("ASSIGN");
+      expect(ir.args[1].args[0]).toBe("y");
+    });
+
+    test("dot assignment obj.a = 7", () => {
+      const ir = L("obj.a = 7;");
+      expect(ir.fn).toBe("DOT_ASSIGN");
+      expect(ir.args[1]).toBe("a");
+    });
+
+    test("external property assignment obj..b = 9", () => {
+      const ir = L("obj..b = 9;");
+      expect(ir.fn).toBe("EXTSET");
+      expect(ir.args[1]).toBe("b");
+    });
+
+    test("index assignment arr[i] = val", () => {
+      const ir = L("arr[i] = val;");
+      expect(ir.fn).toBe("INDEX_ASSIGN");
+    });
+  });
+
+  describe("Arithmetic", () => {
+    test("addition", () => {
+      const ir = L("a + b;");
+      expect(ir.fn).toBe("ADD");
+      expect(ir.args[0]).toEqual({ fn: "RETRIEVE", args: ["a"] });
+      expect(ir.args[1]).toEqual({ fn: "RETRIEVE", args: ["b"] });
+    });
+
+    test("subtraction", () => {
+      expect(L("a - b;").fn).toBe("SUB");
+    });
+
+    test("multiplication", () => {
+      expect(L("a * b;").fn).toBe("MUL");
+    });
+
+    test("division", () => {
+      expect(L("a / b;").fn).toBe("DIV");
+    });
+
+    test("integer division", () => {
+      expect(L("a // b;").fn).toBe("INTDIV");
+    });
+
+    test("modulo", () => {
+      expect(L("a % b;").fn).toBe("MOD");
+    });
+
+    test("exponentiation", () => {
+      expect(L("a ^ b;").fn).toBe("POW");
+    });
+
+    test("nested: 2 + 3 * 4 → ADD(2, MUL(3, 4))", () => {
+      const ir = L("2 + 3 * 4;");
+      expect(ir.fn).toBe("ADD");
+      expect(ir.args[0]).toEqual({ fn: "LITERAL", args: ["2"] });
+      expect(ir.args[1].fn).toBe("MUL");
+    });
+
+    test("unary minus → NEG", () => {
+      const ir = L("-x;");
+      expect(ir).toEqual({ fn: "NEG", args: [{ fn: "RETRIEVE", args: ["x"] }] });
+    });
+
+    test("unary plus → identity", () => {
+      const ir = L("+42;");
+      expect(ir).toEqual({ fn: "LITERAL", args: ["42"] });
+    });
+  });
+
+  describe("Comparison & Logic", () => {
+    test("equality", () => {
+      expect(L("a == b;").fn).toBe("EQ");
+    });
+
+    test("not-equal", () => {
+      expect(L("a != b;").fn).toBe("NEQ");
+    });
+
+    test("less than", () => {
+      expect(L("a < b;").fn).toBe("LT");
+    });
+
+    test("greater than", () => {
+      expect(L("a > b;").fn).toBe("GT");
+    });
+
+    test("less-equal", () => {
+      expect(L("a <= b;").fn).toBe("LTE");
+    });
+
+    test("greater-equal", () => {
+      expect(L("a >= b;").fn).toBe("GTE");
+    });
+
+    test("interval operator :", () => {
+      expect(L("a : b;").fn).toBe("INTERVAL");
+    });
+  });
+
+  describe("Implicit Multiplication", () => {
+    test("f(x) → MUL(RETRIEVE(f), RETRIEVE(x))", () => {
+      const ir = L("f(x);");
+      expect(ir.fn).toBe("MUL");
+      expect(ir.args[0]).toEqual({ fn: "RETRIEVE", args: ["f"] });
+      // The right side is a Grouping which lowers to just the inner expression
+      expect(ir.args[1]).toEqual({ fn: "RETRIEVE", args: ["x"] });
+    });
+
+    test("abc(2+3) → MUL(RETRIEVE(abc), ADD(2,3))", () => {
+      const ir = L("abc(2+3);");
+      expect(ir.fn).toBe("MUL");
+      expect(ir.args[1].fn).toBe("ADD");
+    });
+  });
+
+  describe("Function Calls", () => {
+    test("SIN(x) → CALL(SIN, RETRIEVE(x))", () => {
+      const ir = L("SIN(x);");
+      expect(ir.fn).toBe("CALL");
+      expect(ir.args[0]).toBe("SIN");
+      expect(ir.args[1]).toEqual({ fn: "RETRIEVE", args: ["x"] });
+    });
+
+    test("F(x, y) → CALL(F, ...)", () => {
+      const ir = L("F(x, y);");
+      expect(ir.fn).toBe("CALL");
+      expect(ir.args[0]).toBe("F");
+      expect(ir.args.length).toBe(3); // name + 2 args
+    });
+
+    test("function with keyword args", () => {
+      const ir = L("F(2, 3; a := 4);");
+      expect(ir.fn).toBe("CALL");
+      expect(ir.args[0]).toBe("F");
+      // positional: 2, 3; then keyword: a=4
+      const kwarg = ir.args.find((a) => a && a.fn === "KWARG");
+      expect(kwarg).toBeDefined();
+      expect(kwarg.args[0]).toBe("a");
+    });
+
+    test("@_ADD(a, b) → ADD(a, b) directly", () => {
+      const ir = L("@_ADD(a, b);");
+      expect(ir.fn).toBe("ADD");
+      expect(ir.args[0]).toEqual({ fn: "RETRIEVE", args: ["a"] });
+      expect(ir.args[1]).toEqual({ fn: "RETRIEVE", args: ["b"] });
+    });
+
+    test("@_ASSIGN(x, 5) → ASSIGN(x, 5) directly", () => {
+      const ir = L("@_ASSIGN(x, 5);");
+      expect(ir.fn).toBe("ASSIGN");
+    });
+
+    test("operator as function: +(3, 4)", () => {
+      const ir = L("+(3, 4);");
+      expect(ir.fn).toBe("CALL");
+      expect(ir.args[0]).toBe("+");
+    });
+  });
+
+  describe("Function Definitions", () => {
+    test("f(x) :-> x + 1", () => {
+      const ir = L("f(x) :-> x + 1;");
+      expect(ir.fn).toBe("FUNCDEF");
+      expect(ir.args[0]).toBe("f");
+      // params
+      expect(ir.args[1].positional[0].name).toBe("x");
+      // body
+      expect(ir.args[2].fn).toBe("ADD");
+    });
+
+    test("lambda: (x) -> x^2", () => {
+      const ir = L("(x) -> x^2;");
+      expect(ir.fn).toBe("LAMBDA");
+      expect(ir.args[0].positional[0].name).toBe("x");
+      expect(ir.args[1].fn).toBe("POW");
+    });
+
+    test("function with default params", () => {
+      const ir = L("f(x, n := 5) :-> x^n;");
+      expect(ir.fn).toBe("FUNCDEF");
+      const params = ir.args[1];
+      expect(params.positional[1].default.fn).toBe("LITERAL");
+      expect(params.positional[1].default.args[0]).toBe("5");
+    });
+  });
+
+  describe("Collections", () => {
+    test("array [1, 2, 3]", () => {
+      const ir = L("[1, 2, 3];");
+      expect(ir.fn).toBe("ARRAY");
+      expect(ir.args.length).toBe(3);
+    });
+
+    test("{| 1, 2, 3 } → SET", () => {
+      const ir = L("{| 1, 2, 3 };");
+      expect(ir.fn).toBe("SET");
+      expect(ir.args.length).toBe(3);
+    });
+
+    test("{: a, b } → TUPLE", () => {
+      const ir = L("{: a, b };");
+      expect(ir.fn).toBe("TUPLE");
+      expect(ir.args.length).toBe(2);
+    });
+
+    test("{= a, b, c } → MAP", () => {
+      const ir = L("{= a, b, c };");
+      expect(ir.fn).toBe("MAP");
+    });
+  });
+
+  describe("Control Flow", () => {
+    test("{; a; b; c } → BLOCK", () => {
+      const ir = L("{; a := 1; b := 2; a + b };");
+      expect(ir.fn).toBe("BLOCK");
+      expect(ir.args.length).toBe(3);
+      expect(ir.args[0].fn).toBe("ASSIGN");
+    });
+
+    test("{? cond1; cond2 } → CASE with DEFERs", () => {
+      const ir = L("{? x > 0; x < 10 };");
+      expect(ir.fn).toBe("CASE");
+      expect(ir.args[0].fn).toBe("DEFER");
+      expect(ir.args[1].fn).toBe("DEFER");
+    });
+
+    test("{@ init; cond } → LOOP with DEFERs", () => {
+      const ir = L("{@ i := 0; i + 1 };");
+      expect(ir.fn).toBe("LOOP");
+      expect(ir.args[0].fn).toBe("DEFER");
+    });
+
+    test("ternary a ?? b ?: c → TERNARY with DEFERs", () => {
+      const ir = L("x > 0 ?? 1 ?: -1;");
+      expect(ir.fn).toBe("TERNARY");
+      expect(ir.args[0].fn).toBe("GT"); // condition
+      expect(ir.args[1].fn).toBe("DEFER"); // true branch
+      expect(ir.args[2].fn).toBe("DEFER"); // false branch
+    });
+  });
+
+  describe("Deferred Blocks", () => {
+    test("@{; x + 1 } → DEFER", () => {
+      const ir = L("@{; x + 1 };");
+      expect(ir.fn).toBe("DEFER");
+      expect(ir.args[0].fn).toBe("BLOCK");
+    });
+
+    test("@{ a, b } → DEFER", () => {
+      const ir = L("@{ a, b };");
+      expect(ir.fn).toBe("DEFER");
+    });
+  });
+
+  describe("Property Access", () => {
+    test("obj.a → DOT", () => {
+      const ir = L("obj.a;");
+      expect(ir.fn).toBe("DOT");
+      expect(ir.args[0]).toEqual({ fn: "RETRIEVE", args: ["obj"] });
+      expect(ir.args[1]).toBe("a");
+    });
+
+    test("arr[i] → INDEX", () => {
+      const ir = L("arr[i];");
+      expect(ir.fn).toBe("INDEX");
+    });
+
+    test("obj..b → EXTGET", () => {
+      const ir = L("obj..b;");
+      expect(ir.fn).toBe("EXTGET");
+      expect(ir.args[1]).toBe("b");
+    });
+
+    test("obj.. → EXTALL", () => {
+      const ir = L("obj..;");
+      expect(ir.fn).toBe("EXTALL");
+    });
+
+    test("obj.| → KEYS", () => {
+      const ir = L("obj.|;");
+      expect(ir.fn).toBe("KEYS");
+    });
+
+    test("obj|. → VALUES", () => {
+      const ir = L("obj|.;");
+      expect(ir.fn).toBe("VALUES");
+    });
+  });
+
+  describe("Mutation", () => {
+    test("obj{= +a=3 } → MUTCOPY", () => {
+      const ir = L("obj{= +a=3 };");
+      expect(ir.fn).toBe("MUTCOPY");
+      expect(ir.args[0]).toEqual({ fn: "RETRIEVE", args: ["obj"] });
+      expect(ir.args[1][0].action).toBe("add");
+      expect(ir.args[1][0].key).toBe("a");
+    });
+
+    test("obj{! +a=3 } → MUTINPLACE", () => {
+      const ir = L("obj{! +a=3 };");
+      expect(ir.fn).toBe("MUTINPLACE");
+    });
+  });
+
+  describe("Pipes", () => {
+    test("x |> F → PIPE", () => {
+      const ir = L("x |> F;");
+      expect(ir.fn).toBe("PIPE");
+    });
+
+    test("[1,2,3] |>> f → PMAP", () => {
+      const ir = L("[1, 2, 3] |>> f;");
+      expect(ir.fn).toBe("PMAP");
+    });
+
+    test("|>? → PFILTER", () => {
+      const ir = L("[1, 2, 3] |>? f;");
+      expect(ir.fn).toBe("PFILTER");
+    });
+
+    test("|>: → PREDUCE", () => {
+      const ir = L("[1, 2, 3] |>: f;");
+      expect(ir.fn).toBe("PREDUCE");
+    });
+  });
+
+  describe("REPL Commands", () => {
+    test("HELP algebra → COMMAND(HELP, ...)", () => {
+      const ir = L("HELP algebra");
+      expect(ir.fn).toBe("COMMAND");
+      expect(ir.args[0]).toBe("HELP");
+    });
+
+    test("LOAD pkg → COMMAND(LOAD, ...)", () => {
+      const ir = L("LOAD mypackage");
+      expect(ir.fn).toBe("COMMAND");
+      expect(ir.args[0]).toBe("LOAD");
+    });
+  });
+
+  describe("System Functions (@_)", () => {
+    test("@_ASSIGN ref → SYSREF", () => {
+      const ir = L("@_ASSIGN;");
+      expect(ir.fn).toBe("SYSREF");
+      expect(ir.args[0]).toBe("ASSIGN");
+    });
+
+    test("nested: @_ASSIGN(i, @_ADD(i, 1))", () => {
+      const ir = L("@_ASSIGN(i, @_ADD(i, 1));");
+      expect(ir.fn).toBe("ASSIGN");
+      expect(ir.args[0]).toEqual({ fn: "RETRIEVE", args: ["i"] });
+      expect(ir.args[1].fn).toBe("ADD");
+    });
+  });
+
+  describe("Solve / Assertions", () => {
+    test(":=: → SOLVE", () => {
+      const ir = L("x :=: 5;");
+      expect(ir.fn).toBe("SOLVE");
+    });
+
+    test(":<: → ASSERT_LT", () => {
+      const ir = L("x :<: 5;");
+      expect(ir.fn).toBe("ASSERT_LT");
+    });
+
+    test(":>: → ASSERT_GT", () => {
+      const ir = L("x :>: 5;");
+      expect(ir.fn).toBe("ASSERT_GT");
+    });
+  });
+
+  describe("Code Blocks", () => {
+    test("{{ a; b }} → BLOCK", () => {
+      const ir = L("{{ a; b }};");
+      expect(ir.fn).toBe("BLOCK");
+      expect(ir.args.length).toBe(2);
+    });
+  });
+
+  describe("Integration: complex expressions", () => {
+    test("x = SIN(PI) + 2 * y", () => {
+      const ir = L("x = SIN(PI) + 2 * y;");
+      expect(ir.fn).toBe("ASSIGN");
+      expect(ir.args[0]).toBe("x");
+      expect(ir.args[1].fn).toBe("ADD");
+      expect(ir.args[1].args[0].fn).toBe("CALL");
+      expect(ir.args[1].args[0].args[0]).toBe("SIN");
+      expect(ir.args[1].args[1].fn).toBe("MUL");
+    });
+
+    test("f(x) :-> {; a = x^2; a + 1 }", () => {
+      const ir = L("f(x) :-> {; a = x^2; a + 1 };");
+      expect(ir.fn).toBe("FUNCDEF");
+      expect(ir.args[0]).toBe("f");
+      expect(ir.args[2].fn).toBe("BLOCK");
+      expect(ir.args[2].args[0].fn).toBe("ASSIGN");
+      expect(ir.args[2].args[1].fn).toBe("ADD");
+    });
+
+    test("result = x > 0 ?? SIN(x) ?: COS(x)", () => {
+      const ir = L("result = x > 0 ?? SIN(x) ?: COS(x);");
+      expect(ir.fn).toBe("ASSIGN");
+      expect(ir.args[0]).toBe("result");
+      expect(ir.args[1].fn).toBe("TERNARY");
+    });
+  });
+});

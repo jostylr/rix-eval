@@ -1,0 +1,24 @@
+{
+  "name": "rix-eval",
+  "version": "0.1.0",
+  "description": "RiX language evaluator: AST lowering pass and system function execution",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": {
+      "import": "./index.js"
+    },
+    "./lower": {
+      "import": "./src/lower.js"
+    },
+    "./ir": {
+      "import": "./src/ir.js"
+    }
+  },
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "rix-language-parser": "workspace:*"
+  }
+}

@@ -6,11 +6,56 @@ import { Integer, Rational, RationalInterval } from "@ratmath/core";
 
 export const collectionFunctions = {
     ARRAY: {
-        impl(args) {
-            return { type: "sequence", values: args };
+        lazy: true,
+        impl(args, ctx, evaluate) {
+            const values = [];
+            let i = 0;
+            while (i < args.length) {
+                const arg = args[i];
+                if (arg && arg.fn === "GENERATOR") {
+                    let current = arg.args[0] ? evaluate(arg.args[0]) : values[values.length - 1];
+                    if (current === undefined) throw new Error("Sequence generator missing start value");
+                    if (arg.args[0]) values.push(current);
+
+                    const ops = [...arg.args.slice(1)];
+                    // Consume subsequent GENERATOR nodes
+                    while (i + 1 < args.length && args[i + 1] && args[i + 1].fn === "GENERATOR") {
+                        i++;
+                        ops.push(...args[i].args.slice(1));
+                    }
+
+                    let generate = true;
+                    let maxEager = 10000;
+
+                    while (generate && maxEager-- > 0) {
+                        let next = current;
+                        let stop = false;
+                        for (const op of ops) {
+                            if (!op || typeof op !== 'object') continue;
+                            const opArg = op.args?.[0] ? evaluate(op.args[0]) : null;
+                            if (op.fn === "GEN_ADD") {
+                                next = evaluate({ fn: "ADD", args: [next, opArg] });
+                            } else if (op.fn === "GEN_MUL") {
+                                next = evaluate({ fn: "MUL", args: [next, opArg] });
+                            } else if (op.fn === "GEN_EAGER_LIMIT") {
+                                if (values.length >= opArg) stop = true;
+                            } else if (op.fn === "GEN_LIMIT") {
+                                stop = true;
+                            }
+                        }
+                        if (stop) break;
+                        values.push(next);
+                        current = next;
+                    }
+                } else {
+                    values.push(evaluate(arg));
+                }
+                i++;
+            }
+            return { type: "sequence", values };
         },
         pure: true,
-        doc: "Create an array/sequence",
+        doc: "Create an array/sequence (supports sequence generators)",
     },
 
     TUPLE: {

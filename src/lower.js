@@ -190,7 +190,7 @@ const LOWERERS = {
     if (node.operator === "+") {
       return lowerNode(node.operand); // unary + is identity
     }
-    if (node.operator === "NOT") {
+    if (node.operator === "NOT" || node.operator === "!") {
       return ir("NOT", lowerNode(node.operand));
     }
     return ir("UNARY", node.operator, lowerNode(node.operand));
@@ -207,7 +207,19 @@ const LOWERERS = {
     const args = lowerCallArgs(node.arguments);
 
     if (fn.type === "SystemIdentifier" || fn.type === "UserIdentifier") {
-      return ir("CALL", fn.name, ...args);
+      const name = fn.name;
+      // Handle operators parsed as function calls due to parser ambiguity/overloading rules
+      if (args.length === 1) {
+        if (name === "-") return ir("NEG", args[0]);
+        if (name === "+") return args[0]; // unary + is identity
+        if (name === "!" || name === "NOT") return ir("NOT", args[0]);
+      } else if (args.length === 2) {
+        if (name === "+") return ir("ADD", args[0], args[1]);
+        if (name === "-") return ir("SUB", args[0], args[1]);
+        if (name === "*") return ir("MUL", args[0], args[1]);
+        if (name === "/") return ir("DIV", args[0], args[1]);
+      }
+      return ir("CALL", name, ...args);
     }
     // Expression call: (expr)(args)
     return ir("CALL_EXPR", lowerNode(fn), ...args);
@@ -491,6 +503,15 @@ const LOWERERS = {
     const ops = node.operators.map(lowerNode);
     return ir("GENERATOR", start, ...ops);
   },
+
+  GeneratorAdd(node) { return ir("GEN_ADD", lowerNode(node.operand)); },
+  GeneratorMultiply(node) { return ir("GEN_MUL", lowerNode(node.operand)); },
+  GeneratorFunction(node) { return ir("GEN_FUNC", lowerNode(node.operand)); },
+  GeneratorFilter(node) { return ir("GEN_FILTER", lowerNode(node.operand)); },
+  GeneratorLimit(node) { return ir("GEN_LIMIT", lowerNode(node.operand)); },
+  GeneratorLazyLimit(node) { return ir("GEN_LAZY_LIMIT", lowerNode(node.operand)); },
+  GeneratorEagerLimit(node) { return ir("GEN_EAGER_LIMIT", lowerNode(node.operand)); },
+  GeneratorPipe(node) { return ir("GEN_PIPE", lowerNode(node.operand)); },
 
   // === Metadata ===
 

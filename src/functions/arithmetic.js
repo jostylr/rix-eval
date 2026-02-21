@@ -59,20 +59,22 @@ function stringify(val) {
 export const arithmeticFunctions = {
     ADD: {
         impl(args) {
-            const a = args[0];
-            const b = args[1];
+            if (args.length === 0) return new Integer(0n);
+            if (args.length === 1) return args[0];
 
             // String concatenation support
             const isStr = (v) => typeof v === "string" || (v && typeof v === "object" && v.type === "string");
             const getStr = (v) => stringify(v);
 
-            if (isStr(a) || isStr(b)) {
-                return { type: "string", value: getStr(a) + getStr(b) };
+            if (args.some(isStr)) {
+                return { type: "string", value: args.map(getStr).join("") };
             }
 
-            const na = ensureNumeric(a);
-            const nb = ensureNumeric(b);
-            return na.add(nb);
+            let result = ensureNumeric(args[0]);
+            for (let i = 1; i < args.length; i++) {
+                result = result.add(ensureNumeric(args[i]));
+            }
+            return result;
         },
         pure: true,
         doc: "Addition or string concatenation",
@@ -90,12 +92,17 @@ export const arithmeticFunctions = {
 
     MUL: {
         impl(args) {
-            const a = ensureNumeric(args[0]);
-            const b = ensureNumeric(args[1]);
-            return a.multiply(b);
+            if (args.length === 0) return new Integer(1n);
+            if (args.length === 1) return ensureNumeric(args[0]);
+
+            let result = ensureNumeric(args[0]);
+            for (let i = 1; i < args.length; i++) {
+                result = result.multiply(ensureNumeric(args[i]));
+            }
+            return result;
         },
         pure: true,
-        doc: "Multiplication",
+        doc: "Multiplication (Product of values)",
     },
 
     DIV: {

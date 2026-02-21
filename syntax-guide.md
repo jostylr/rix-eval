@@ -19,9 +19,9 @@
 | `>` or `?>` | `GT` | `a > b` |
 | `<=` or `?<=` | `LTE` | `x <= 10` |
 | `>=` or `?>=` | `GTE` | `x >= 0` |
-| `AND` | `AND` | `a > 0 AND b > 0` |
-| `OR` | `OR` | `x == 0 OR y == 0` |
-| `NOT` | `NOT` | `NOT(x == 0)` |
+| `AND` or `&&` | `AND` | `a > 0 && b > 0` |
+| `OR` or `\|\|` | `OR` | `x == 0 \|\| y == 0` |
+| `NOT` or `!` | `NOT` | `!(x == 0)` |
 | `:=` or `=` | `ASSIGN` | `x := 5` or `x = 5` |
 | `-` (unary) | `NEG` | `-x` |
 
@@ -44,6 +44,8 @@
 | `{= k1=v1, k2=v2 }` | `MAP` | Map/object literal |
 | `{\| a, b, c }` | `SET` | Set literal |
 | `{: a, b, c }` | `TUPLE` | Tuple literal |
+| `{+ a, b, c }` | `ADD` | N-ary addition or concatenation |
+| `{* a, b, c }` | `MUL` | N-ary multiplication |
 
 ### Pipe Operators
 

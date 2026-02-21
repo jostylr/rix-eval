@@ -118,6 +118,13 @@ describe("RiX Evaluator", () => {
             expect(result.value).toBe(5n);
         });
 
+        test("n-ary addition: {+ 1, 2, 3, 4} = 10", () => {
+            const result = evalRix("{+ 1, 2, 3, 4};");
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(10n);
+        });
+
+
         test("subtraction: 10 - 4 = 6", () => {
             const result = evalRix("10 - 4;");
             expect(result).toBeInstanceOf(Integer);
@@ -128,6 +135,12 @@ describe("RiX Evaluator", () => {
             const result = evalRix("3 * 7;");
             expect(result).toBeInstanceOf(Integer);
             expect(result.value).toBe(21n);
+        });
+
+        test("n-ary multiplication: {* 2, 3, 4} = 24", () => {
+            const result = evalRix("{* 2, 3, 4};");
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(24n);
         });
 
         test("division: 10 / 3 = 10/3", () => {

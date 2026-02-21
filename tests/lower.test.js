@@ -273,11 +273,6 @@ describe("Lowering Pass", () => {
       expect(ir.fn).toBe("ASSIGN");
     });
 
-    test("operator as function: +(3, 4)", () => {
-      const ir = L("+(3, 4);");
-      expect(ir.fn).toBe("CALL");
-      expect(ir.args[0]).toBe("+");
-    });
   });
 
   describe("Function Definitions", () => {

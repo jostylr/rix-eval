@@ -40,7 +40,8 @@ export const collectionFunctions = {
                             } else if (op.fn === "GEN_EAGER_LIMIT") {
                                 if (values.length >= opArg) stop = true;
                             } else if (op.fn === "GEN_LIMIT") {
-                                stop = true;
+                                const gtResult = evaluate({ fn: "GT", args: [next, opArg] });
+                                if (gtResult !== null && gtResult !== undefined) stop = true;
                             }
                         }
                         if (stop) break;

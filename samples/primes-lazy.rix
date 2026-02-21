@@ -1,0 +1,23 @@
+## Primes — Terse Syntax ##
+## Uses operator syntax: %, ==, OR, !, //, {? }, sequence generators ##
+
+timesHDcalled = 0;
+
+## Predicate: Does 'n' have any divisor in list 'divs'?
+## This terseness has if n/d has no remainder, then d is a diviso and n % d == 0. This should then return d. 
+HasDivisor(n, divs) -> divs |>|| d -> {; timesHDcalled = timesHDcalled + 1;   n % d == 0 && d; }
+
+## Predicate: Is 'n' prime?
+IsPrime(n) -> {?
+  n < 2 ? _;
+  n == 2 ? 1;
+  !(HasDivisor(n, [2, |+ 1, |^ (SQRT(n) // 1)]))
+}
+
+primes = [1, |+1, |; 50] |>? IsPrime;
+
+PRINT(
+  "Primes up to 50: " + primes,
+  "Count: " + LEN(primes),
+  "HD Called: " + timesHDcalled
+)

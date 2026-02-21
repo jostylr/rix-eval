@@ -471,7 +471,7 @@ export const functionFunctions = {
             const funcNode = args[1];
 
             if (!collection || !collection.values) {
-                throw new Error("PANY requires a collection");
+                console.log("PANY collection:", collection, "args:", args); throw new Error("PANY requires a collection");
             }
 
             for (const item of collection.values) {
@@ -493,11 +493,11 @@ export const functionFunctions = {
                 } else {
                     throw new Error("PANY function is not callable");
                 }
-                if (result !== null && result !== undefined) return new Integer(1);
+                if (result !== null && result !== undefined) return result;
             }
             return null;
         },
-        doc: "Any: returns Integer(1) on first truthy predicate result, null if none pass",
+        doc: "Any: returns first truthy predicate result, null if none pass",
     },
 
     KWARG: {

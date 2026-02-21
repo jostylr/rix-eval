@@ -307,8 +307,7 @@ export const functionFunctions = {
             }
 
             const isTruthy = (val) => {
-                if (val instanceof Integer) return val.value !== 0n;
-                return Boolean(val);
+                return val !== null && val !== undefined;
             };
 
             const results = collection.values.filter((item) => {
@@ -427,6 +426,78 @@ export const functionFunctions = {
             return { type: collection.type || "sequence", values: sorted };
         },
         doc: "Sort a collection with comparator function (returns new copy)",
+    },
+
+    PALL: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const collection = evaluate(args[0]);
+            const funcNode = args[1];
+
+            if (!collection || !collection.values) {
+                throw new Error("PALL requires a collection");
+            }
+
+            for (const item of collection.values) {
+                const func = evaluate(funcNode);
+                let result;
+                if (func && (func.type === "function" || func.type === "lambda")) {
+                    const scope = new Map();
+                    if (func.params?.positional?.length > 0) {
+                        scope.set(func.params.positional[0].name, item);
+                    }
+                    context.push(scope);
+                    try {
+                        result = evaluate(func.body);
+                    } finally {
+                        context.pop();
+                    }
+                } else if (typeof func === "function") {
+                    result = func(item);
+                } else {
+                    throw new Error("PALL function is not callable");
+                }
+                if (result === null || result === undefined) return null;
+            }
+            return new Integer(1);
+        },
+        doc: "Every: returns Integer(1) if predicate is truthy for ALL elements, null on first failure",
+    },
+
+    PANY: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const collection = evaluate(args[0]);
+            const funcNode = args[1];
+
+            if (!collection || !collection.values) {
+                throw new Error("PANY requires a collection");
+            }
+
+            for (const item of collection.values) {
+                const func = evaluate(funcNode);
+                let result;
+                if (func && (func.type === "function" || func.type === "lambda")) {
+                    const scope = new Map();
+                    if (func.params?.positional?.length > 0) {
+                        scope.set(func.params.positional[0].name, item);
+                    }
+                    context.push(scope);
+                    try {
+                        result = evaluate(func.body);
+                    } finally {
+                        context.pop();
+                    }
+                } else if (typeof func === "function") {
+                    result = func(item);
+                } else {
+                    throw new Error("PANY function is not callable");
+                }
+                if (result !== null && result !== undefined) return new Integer(1);
+            }
+            return null;
+        },
+        doc: "Any: returns Integer(1) on first truthy predicate result, null if none pass",
     },
 
     KWARG: {

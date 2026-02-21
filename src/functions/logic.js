@@ -1,57 +1,52 @@
 /**
  * Logic system functions: AND, OR, NOT
  *
- * Truthy = non-zero for numeric ratmath types.
- * Returns Integer(1) for true, Integer(0) for false.
+ * Truthiness: only null/undefined is falsy. Everything else (including 0) is truthy.
+ * AND/OR return the deciding operand (JS-style short-circuit).
+ * NOT returns Integer(1) for null, null for anything else.
+ * Comparisons elsewhere return Integer(1) for true, null for false.
  */
 
-import { Integer, Rational } from "@ratmath/core";
+import { Integer } from "@ratmath/core";
 
 function isTruthy(val) {
-    if (val === null || val === undefined) return false;
-    if (val instanceof Integer) return val.value !== 0n;
-    if (val instanceof Rational) return val.numerator !== 0n;
-    if (typeof val === "number") return val !== 0;
-    if (typeof val === "bigint") return val !== 0n;
-    return Boolean(val);
-}
-
-function boolToInt(val) {
-    return new Integer(val ? 1 : 0);
+    return val !== null && val !== undefined;
 }
 
 export const logicFunctions = {
     AND: {
         lazy: true,
         impl(args, ctx, evaluate) {
+            let last = new Integer(1);
             for (const arg of args) {
-                const val = evaluate(arg);
-                if (!isTruthy(val)) return boolToInt(false);
+                last = evaluate(arg);
+                if (!isTruthy(last)) return last; // return the falsy value (null)
             }
-            return boolToInt(true);
+            return last; // return last truthy value
         },
         pure: true,
-        doc: "Logical AND (short-circuits on first falsy)",
+        doc: "Logical AND (short-circuits on first falsy, returns deciding value)",
     },
 
     OR: {
         lazy: true,
         impl(args, ctx, evaluate) {
+            let last = null;
             for (const arg of args) {
-                const val = evaluate(arg);
-                if (isTruthy(val)) return boolToInt(true);
+                last = evaluate(arg);
+                if (isTruthy(last)) return last; // return first truthy value
             }
-            return boolToInt(false);
+            return last; // return last falsy value (null)
         },
         pure: true,
-        doc: "Logical OR (short-circuits on first truthy)",
+        doc: "Logical OR (short-circuits on first truthy, returns deciding value)",
     },
 
     NOT: {
         impl(args) {
-            return boolToInt(!isTruthy(args[0]));
+            return isTruthy(args[0]) ? null : new Integer(1);
         },
         pure: true,
-        doc: "Logical NOT",
+        doc: "Logical NOT — returns Integer(1) for null input, null otherwise",
     },
 };

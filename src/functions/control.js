@@ -3,17 +3,14 @@
  *
  * All are lazy — they receive raw IR nodes and use the evaluate
  * callback to selectively evaluate branches.
+ *
+ * Truthiness: only null/undefined is falsy. Everything else is truthy.
  */
 
 import { Integer, Rational } from "@ratmath/core";
 
 function isTruthy(val) {
-    if (val === null || val === undefined) return false;
-    if (val instanceof Integer) return val.value !== 0n;
-    if (val instanceof Rational) return val.numerator !== 0n;
-    if (typeof val === "number") return val !== 0;
-    if (typeof val === "bigint") return val !== 0n;
-    return Boolean(val);
+    return val !== null && val !== undefined;
 }
 
 /**

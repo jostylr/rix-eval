@@ -243,9 +243,9 @@ describe("RiX Evaluator", () => {
             expect(result.value).toBe(1n);
         });
 
-        test("2 > 3 = 0 (false)", () => {
+        test("2 > 3 = null (false)", () => {
             const result = evalRix("2 > 3;");
-            expect(result.value).toBe(0n);
+            expect(result).toBeNull();
         });
 
         test("5 == 5 = 1 (true)", () => {
@@ -253,9 +253,9 @@ describe("RiX Evaluator", () => {
             expect(result.value).toBe(1n);
         });
 
-        test("5 == 6 = 0 (false)", () => {
+        test("5 == 6 = null (false)", () => {
             const result = evalRix("5 == 6;");
-            expect(result.value).toBe(0n);
+            expect(result).toBeNull();
         });
 
         test("3 < 5 = 1", () => {
@@ -268,9 +268,9 @@ describe("RiX Evaluator", () => {
             expect(result.value).toBe(1n);
         });
 
-        test("5 >= 6 = 0", () => {
+        test("5 >= 6 = null", () => {
             const result = evalRix("5 >= 6;");
-            expect(result.value).toBe(0n);
+            expect(result).toBeNull();
         });
 
         test("5 != 6 = 1", () => {
@@ -285,26 +285,36 @@ describe("RiX Evaluator", () => {
             expect(result.value).toBe(1n);
         });
 
-        test("1 AND 0 = 0", () => {
+        test("1 AND 0 returns 0 (0 is truthy)", () => {
             const result = evalRix("1 AND 0;");
             expect(result.value).toBe(0n);
         });
 
-        test("0 OR 1 = 1", () => {
+        test("0 OR 1 returns 0 (0 is truthy, returned by OR)", () => {
             const result = evalRix("0 OR 1;");
+            expect(result.value).toBe(0n);
+        });
+
+        test("_ OR 1 returns 1 (null is falsy)", () => {
+            const result = evalRix("_ OR 1;");
             expect(result.value).toBe(1n);
         });
 
-        test("0 OR 0 = 0", () => {
-            const result = evalRix("0 OR 0;");
+        test("_ OR 0 returns 0", () => {
+            const result = evalRix("_ OR 0;");
             expect(result.value).toBe(0n);
         });
 
-        test("short-circuit AND", () => {
+        test("_ OR _ = null", () => {
+            const result = evalRix("_ OR _;");
+            expect(result).toBeNull();
+        });
+
+        test("short-circuit AND with null", () => {
             const ctx = new Context();
-            // undeclared is not evaluated because 0 is falsy
-            const result = evalRix("0 AND undeclared;", ctx);
-            expect(result.value).toBe(0n);
+            // null is falsy, so undeclared is not evaluated
+            const result = evalRix("_ AND undeclared;", ctx);
+            expect(result).toBeNull();
         });
 
         test("short-circuit OR", () => {
@@ -314,29 +324,36 @@ describe("RiX Evaluator", () => {
             expect(result.value).toBe(1n);
         });
 
-        test("n-ary {&& 1, 1, 0} = 0", () => {
-            const result = evalRix("{&& 1, 1, 0};");
-            expect(result.value).toBe(0n);
+        test("n-ary {&& 1, 1, _} = null (short-circuits)", () => {
+            const result = evalRix("{&& 1, 1, _};");
+            expect(result).toBeNull();
         });
 
-        test("n-ary {|| 0, 0, 1} = 1", () => {
-            const result = evalRix("{|| 0, 0, 1};");
+        test("n-ary {|| _, _, 1} = 1", () => {
+            const result = evalRix("{|| _, _, 1};");
             expect(result.value).toBe(1n);
         });
 
-        test("NOT 0 = 1", () => {
-            // Use in expression context so NOT is parsed as prefix operator
+        test("NOT null = 1 (null is falsy)", () => {
             const ctx = new Context();
-            evalRix("x = NOT 0;", ctx);
+            evalRix("n = _;", ctx);
+            evalRix("x = NOT n;", ctx);
             const result = evalRix("x;", ctx);
             expect(result.value).toBe(1n);
         });
 
-        test("NOT 1 = 0", () => {
+        test("NOT 1 = null", () => {
             const ctx = new Context();
             evalRix("x = NOT 1;", ctx);
             const result = evalRix("x;", ctx);
-            expect(result.value).toBe(0n);
+            expect(result).toBeNull();
+        });
+
+        test("NOT 0 = null (0 is truthy)", () => {
+            const ctx = new Context();
+            evalRix("x = NOT 0;", ctx);
+            const result = evalRix("x;", ctx);
+            expect(result).toBeNull();
         });
     });
 
@@ -631,6 +648,26 @@ describe("RiX Evaluator", () => {
             expect(result.values[0].value).toBe(1n);
             expect(result.values[1].value).toBe(3n);
             expect(result.values[2].value).toBe(4n);
+        });
+
+        test("[1,2,3] |>&& (x) -> x > 0 = 1 (all positive)", () => {
+            const result = evalRix("[1, 2, 3] |>&& (x) -> x > 0;");
+            expect(result.value).toBe(1n);
+        });
+
+        test("[1,-2,3] |>&& (x) -> x > 0 = null (not all positive)", () => {
+            const result = evalRix("[1, -2, 3] |>&& (x) -> x > 0;");
+            expect(result).toBeNull();
+        });
+
+        test("[1,-2,3] |>|| (x) -> x > 0 = 1 (some positive)", () => {
+            const result = evalRix("[1, -2, 3] |>|| (x) -> x > 0;");
+            expect(result.value).toBe(1n);
+        });
+
+        test("[-1,-2,-3] |>|| (x) -> x > 0 = null (none positive)", () => {
+            const result = evalRix("[-1, -2, -3] |>|| (x) -> x > 0;");
+            expect(result).toBeNull();
         });
     });
 

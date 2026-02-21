@@ -397,6 +397,14 @@ const LOWERERS = {
     return ir("PFILTER", lowerNode(node.left), lowerNode(node.right));
   },
 
+  Every(node) {
+    return ir("PALL", lowerNode(node.left), lowerNode(node.right));
+  },
+
+  Some(node) {
+    return ir("PANY", lowerNode(node.left), lowerNode(node.right));
+  },
+
   Reduce(node) {
     if (node.init) {
       return ir("PREDUCE", lowerNode(node.left), lowerNode(node.right), lowerNode(node.init));

@@ -1,18 +1,21 @@
 ## Primes — Terse Syntax ##
-## Uses {? } for IF ##
+## Uses operator syntax: %, ==, OR, NOT, //, {? } ##
 
+## Predicate: Does 'n' have any divisor in list 'divs'?
 HasDivisor(n, divs) -> REDUCE(
-  MAP(divs, (d) -> EQ(MOD(n, d), 0)),
+  MAP(divs, (d) -> n % d == 0),
   (acc, val) -> acc OR val,
   0
 )
 
-IsPrime(n) -> {? n < 2 ; 0 ;
-  {? n == 2 ; 1 ;
-    NOT(HasDivisor(n, IRANGE(2, SQRT(n) // 1)))
-  }
+## Predicate: Is 'n' prime?
+IsPrime(n) -> {?
+  n < 2 ? 0;
+  n == 2 ? 1;
+  NOT(HasDivisor(n, IRANGE(2, SQRT(n) // 1)))
 }
 
+## Find all primes up to 50
 primes = FILTER(IRANGE(1, 50), IsPrime)
 
 PRINT(

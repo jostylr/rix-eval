@@ -1,9 +1,9 @@
 ## Collatz — Terse Syntax ##
-## Uses {? } for IF and PRINT for output ##
+## Uses {? cond ? action} and PRINT for output ##
 
-NextCollatz(n) -> {? MOD(n, 2) == 0 ; n / 2 ; 3 * n + 1 }
+NextCollatz(n) -> {? MOD(n, 2) == 0 ? n / 2; 3 * n + 1 }
 
-CollatzLen(n, count) -> {? n == 1 ; count ; CollatzLen(NextCollatz(n), count + 1) }
+CollatzLen(n, count) -> {? n == 1 ? count; CollatzLen(NextCollatz(n), count + 1) }
 
 StepsToOne(n) -> CollatzLen(n, 0)
 

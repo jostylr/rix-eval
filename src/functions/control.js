@@ -43,25 +43,29 @@ export const controlFunctions = {
     CASE: {
         lazy: true,
         impl(args, context, evaluate) {
-            // CASE args are DEFER nodes, paired as condition/value
-            // Pattern: condition1, value1, condition2, value2, ..., [default]
-            // Each pair: if condition is truthy, evaluate and return value
-            for (let i = 0; i < args.length - 1; i += 2) {
-                const condNode = unwrapDefer(args[i]);
-                const condResult = evaluate(condNode);
-                if (isTruthy(condResult)) {
-                    const valueNode = unwrapDefer(args[i + 1]);
-                    return evaluate(valueNode);
+            // CASE receives DEFER-wrapped elements from {? ... }
+            // Each element is either:
+            //   DEFER(CONDITION(test, action))  —  a condition ? action branch
+            //   DEFER(expr)                      —  a default (fallback) branch
+            for (let i = 0; i < args.length; i++) {
+                const inner = unwrapDefer(args[i]);
+
+                // Check if this is a CONDITION node (from `cond ? action`)
+                if (inner && inner.fn === "CONDITION") {
+                    const condResult = evaluate(inner.args[0]);
+                    if (isTruthy(condResult)) {
+                        return evaluate(inner.args[1]);
+                    }
+                    // Not truthy — try next branch
+                    continue;
                 }
-            }
-            // If odd number of args, last one is default
-            if (args.length % 2 === 1) {
-                const defaultNode = unwrapDefer(args[args.length - 1]);
-                return evaluate(defaultNode);
+
+                // Not a CONDITION node — it's a default/fallback
+                return evaluate(inner);
             }
             return null;
         },
-        doc: "Conditional case expression",
+        doc: "Conditional case expression: {? cond ? action; ... ; default }",
     },
 
     LOOP: {

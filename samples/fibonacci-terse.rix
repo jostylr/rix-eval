@@ -1,10 +1,10 @@
 ## Fibonacci — Terse Syntax ##
-## Uses {? }, {; }, and {@ } notation ##
+## Uses {? cond ? action}, {; block }, and {@ loop } notation ##
 
 ## Recursive
-FibRec(n) -> {? n <= 1 ; n ; FibRec(n - 1) + FibRec(n - 2) }
+FibRec(n) -> {? n <= 1 ? n; FibRec(n - 1) + FibRec(n - 2) }
 
-## Iterative using {; } for MULTI and {@ } for LOOP
+## Iterative using {; } for block and {@ } for loop
 FibIter(n) -> {;
   fA := 0;
   fB := 1;
@@ -13,7 +13,7 @@ FibIter(n) -> {;
     {; fTemp := fA + fB; fA := fB; fB := fTemp } ;
     fI := fI + 1
   };
-  {? n <= 0 ; 0 ; fB }
+  {? n <= 0 ? 0; fB }
 }
 
 f10Rec = FibRec(10)

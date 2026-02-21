@@ -1,7 +1,7 @@
 ## Factorial — Terse Syntax ##
 ## Uses {? } for IF and PRINT for output ##
 
-Fact(n) -> {? n <= 1 ? 1 ; n * Fact(n - 1) }
+Fact(n) -> {? n <= 1 ? 1; n * Fact(n - 1) }
 
 val5 = Fact(5)
 val10 = Fact(10)

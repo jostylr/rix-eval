@@ -1,0 +1,27 @@
+## Statistical Calculations in RiX ##
+## Demonstrates list processing and reduce-based metrics ##
+
+Sum(acc, val) -> acc + val
+
+Mean(list) -> REDUCE(list, Sum, 0) / LEN(list)
+
+Variance(list) -> MULTI(
+  avg := Mean(list),
+  sqDiffs := MAP(list, (x) -> (x - avg) ^ 2),
+  REDUCE(sqDiffs, Sum, 0) / LEN(list)
+)
+
+## Data set
+data = [10, 20, 30, 40, 50, 60]
+
+## Calculations
+m = Mean(data)
+v = Variance(data)
+s = SQRT(v)
+
+MULTI(
+  "Data: " + data,
+  "Mean: " + m,
+  "Variance: " + v,
+  "StdDev: " + s
+)

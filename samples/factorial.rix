@@ -1,0 +1,18 @@
+## Factorial Implementation in RiX ##
+## Demonstrates recursive function definitions and conditional logic ##
+
+## Recursive Factorial Function
+Fact(n) -> IF(n <= 1, 1, n * Fact(n - 1))
+
+## Test cases
+val5 = Fact(5)   ## Expected: 120
+val10 = Fact(10) ## Expected: 3628800
+
+## Output results
+MULTI(
+  "Factorial of 5: " + val5,
+  "Factorial of 10: " + val10
+)
+
+## Final return value
+val10

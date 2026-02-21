@@ -1,0 +1,25 @@
+## Prime Number Discovery in RiX ##
+## Demonstrates functional programming patterns (IRANGE, FILTER, REDUCE) ##
+
+## Predicate: Is 'n' divisible by any number in list 'divs'?
+HasDivisor(n, divs) -> REDUCE(
+  MAP(divs, (d) -> EQ(MOD(n, d), 0)),
+  (acc, val) -> acc OR val,
+  0
+)
+
+## Predicate: Is 'n' prime?
+IsPrime(n) -> IF(n < 2, 0, 
+  IF(n == 2, 1,
+    NOT(HasDivisor(n, IRANGE(2, SQRT(n) // 1)))
+  )
+)
+
+## Find all primes up to 50
+primes = FILTER(IRANGE(1, 50), IsPrime)
+
+## Output results
+MULTI(
+  "Primes up to 50: " + primes,
+  "Count: " + LEN(primes)
+)

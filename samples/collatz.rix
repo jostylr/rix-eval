@@ -1,0 +1,19 @@
+## Collatz Conjecture (3n + 1) in RiX ##
+## Demonstrates recursion and arithmetic properties ##
+
+## Calculate the next number in the sequence
+NextCollatz(n) -> IF(MOD(n, 2) == 0, n / 2, 3 * n + 1)
+
+## Recursively count steps to reach 1
+CollatzLen(n, count) -> IF(n == 1, count, CollatzLen(NextCollatz(n), count + 1))
+
+## Public interface
+StepsToOne(n) -> CollatzLen(n, 0)
+
+## Test with the infamous 27
+len27 = StepsToOne(27)
+
+MULTI(
+  "Collatz steps for 27: " + len27,
+  "Sequence (first 5): " + [27, NextCollatz(27), NextCollatz(NextCollatz(27)), NextCollatz(NextCollatz(NextCollatz(27))), NextCollatz(NextCollatz(NextCollatz(NextCollatz(27))))]
+)

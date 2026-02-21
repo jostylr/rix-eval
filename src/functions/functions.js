@@ -11,19 +11,28 @@ export const functionFunctions = {
             // args[0] = function name (string)
             // args[1..] = argument IR nodes
             const name = args[0];
-            const callArgs = args.slice(1).map((a) => evaluate(a));
-
             // Look up the function
             const funcDef = context.get(name);
 
             if (!funcDef) {
-                throw new Error(`Undefined function: ${name}`);
+                // FALLBACK: Try evaluating as a system function call (could be lazy)
+                try {
+                    return evaluate({ fn: name, args: args.slice(1) });
+                } catch (e) {
+                    if (e.message.startsWith("Unknown system function")) {
+                        throw new Error(`Undefined function: ${name}`);
+                    }
+                    throw e;
+                }
             }
 
             // If it's a user-defined function (FUNCDEF or LAMBDA result)
             if (funcDef.type === "function" || funcDef.type === "lambda") {
                 const params = funcDef.params;
                 const body = funcDef.body;
+
+                // Evaluate arguments (user functions are NOT lazy by default for now)
+                const callArgs = args.slice(1).map((a) => evaluate(a));
 
                 // Create a new scope with parameter bindings
                 const scope = new Map();
@@ -54,16 +63,16 @@ export const functionFunctions = {
 
             // If it's a sysref (system function reference)
             if (funcDef.type === "sysref") {
-                // This would need registry access — for now, error
-                throw new Error(
-                    `Cannot call system function reference ${funcDef.name} directly via CALL`,
-                );
+                // Evaluate as system function
+                return evaluate({ fn: funcDef.name, args: args.slice(1) });
             }
 
             // If it's a native JS function (from packages)
             if (typeof funcDef === "function") {
+                const callArgs = args.slice(1).map((a) => evaluate(a));
                 return funcDef(...callArgs);
             }
+
 
             throw new Error(`${name} is not callable`);
         },

@@ -117,9 +117,16 @@ export const coreFunctions = {
     ASSIGN: {
         lazy: true,
         impl(args, context, evaluate) {
-            // args[0] is the variable name (raw string from IR)
-            // args[1] is the value expression (IR node to evaluate)
-            const name = args[0];
+            // Evaluated name (if it was an IR node like STRING)
+            let name = typeof args[0] === "object" && args[0] !== null && args[0].fn
+                ? evaluate(args[0])
+                : args[0];
+
+            // Unwrap RiX string object if necessary
+            if (name && typeof name === "object" && name.type === "string") {
+                name = name.value;
+            }
+
             const value = evaluate(args[1]);
             context.set(name, value);
             return value;
@@ -130,7 +137,15 @@ export const coreFunctions = {
     GLOBAL: {
         lazy: true,
         impl(args, context, evaluate) {
-            const name = args[0];
+            let name = typeof args[0] === "object" && args[0] !== null && args[0].fn
+                ? evaluate(args[0])
+                : args[0];
+
+            // Unwrap RiX string object if necessary
+            if (name && typeof name === "object" && name.type === "string") {
+                name = name.value;
+            }
+
             const value = evaluate(args[1]);
             context.setGlobal(name, value);
             return value;

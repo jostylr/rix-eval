@@ -1,0 +1,33 @@
+## Fibonacci Sequence in RiX ##
+## Demonstrates multiple implementation strategies ##
+
+## 1. Recursive Implementation (Simple but slow)
+FibRec(n) -> IF(n <= 1, n, FibRec(n - 1) + FibRec(n - 2))
+
+## 2. Iterative Implementation using LOOP {@ init; cond; body; update }
+FibIter(n) -> MULTI(
+  fA := 0,
+  fB := 1,
+  fI := 1,
+  {@ 
+     _ ; 
+     fI < n ; 
+     MULTI(
+       fTemp := fA + fB,
+       fA := fB,
+       fB := fTemp
+     ) ; 
+     fI := fI + 1 
+  },
+  IF(n <= 0, 0, fB)
+)
+
+## Test Results
+f10Rec = FibRec(10)  ## 55
+f10Iter = FibIter(10) ## 55
+
+MULTI(
+  "Fib(10) Recursive: " + f10Rec,
+  "Fib(10) Iterative: " + f10Iter,
+  EQ(f10Rec, f10Iter) ## Check parity (should be 1)
+)

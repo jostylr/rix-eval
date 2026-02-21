@@ -23,20 +23,59 @@ function ensureNumeric(val) {
             const num = BigInt(parts[0]) * den + BigInt(parts[1]);
             return new Rational(num, den);
         }
-        return new Integer(val);
+        return new Integer(BigInt(Math.floor(val)));
     }
     throw new Error(`Cannot use ${typeof val} in arithmetic`);
+}
+
+function stringify(val) {
+    if (val === null || val === undefined) return "null";
+    if (typeof val === "object" && val !== null) {
+        if (val.type === "string") return val.value;
+        if (val.type === "sequence") {
+            const open = val.kind === "set" ? "{| " : val.kind === "tuple" ? "( " : "[";
+            const close = val.kind === "set" ? " |}" : val.kind === "tuple" ? " )" : "]";
+            const items = val.values || val.elements || [];
+            return open + items.map(stringify).join(", ") + close;
+        }
+        if (val.type === "set" || val.type === "tuple") {
+            const open = val.type === "set" ? "{| " : "( ";
+            const close = val.type === "set" ? " |}" : " )";
+            return open + val.values.map(stringify).join(", ") + close;
+        }
+        if (val.type === "map") {
+            const entries = [];
+            const mapObj = val.entries || val.elements || new Map();
+            mapObj.forEach((v, k) => {
+                entries.push(`${k}=${stringify(v)}`);
+            });
+            return `{= ${entries.join(", ")} }`;
+        }
+        if (val.type === "interval") return `${val.start || val.lo}:${val.end || val.hi}`;
+    }
+    return val.toString();
 }
 
 export const arithmeticFunctions = {
     ADD: {
         impl(args) {
-            const a = ensureNumeric(args[0]);
-            const b = ensureNumeric(args[1]);
-            return a.add(b);
+            const a = args[0];
+            const b = args[1];
+
+            // String concatenation support
+            const isStr = (v) => typeof v === "string" || (v && typeof v === "object" && v.type === "string");
+            const getStr = (v) => stringify(v);
+
+            if (isStr(a) || isStr(b)) {
+                return { type: "string", value: getStr(a) + getStr(b) };
+            }
+
+            const na = ensureNumeric(a);
+            const nb = ensureNumeric(b);
+            return na.add(nb);
         },
         pure: true,
-        doc: "Addition",
+        doc: "Addition or string concatenation",
     },
 
     SUB: {
@@ -122,5 +161,40 @@ export const arithmeticFunctions = {
         },
         pure: true,
         doc: "Negation",
+    },
+
+    ABS: {
+        impl(args) {
+            const a = ensureNumeric(args[0]);
+            return a instanceof Integer
+                ? new Integer(a.value < 0n ? -a.value : a.value)
+                : new Rational(a.numerator < 0n ? -a.numerator : a.numerator, a.denominator);
+        },
+        pure: true,
+        doc: "Absolute value",
+    },
+
+    SQRT: {
+        impl(args) {
+            const a = ensureNumeric(args[0]);
+            // Convert to number for Math.sqrt
+            const val = a instanceof Rational
+                ? Number(a.numerator) / Number(a.denominator)
+                : Number(a.toString());
+            const root = Math.sqrt(val);
+            // Convert back to Integer/Rational
+            if (Number.isInteger(root)) return new Integer(BigInt(root));
+            // Approximate rational
+            const str = root.toString();
+            const parts = str.split(".");
+            if (parts.length === 2) {
+                const den = 10n ** BigInt(parts[1].length);
+                const num = BigInt(parts[0]) * den + BigInt(parts[1]);
+                return new Rational(num, den);
+            }
+            return new Integer(BigInt(Math.floor(root)));
+        },
+        pure: true,
+        doc: "Square root (approximate rational)",
     },
 };

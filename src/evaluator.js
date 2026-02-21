@@ -18,6 +18,7 @@ import { collectionFunctions } from "./functions/collections.js";
 import { functionFunctions } from "./functions/functions.js";
 import { propertyFunctions } from "./functions/properties.js";
 import { advancedFunctions } from "./functions/advanced.js";
+import { stdlibFunctions } from "./functions/stdlib.js";
 
 /**
  * Create a default registry with all built-in system functions.
@@ -33,6 +34,7 @@ export function createDefaultRegistry() {
     registry.registerAll(functionFunctions);
     registry.registerAll(propertyFunctions);
     registry.registerAll(advancedFunctions);
+    registry.registerAll(stdlibFunctions);
     return registry;
 }
 
@@ -165,6 +167,19 @@ function defaultSystemLookup(name) {
         HELP: { type: "identifier" },
         LOAD: { type: "identifier" },
         UNLOAD: { type: "identifier" },
+        LEN: { type: "function", arity: 1 },
+        FIRST: { type: "function", arity: 1 },
+        LAST: { type: "function", arity: 1 },
+        GETEL: { type: "function", arity: 2 },
+        IRANGE: { type: "function", arity: 2 },
+        MAP: { type: "function", arity: 2 },
+        FILTER: { type: "function", arity: 2 },
+        REDUCE: { type: "function", arity: 3 },
+        MULTI: { type: "function", arity: -1 },
+        UPPER: { type: "function", arity: 1 },
+        SUBSTR: { type: "function", arity: 3 },
+        ASSIGN: { type: "function", arity: 2 },
+        GLOBAL: { type: "function", arity: 2 },
     };
     return builtins[name] || { type: "identifier" };
 }

@@ -47,7 +47,7 @@
 | `{+ a, b, c }` | `ADD` | N-ary addition or concatenation |
 | `{* a, b, c }` | `MUL` | N-ary multiplication |
 | `{&& a, b, c }` | `AND` | N-ary logical AND (short-circuits on falsy) |
-| `{|| a, b, c }` | `OR` | N-ary logical OR (short-circuits on truthy) |
+| `{\|\| a, b, c }` | `OR` | N-ary logical OR (short-circuits on truthy) |
 
 ### Deferred Syntax & System Aliases
 

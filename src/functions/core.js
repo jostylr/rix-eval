@@ -179,4 +179,43 @@ export const coreFunctions = {
         },
         doc: "REPL command dispatch (also handles parser-generated operator commands)",
     },
+
+    ASSIGN_EXPR: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            // Like ASSIGN, but used when the target is an expression (e.g. _1 = expr)
+            // args[0] = target (could be a placeholder or other lvalue)
+            // args[1] = value expression
+            const target = evaluate(args[0]);
+            const value = evaluate(args[1]);
+            // If target is a placeholder, just return the value
+            if (target && target.type === "placeholder") {
+                return value;
+            }
+            // If target is a string (variable name), assign it
+            if (typeof target === "string") {
+                context.set(target, value);
+            }
+            return value;
+        },
+        doc: "Assignment expression (lvalue = expr)",
+    },
+
+    BINOP: {
+        impl(args) {
+            // Fallback for unrecognized binary operators
+            const op = args[0];
+            const left = args[1];
+            const right = args[2];
+            return {
+                type: "binop",
+                operator: op,
+                left,
+                right,
+                message: `Unrecognized operator "${op}"`,
+            };
+        },
+        pure: true,
+        doc: "Fallback for unrecognized binary operators",
+    },
 };

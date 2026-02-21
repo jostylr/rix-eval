@@ -446,4 +446,225 @@ describe("RiX Evaluator", () => {
             expect(result.value).toBe(25n);
         });
     });
+
+    describe("Properties", () => {
+        test("map DOT access", () => {
+            const ctx = new Context();
+            const m = { type: "map", entries: new Map([["a", new Integer(42)]]) };
+            ctx.set("obj", m);
+            const result = evalRix("obj.a;", ctx);
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(42n);
+        });
+
+        test("array INDEX access (1-based)", () => {
+            const ctx = new Context();
+            const arr = { type: "sequence", values: [new Integer(10), new Integer(20), new Integer(30)] };
+            ctx.set("arr", arr);
+            const result = evalRix("arr[2];", ctx);
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(20n);
+        });
+
+        test("KEYS of a map", () => {
+            const ctx = new Context();
+            const m = { type: "map", entries: new Map([["x", new Integer(1)], ["y", new Integer(2)]]) };
+            ctx.set("obj", m);
+            const result = evalRix("obj.|;", ctx);
+            expect(result.type).toBe("set");
+            expect(result.values).toContain("x");
+            expect(result.values).toContain("y");
+        });
+
+        test("VALUES of a map", () => {
+            const ctx = new Context();
+            const m = { type: "map", entries: new Map([["a", new Integer(5)], ["b", new Integer(10)]]) };
+            ctx.set("obj", m);
+            const result = evalRix("obj|.;", ctx);
+            expect(result.type).toBe("set");
+            expect(result.values.length).toBe(2);
+        });
+
+        test("EXTALL returns empty map when no ext properties", () => {
+            const ctx = new Context();
+            const m = { type: "map", entries: new Map() };
+            ctx.set("obj", m);
+            const result = evalRix("obj..;", ctx);
+            expect(result.type).toBe("map");
+            expect(result.entries.size).toBe(0);
+        });
+    });
+
+    describe("Assertions", () => {
+        test("ASSERT_LT passes when a < b", () => {
+            const result = evalRix("3 :<: 5;");
+            expect(result.value).toBe(1n);
+        });
+
+        test("ASSERT_LT throws when not a < b", () => {
+            expect(() => evalRix("5 :<: 3;")).toThrow("Assertion failed");
+        });
+
+        test("ASSERT_GT passes when a > b", () => {
+            const result = evalRix("10 :>: 5;");
+            expect(result.value).toBe(1n);
+        });
+
+        test("ASSERT_GT throws when not a > b", () => {
+            expect(() => evalRix("3 :>: 5;")).toThrow("Assertion failed");
+        });
+    });
+
+    describe("Pipes", () => {
+        test("x |> F pipes value into function", () => {
+            const ctx = new Context();
+            const registry = createDefaultRegistry();
+            const code = "DOUBLE(x) :-> x * 2; 5 |> DOUBLE;";
+            const tokens = tokenize(code);
+            const ast = parse(tokens, systemLookup);
+            const irNodes = lower(ast);
+            let result;
+            for (const ir of irNodes) {
+                result = evaluate(ir, ctx, registry);
+            }
+            expect(result.value).toBe(10n);
+        });
+
+        test("[1,2,3] |>> DOUBLE pmap", () => {
+            const ctx = new Context();
+            const registry = createDefaultRegistry();
+            const code = "DOUBLE(x) :-> x * 2; [1, 2, 3] |>> DOUBLE;";
+            const tokens = tokenize(code);
+            const ast = parse(tokens, systemLookup);
+            const irNodes = lower(ast);
+            let result;
+            for (const ir of irNodes) {
+                result = evaluate(ir, ctx, registry);
+            }
+            expect(result.type).toBe("sequence");
+            expect(result.values.length).toBe(3);
+            expect(result.values[0].value).toBe(2n);
+            expect(result.values[1].value).toBe(4n);
+            expect(result.values[2].value).toBe(6n);
+        });
+
+        test("[1,2,3,4] |>? ISPOSITIVE pfilter", () => {
+            const ctx = new Context();
+            const registry = createDefaultRegistry();
+            const code = "ISPOSITIVE(x) :-> x > 0; [-1, 2, -3, 4] |>? ISPOSITIVE;";
+            const tokens = tokenize(code);
+            const ast = parse(tokens, systemLookup);
+            const irNodes = lower(ast);
+            let result;
+            for (const ir of irNodes) {
+                result = evaluate(ir, ctx, registry);
+            }
+            expect(result.type).toBe("sequence");
+            expect(result.values.length).toBe(2);
+            expect(result.values[0].value).toBe(2n);
+            expect(result.values[1].value).toBe(4n);
+        });
+    });
+
+    describe("Loops and Blocks", () => {
+        test("block with multiple statements returns last", () => {
+            const result = evalRix("{; 10; 20; 30 };");
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(30n);
+        });
+
+        test("block with variables", () => {
+            const result = evalRix("{; x = 5; y = 10; x * y };");
+            expect(result.value).toBe(50n);
+        });
+
+        test("nested ternary", () => {
+            const ctx = new Context();
+            evalRix("x = 15;", ctx);
+            const result = evalRix("x > 10 ?? 1 ?: x > 5 ?? 2 ?: 3;", ctx);
+            expect(result.value).toBe(1n);
+        });
+    });
+
+    describe("Recursive Functions", () => {
+        test("factorial via recursion", () => {
+            const ctx = new Context();
+            const registry = createDefaultRegistry();
+            const code = `
+                F(n) :-> n == 0 ?? 1 ?: n * F(n - 1);
+                F(5);
+            `;
+            const tokens = tokenize(code);
+            const ast = parse(tokens, systemLookup);
+            const irNodes = lower(ast);
+            let result;
+            for (const ir of irNodes) {
+                result = evaluate(ir, ctx, registry);
+            }
+            expect(result.value).toBe(120n);
+        });
+    });
+
+    describe("Multi-statement Programs", () => {
+        test("Fibonacci-style computation", () => {
+            const ctx = new Context();
+            const registry = createDefaultRegistry();
+            const code = `
+                a = 1;
+                b = 1;
+                c = a + b;
+                d = b + c;
+                e = c + d;
+                e;
+            `;
+            const tokens = tokenize(code);
+            const ast = parse(tokens, systemLookup);
+            const irNodes = lower(ast);
+            let result;
+            for (const ir of irNodes) {
+                result = evaluate(ir, ctx, registry);
+            }
+            expect(result.value).toBe(5n); // 1 1 2 3 5
+        });
+
+        test("function composition", () => {
+            const ctx = new Context();
+            const registry = createDefaultRegistry();
+            const code = `
+                DOUBLE(x) :-> x * 2;
+                SQUARE(x) :-> x ^ 2;
+                SQUARE(DOUBLE(3));
+            `;
+            const tokens = tokenize(code);
+            const ast = parse(tokens, systemLookup);
+            const irNodes = lower(ast);
+            let result;
+            for (const ir of irNodes) {
+                result = evaluate(ir, ctx, registry);
+            }
+            expect(result.value).toBe(36n); // (3*2)^2 = 36
+        });
+
+        test("rational arithmetic", () => {
+            const ctx = new Context();
+            const registry = createDefaultRegistry();
+            const code = `
+                a = 1/3;
+                b = 1/6;
+                a + b;
+            `;
+            const tokens = tokenize(code);
+            const ast = parse(tokens, systemLookup);
+            const irNodes = lower(ast);
+            let result;
+            for (const ir of irNodes) {
+                result = evaluate(ir, ctx, registry);
+            }
+            // 1/3 + 1/6 = 1/2
+            expect(result).toBeInstanceOf(Rational);
+            expect(result.numerator).toBe(1n);
+            expect(result.denominator).toBe(2n);
+        });
+    });
 });
+

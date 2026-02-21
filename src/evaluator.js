@@ -16,6 +16,8 @@ import { logicFunctions } from "./functions/logic.js";
 import { controlFunctions } from "./functions/control.js";
 import { collectionFunctions } from "./functions/collections.js";
 import { functionFunctions } from "./functions/functions.js";
+import { propertyFunctions } from "./functions/properties.js";
+import { advancedFunctions } from "./functions/advanced.js";
 
 /**
  * Create a default registry with all built-in system functions.
@@ -29,6 +31,8 @@ export function createDefaultRegistry() {
     registry.registerAll(controlFunctions);
     registry.registerAll(collectionFunctions);
     registry.registerAll(functionFunctions);
+    registry.registerAll(propertyFunctions);
+    registry.registerAll(advancedFunctions);
     return registry;
 }
 

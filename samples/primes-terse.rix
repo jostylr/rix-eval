@@ -1,0 +1,21 @@
+## Primes — Terse Syntax ##
+## Uses {? } for IF ##
+
+HasDivisor(n, divs) -> REDUCE(
+  MAP(divs, (d) -> EQ(MOD(n, d), 0)),
+  (acc, val) -> acc OR val,
+  0
+)
+
+IsPrime(n) -> {? n < 2 ; 0 ;
+  {? n == 2 ; 1 ;
+    NOT(HasDivisor(n, IRANGE(2, SQRT(n) // 1)))
+  }
+}
+
+primes = FILTER(IRANGE(1, 50), IsPrime)
+
+PRINT(
+  "Primes up to 50: " + primes,
+  "Count: " + LEN(primes)
+)

@@ -161,4 +161,33 @@ export const stdlibFunctions = {
         pure: true,
         doc: "Get substring",
     },
+
+    // --- I/O ---
+    PRINT: {
+        impl(args) {
+            function stringify(val) {
+                if (val === null || val === undefined) return "null";
+                if (typeof val === "object" && val !== null) {
+                    if (val.type === "string") return val.value;
+                    if (val.type === "sequence" || val.type === "set" || val.type === "tuple") {
+                        const open = val.type === "set" ? "{| " : val.type === "tuple" ? "( " : "[";
+                        const close = val.type === "set" ? " |}" : val.type === "tuple" ? " )" : "]";
+                        return open + (val.values || []).map(stringify).join(", ") + close;
+                    }
+                    if (val.type === "map") {
+                        const entries = [];
+                        (val.entries || new Map()).forEach((v, k) => entries.push(`${k}=${stringify(v)}`));
+                        return `{= ${entries.join(", ")} }`;
+                    }
+                    if (val.type === "interval") return `${val.start || val.lo}:${val.end || val.hi}`;
+                }
+                return val.toString();
+            }
+            for (const arg of args) {
+                console.log(stringify(arg));
+            }
+            return null;
+        },
+        doc: "Print each argument on a separate line to console",
+    },
 };

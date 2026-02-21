@@ -13,7 +13,7 @@ StepsToOne(n) -> CollatzLen(n, 0)
 ## Test with the infamous 27
 len27 = StepsToOne(27)
 
-MULTI(
+PRINT(
   "Collatz steps for 27: " + len27,
   "Sequence (first 5): " + [27, NextCollatz(27), NextCollatz(NextCollatz(27)), NextCollatz(NextCollatz(NextCollatz(27))), NextCollatz(NextCollatz(NextCollatz(NextCollatz(27))))]
 )

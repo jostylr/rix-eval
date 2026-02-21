@@ -180,6 +180,7 @@ function defaultSystemLookup(name) {
         SUBSTR: { type: "function", arity: 3 },
         ASSIGN: { type: "function", arity: 2 },
         GLOBAL: { type: "function", arity: 2 },
+        PRINT: { type: "function", arity: -1 },
     };
     return builtins[name] || { type: "identifier" };
 }

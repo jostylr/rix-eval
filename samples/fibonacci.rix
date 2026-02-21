@@ -26,8 +26,8 @@ FibIter(n) -> MULTI(
 f10Rec = FibRec(10)  ## 55
 f10Iter = FibIter(10) ## 55
 
-MULTI(
+PRINT(
   "Fib(10) Recursive: " + f10Rec,
   "Fib(10) Iterative: " + f10Iter,
-  EQ(f10Rec, f10Iter) ## Check parity (should be 1)
+  "Match: " + EQ(f10Rec, f10Iter)
 )

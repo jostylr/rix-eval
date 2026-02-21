@@ -18,8 +18,7 @@ IsPrime(n) -> IF(n < 2, 0,
 ## Find all primes up to 50
 primes = FILTER(IRANGE(1, 50), IsPrime)
 
-## Output results
-MULTI(
+PRINT(
   "Primes up to 50: " + primes,
   "Count: " + LEN(primes)
 )

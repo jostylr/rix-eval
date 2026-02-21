@@ -19,7 +19,7 @@ m = Mean(data)
 v = Variance(data)
 s = SQRT(v)
 
-MULTI(
+PRINT(
   "Data: " + data,
   "Mean: " + m,
   "Variance: " + v,

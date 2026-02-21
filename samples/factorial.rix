@@ -9,10 +9,7 @@ val5 = Fact(5)   ## Expected: 120
 val10 = Fact(10) ## Expected: 3628800
 
 ## Output results
-MULTI(
+PRINT(
   "Factorial of 5: " + val5,
   "Factorial of 10: " + val10
 )
-
-## Final return value
-val10

@@ -1,0 +1,15 @@
+## Collatz — Terse Syntax ##
+## Uses {? } for IF and PRINT for output ##
+
+NextCollatz(n) -> {? MOD(n, 2) == 0 ; n / 2 ; 3 * n + 1 }
+
+CollatzLen(n, count) -> {? n == 1 ; count ; CollatzLen(NextCollatz(n), count + 1) }
+
+StepsToOne(n) -> CollatzLen(n, 0)
+
+len27 = StepsToOne(27)
+
+PRINT(
+  "Collatz steps for 27: " + len27,
+  "Sequence (first 5): " + [27, NextCollatz(27), NextCollatz(NextCollatz(27)), NextCollatz(NextCollatz(NextCollatz(27))), NextCollatz(NextCollatz(NextCollatz(NextCollatz(27))))]
+)

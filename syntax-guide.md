@@ -54,12 +54,11 @@
 | `coll \|>> fn` | `PMAP` | Map `fn` over collection |
 | `coll \|>? pred` | `PFILTER` | Filter collection by predicate |
 | `coll \|>: fn` | `PREDUCE` | Reduce (first element as init) |
+| `coll \|:> init >: fn` | `PREDUCE` | Reduce with explicit initial value |
 | `coll \|><` | `PREVERSE` | Reverse collection (new copy) |
 | `coll \|<> fn` | `PSORT` | Sort with comparator (new copy) |
 
 All pipe operators return **new** collections; they never mutate the original.
-
-For reduce with an explicit initial value, use `REDUCE(coll, fn, init)`.
 
 ### Sequence Generation (inside `[...]`)
 
@@ -185,7 +184,7 @@ For reduce with an explicit initial value, use `REDUCE(coll, fn, init)`.
 | `PIPE(val, fn)` | Pipe value into function | `val \|> fn` |
 | `PMAP(coll, fn)` | Map function over collection | `coll \|>> fn`, `MAP(coll, fn)` |
 | `PFILTER(coll, pred)` | Filter by predicate | `coll \|>? pred`, `FILTER(coll, pred)` |
-| `PREDUCE(coll, fn, init)` | Reduce/fold | `coll \|>: fn`, `REDUCE(coll, fn, init)` |
+| `PREDUCE(coll, fn, init)` | Reduce/fold | `coll \|>: fn`, `coll \|:> init >: fn`, `REDUCE(coll, fn, init)` |
 | `PREVERSE(coll)` | Reverse collection (new copy) | `coll \|><` |
 | `PSORT(coll, fn)` | Sort with comparator (new copy) | `coll \|<> fn` |
 

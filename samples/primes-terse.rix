@@ -2,11 +2,7 @@
 ## Uses operator syntax: %, ==, OR, NOT, //, {? } ##
 
 ## Predicate: Does 'n' have any divisor in list 'divs'?
-HasDivisor(n, divs) -> REDUCE(
-  MAP(divs, (d) -> n % d == 0),
-  (acc, val) -> acc OR val,
-  0
-)
+HasDivisor(n, divs) -> (divs |>> (d) -> n % d == 0 |:> 0 >: (acc, val) -> acc OR val)
 
 ## Predicate: Is 'n' prime?
 IsPrime(n) -> {?
@@ -15,8 +11,7 @@ IsPrime(n) -> {?
   NOT(HasDivisor(n, IRANGE(2, SQRT(n) // 1)))
 }
 
-## Find all primes up to 50
-primes = FILTER(IRANGE(1, 50), IsPrime)
+primes = IRANGE(1, 50) |>? IsPrime;
 
 PRINT(
   "Primes up to 50: " + primes,

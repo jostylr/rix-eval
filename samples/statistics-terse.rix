@@ -3,19 +3,19 @@
 
 Sum(acc, val) -> acc + val
 
-Mean(list) -> REDUCE(list, Sum, 0) / LEN(list)
+Mean(list) -> (list |:> 0 >: Sum) / LEN(list)
 
 Variance(list) -> {;
   avg := Mean(list);
-  sqDiffs := MAP(list, (x) -> (x - avg) ^ 2);
-  REDUCE(sqDiffs, Sum, 0) / LEN(list)
+  sqDiffs := list |>> (x) -> (x - avg) ^ 2;
+  (sqDiffs |:> 0 >: Sum) / LEN(list)
 }
 
 data = [10, 20, 30, 40, 50, 60]
 
 m = Mean(data);
 v = Variance(data);
-s = SQRT(v)
+s = SQRT(v);
 
 PRINT(
   "Data: " + data,

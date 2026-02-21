@@ -564,6 +564,32 @@ describe("RiX Evaluator", () => {
             expect(result.values[0].value).toBe(2n);
             expect(result.values[1].value).toBe(4n);
         });
+
+        test("[1,2,3] |>: (acc, val) -> acc + val preduce without init", () => {
+            const result = evalRix("[1, 2, 3, 4] |>: (acc, val) -> acc + val;");
+            expect(result.value).toBe(10n);
+        });
+
+        test("[1,2,3] |:> 10 >: (acc, val) -> acc + val preduce with init", () => {
+            const result = evalRix("[1, 2, 3, 4] |:> 10 >: (acc, val) -> acc + val;");
+            expect(result.value).toBe(20n);
+        });
+
+        test("[1,2,3] |>< reverse mapped", () => {
+            const result = evalRix("[3, 1, 4] |><;");
+            expect(result.type).toBe("sequence");
+            expect(result.values[0].value).toBe(4n);
+            expect(result.values[1].value).toBe(1n);
+            expect(result.values[2].value).toBe(3n);
+        });
+
+        test("[3,1,4] |<> sort mapped", () => {
+            const result = evalRix("[3, 1, 4] |<> (a, b) -> a - b;");
+            expect(result.type).toBe("sequence");
+            expect(result.values[0].value).toBe(1n);
+            expect(result.values[1].value).toBe(3n);
+            expect(result.values[2].value).toBe(4n);
+        });
     });
 
     describe("Loops and Blocks", () => {

@@ -383,6 +383,9 @@ const LOWERERS = {
   },
 
   Reduce(node) {
+    if (node.init) {
+      return ir("PREDUCE", lowerNode(node.left), lowerNode(node.right), lowerNode(node.init));
+    }
     return ir("PREDUCE", lowerNode(node.left), lowerNode(node.right));
   },
 

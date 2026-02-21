@@ -22,9 +22,11 @@ function boolToInt(val) {
 
 export const logicFunctions = {
     AND: {
-        impl(args) {
+        lazy: true,
+        impl(args, ctx, evaluate) {
             for (const arg of args) {
-                if (!isTruthy(arg)) return boolToInt(false);
+                const val = evaluate(arg);
+                if (!isTruthy(val)) return boolToInt(false);
             }
             return boolToInt(true);
         },
@@ -33,9 +35,11 @@ export const logicFunctions = {
     },
 
     OR: {
-        impl(args) {
+        lazy: true,
+        impl(args, ctx, evaluate) {
             for (const arg of args) {
-                if (isTruthy(arg)) return boolToInt(true);
+                const val = evaluate(arg);
+                if (isTruthy(val)) return boolToInt(true);
             }
             return boolToInt(false);
         },

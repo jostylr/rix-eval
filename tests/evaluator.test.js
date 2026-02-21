@@ -300,6 +300,30 @@ describe("RiX Evaluator", () => {
             expect(result.value).toBe(0n);
         });
 
+        test("short-circuit AND", () => {
+            const ctx = new Context();
+            // undeclared is not evaluated because 0 is falsy
+            const result = evalRix("0 AND undeclared;", ctx);
+            expect(result.value).toBe(0n);
+        });
+
+        test("short-circuit OR", () => {
+            const ctx = new Context();
+            // undeclared is not evaluated because 1 is truthy
+            const result = evalRix("1 OR undeclared;", ctx);
+            expect(result.value).toBe(1n);
+        });
+
+        test("n-ary {&& 1, 1, 0} = 0", () => {
+            const result = evalRix("{&& 1, 1, 0};");
+            expect(result.value).toBe(0n);
+        });
+
+        test("n-ary {|| 0, 0, 1} = 1", () => {
+            const result = evalRix("{|| 0, 0, 1};");
+            expect(result.value).toBe(1n);
+        });
+
         test("NOT 0 = 1", () => {
             // Use in expression context so NOT is parsed as prefix operator
             const ctx = new Context();
@@ -395,6 +419,11 @@ describe("RiX Evaluator", () => {
                 result = evaluate(ir, ctx, registry);
             }
             expect(result.type).toBe("lambda");
+        });
+
+        test("@+ system function retrieval", () => {
+            const result = evalRix("F = @+; F(10, 20);");
+            expect(result.value).toBe(30n);
         });
     });
 

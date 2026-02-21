@@ -46,6 +46,16 @@
 | `{: a, b, c }` | `TUPLE` | Tuple literal |
 | `{+ a, b, c }` | `ADD` | N-ary addition or concatenation |
 | `{* a, b, c }` | `MUL` | N-ary multiplication |
+| `{&& a, b, c }` | `AND` | N-ary logical AND (short-circuits on falsy) |
+| `{|| a, b, c }` | `OR` | N-ary logical OR (short-circuits on truthy) |
+
+### Deferred Syntax & System Aliases
+
+| Syntax | Description | Example |
+|--------|-------------|---------|
+| `@{; ... }` | Deferred block (returns AST tree, does not evaluate) | `f = @{; x + 1 }` |
+| `@{= ... }` | Deferred map | `lazyMap = @{= a=1 }` |
+| `@+, @*, @<`, etc | System function retrieval | `f = @+; f(10, 20)` evaluates to `30` |
 
 ### Pipe Operators
 

@@ -88,6 +88,9 @@ const LOWERERS = {
   },
 
   SystemIdentifier(node) {
+    if (node.original && node.original.trim().startsWith("@")) {
+      return ir("SYSREF", node.name);
+    }
     return ir("RETRIEVE", node.name);
   },
 

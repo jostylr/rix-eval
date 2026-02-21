@@ -374,6 +374,61 @@ export const functionFunctions = {
         doc: "Reduce a collection with an accumulator function",
     },
 
+    PREVERSE: {
+        impl(args) {
+            const collection = args[0];
+            if (!collection || !collection.values) {
+                throw new Error("PREVERSE requires a collection");
+            }
+            return { type: collection.type || "sequence", values: [...collection.values].reverse() };
+        },
+        pure: true,
+        doc: "Reverse a collection (returns new copy)",
+    },
+
+    PSORT: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const collection = evaluate(args[0]);
+            const funcNode = args[1];
+
+            if (!collection || !collection.values) {
+                throw new Error("PSORT requires a collection");
+            }
+
+            const func = evaluate(funcNode);
+            const sorted = [...collection.values].sort((a, b) => {
+                if (func && (func.type === "function" || func.type === "lambda")) {
+                    const scope = new Map();
+                    if (func.params?.positional?.length >= 2) {
+                        scope.set(func.params.positional[0].name, a);
+                        scope.set(func.params.positional[1].name, b);
+                    }
+                    context.push(scope);
+                    try {
+                        const result = evaluate(func.body);
+                        if (result instanceof Integer) return Number(result.value);
+                        if (typeof result === "number") return result;
+                        return 0;
+                    } finally {
+                        context.pop();
+                    }
+                }
+                if (typeof func === "function") {
+                    const result = func(a, b);
+                    return typeof result === "number" ? result : 0;
+                }
+                // Default: numeric sort
+                const na = a instanceof Integer ? Number(a.value) : Number(a);
+                const nb = b instanceof Integer ? Number(b.value) : Number(b);
+                return na - nb;
+            });
+
+            return { type: collection.type || "sequence", values: sorted };
+        },
+        doc: "Sort a collection with comparator function (returns new copy)",
+    },
+
     KWARG: {
         impl(args) {
             // Keyword argument: just return a tagged pair

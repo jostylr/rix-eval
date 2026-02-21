@@ -53,7 +53,27 @@
 | `x \|\|> F(_1)` | `PIPE_EXPLICIT` | Pipe with explicit placeholder |
 | `coll \|>> fn` | `PMAP` | Map `fn` over collection |
 | `coll \|>? pred` | `PFILTER` | Filter collection by predicate |
-| `coll \|>: fn` | `PREDUCE` | Reduce collection with function |
+| `coll \|>: fn` | `PREDUCE` | Reduce (first element as init) |
+| `coll \|><` | `PREVERSE` | Reverse collection (new copy) |
+| `coll \|<> fn` | `PSORT` | Sort with comparator (new copy) |
+
+All pipe operators return **new** collections; they never mutate the original.
+
+For reduce with an explicit initial value, use `REDUCE(coll, fn, init)`.
+
+### Sequence Generation (inside `[...]`)
+
+| Syntax | Description | Example |
+|--------|-------------|---------|
+| `\|+n` | Add `n` to previous (arithmetic) | `[2, \|+2, \|; 5]` → `[2,4,6,8,10]` |
+| `\|*n` | Multiply previous by `n` (geometric) | `[1, \|*3, \|; 4]` → `[1,3,9,27]` |
+| `\|:f` | Generator by index | `[\|: (i) -> i^2, \|; 5]` → `[0,1,4,9,16]` |
+| `\|>f` | Pipe previous values (recursion) | `[1,1, \|>(a,b)->a+b, \|; 7]` |
+| `\|?p` | Filter predicate | `[1,2,3,4, \|? (x)->x%2==0]` |
+| `\|;n` | Stop after `n` elements (eager) | `[2, \|+2, \|; 5]` |
+| `\|;f` | Stop when `f` returns true | `[2, \|+2, \|; (x)->x>10]` |
+| `\|^n` | Lazy generator, limit `n` | `[1, \|+1, \|^ 1000]` |
+| `\|^f` | Lazy, stop when `f` true | `[2, \|+2, \|^ (x)->x>100]` |
 
 ### Collection Syntax
 
@@ -166,6 +186,8 @@
 | `PMAP(coll, fn)` | Map function over collection | `coll \|>> fn`, `MAP(coll, fn)` |
 | `PFILTER(coll, pred)` | Filter by predicate | `coll \|>? pred`, `FILTER(coll, pred)` |
 | `PREDUCE(coll, fn, init)` | Reduce/fold | `coll \|>: fn`, `REDUCE(coll, fn, init)` |
+| `PREVERSE(coll)` | Reverse collection (new copy) | `coll \|><` |
+| `PSORT(coll, fn)` | Sort with comparator (new copy) | `coll \|<> fn` |
 
 ### Functions
 

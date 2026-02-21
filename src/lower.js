@@ -386,6 +386,14 @@ const LOWERERS = {
     return ir("PREDUCE", lowerNode(node.left), lowerNode(node.right));
   },
 
+  Reverse(node) {
+    return ir("PREVERSE", lowerNode(node.target));
+  },
+
+  Sort(node) {
+    return ir("PSORT", lowerNode(node.left), lowerNode(node.right));
+  },
+
   // === Ternary ===
 
   TernaryOperation(node) {

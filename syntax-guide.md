@@ -150,7 +150,7 @@ All pipe operators return **new** collections; they never mutate the original.
 
 | Function | Description | Syntax Aliases |
 |----------|-------------|----------------|
-| `EQ(a, b)` | Equal (returns 1 or 0) | `a == b`, `a ?= b` |
+| `EQ(a, b)` | Equal (returns 1 or null _ ) | `a == b`, `a ?= b` |
 | `NEQ(a, b)` | Not equal | `a != b` |
 | `LT(a, b)` | Less than | `a < b`, `a ?< b` |
 | `GT(a, b)` | Greater than | `a > b`, `a ?> b` |

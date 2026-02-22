@@ -2,7 +2,7 @@
  * Core system functions: LITERAL, STRING, NULL, RETRIEVE, ASSIGN, NOP, SYSREF, GLOBAL
  */
 
-import { Integer, Rational, RationalInterval } from "@ratmath/core";
+import { Integer, Rational, RationalInterval, BaseSystem } from "@ratmath/core";
 
 /**
  * Parse a number literal string into a ratmath type.
@@ -12,18 +12,112 @@ import { Integer, Rational, RationalInterval } from "@ratmath/core";
 function parseLiteral(str) {
     if (typeof str !== "string") return str;
 
-    // Integer
+    // Helper for base parsing
+    const parseWithBase = (numStr, baseSystem) => {
+        if (baseSystem.base <= 36 && baseSystem.name !== "Roman Numerals") {
+            numStr = numStr.toLowerCase();
+        }
+
+        // Decimal form: a.b
+        if (numStr.includes(".")) {
+            const parts = numStr.split(".");
+            const intStr = parts[0] || "0";
+            const fracStr = parts[1];
+
+            const sign = numStr.startsWith("-") ? -1n : 1n;
+            const absIntStr = intStr.startsWith("-") ? intStr.slice(1) : intStr;
+
+            const intVal = baseSystem.toDecimal(absIntStr);
+            const fracVal = fracStr ? baseSystem.toDecimal(fracStr) : 0n;
+            const den = BigInt(baseSystem.base) ** BigInt(fracStr ? fracStr.length : 0);
+            const num = sign * (intVal * den + fracVal);
+            return new Rational(num, den);
+        }
+
+        // Rational form: a/b (tokenizer ensures no spaces)
+        if (numStr.includes("/")) {
+            // Might have mixed: a..b/c
+            if (numStr.includes("..")) {
+                const mixedParts = numStr.split("..");
+                const wholeStr = mixedParts[0];
+                const fracParts = mixedParts[1].split("/");
+
+                const sign = wholeStr.startsWith("-") ? -1n : 1n;
+                const absWholeStr = wholeStr.startsWith("-") ? wholeStr.slice(1) : wholeStr;
+
+                // Allow inner prefixes? For simplicity assume inner parts use the outer base or explicitly prefix
+                // e.g. 0xA..B/C -> extract A, B, C
+                const getVal = (s) => {
+                    const m = s.match(/^(?:0[a-zA-Z]|0z\[\d+\])?(.*)$/);
+                    return baseSystem.toDecimal(m ? m[1] : s);
+                };
+
+                const whole = getVal(absWholeStr);
+                const num = getVal(fracParts[0]);
+                const den = getVal(fracParts[1]);
+
+                return new Rational(sign * (whole * den + num), den);
+            } else {
+                const fracParts = numStr.split("/");
+
+                const sign = fracParts[0].startsWith("-") ? -1n : 1n;
+                const absNumStr = fracParts[0].startsWith("-") ? fracParts[0].slice(1) : fracParts[0];
+
+                const getVal = (s) => {
+                    const m = s.match(/^(?:0[a-zA-Z]|0z\[\d+\])?(.*)$/);
+                    return baseSystem.toDecimal(m ? m[1] : s);
+                };
+
+                const num = getVal(absNumStr);
+                const den = getVal(fracParts[1]);
+                return new Rational(sign * num, den);
+            }
+        }
+
+        // Integer form
+        return new Integer(baseSystem.toDecimal(numStr));
+    };
+
+    let baseSystem = null;
+    let valueStr = str;
+    let isNegative = str.startsWith("-");
+    const posStr = isNegative ? str.slice(1) : str;
+
+    // Check for 0z[N]
+    const customMatch = posStr.match(/^0z\[(\d+)\](.*)$/);
+    if (customMatch) {
+        baseSystem = BaseSystem.fromBase(parseInt(customMatch[1]));
+        valueStr = (isNegative ? "-" : "") + customMatch[2];
+    } else {
+        // Check for 0x, 0b, 0v, etc.
+        const prefixMatch = posStr.match(/^0([a-zA-Z])(.*)$/);
+        if (prefixMatch) {
+            const prefix = prefixMatch[1];
+            baseSystem = BaseSystem.getSystemForPrefix(prefix);
+            if (baseSystem) {
+                valueStr = (isNegative ? "-" : "") + prefixMatch[2];
+            }
+        }
+    }
+
+    if (baseSystem) {
+        // We know it's a base literal, so if it fails, throw the actual error
+        // instead of silently falling back to a string literal.
+        return parseWithBase(valueStr, baseSystem);
+    }
+
+    // Default Decimal Integer
     if (/^-?\d+$/.test(str)) {
         return new Integer(str);
     }
 
-    // Rational: a/b or -a/b
+    // Default Decimal Rational: a/b or -a/b
     const ratMatch = str.match(/^(-?\d+)\/(\d+)$/);
     if (ratMatch) {
         return new Rational(BigInt(ratMatch[1]), BigInt(ratMatch[2]));
     }
 
-    // Mixed number: a..b/c
+    // Default Decimal Mixed number: a..b/c
     const mixedMatch = str.match(/^(-?\d+)\.\.(\d+)\/(\d+)$/);
     if (mixedMatch) {
         const whole = BigInt(mixedMatch[1]);
@@ -34,7 +128,7 @@ function parseLiteral(str) {
         return new Rational(sign * (absWhole * den + num), den);
     }
 
-    // Decimal
+    // Default Decimal
     if (/^-?\d+\.\d+$/.test(str)) {
         const parts = str.split(".");
         const sign = parts[0].startsWith("-") ? -1n : 1n;
@@ -45,27 +139,11 @@ function parseLiteral(str) {
         return new Rational(num, den);
     }
 
-    // Hex: 0xFF
-    if (/^0[xX][0-9a-fA-F]+$/.test(str)) {
-        return new Integer(BigInt(str));
-    }
-
-    // Binary: 0b101
-    if (/^0[bB][01]+$/.test(str)) {
-        return new Integer(BigInt(str));
-    }
-
-    // Octal: 0o77
-    if (/^0[oO][0-7]+$/.test(str)) {
-        return new Integer(BigInt(str));
-    }
-
     // Fallback: try as integer
     try {
         return new Integer(str);
     } catch {
-        // Return as string if we can't parse it
-        return str;
+        throw new Error(`Invalid number format: ${str}`);
     }
 }
 

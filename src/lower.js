@@ -34,7 +34,6 @@ const BINARY_OP_MAP = {
   "&&": "AND",
   "OR": "OR",
   "||": "OR",
-  ":": "INTERVAL",
   "/^": "DIVUP",
   "/~": "DIVROUND",
   "/%": "DIVMOD",
@@ -177,6 +176,21 @@ const LOWERERS = {
     }
     if (op === ":<=:") {
       return ir("ASSERT_LTE", lowerNode(node.left), lowerNode(node.right));
+    }
+
+    if (op === ":") {
+      const args = [];
+      const extractArgs = (n) => {
+        if (n && n.type === "BinaryOperation" && n.operator === ":") {
+          extractArgs(n.left);
+          extractArgs(n.right);
+        } else {
+          args.push(lowerNode(n));
+        }
+      };
+      extractArgs(node.left);
+      extractArgs(node.right);
+      return ir("INTERVAL", ...args);
     }
 
     // Condition operator

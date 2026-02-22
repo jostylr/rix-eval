@@ -326,8 +326,8 @@ describe("Lowering Pass", () => {
       expect(ir.args.length).toBe(3);
     });
 
-    test("{| 1, 2, 3 } → SET", () => {
-      const ir = L("{| 1, 2, 3 };");
+    test("{| 1, 2, 3 |} → SET", () => {
+      const ir = L("{| 1, 2, 3 |};");
       expect(ir.fn).toBe("SET");
       expect(ir.args.length).toBe(3);
     });

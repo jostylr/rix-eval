@@ -94,6 +94,7 @@ All pipe operators return **new** collections; they never mutate the original.
 |--------|----------------|---------|
 | `[a, b, c]` | `ARRAY` | `[1, 2, 3]` |
 | `a:b` | `INTERVAL` | `1:10` |
+| `a:b:c` | `INTERVAL` | `2:3:5` (betweenness) |
 
 ### Assertions
 
@@ -181,10 +182,10 @@ All pipe operators return **new** collections; they never mutate the original.
 | Function | Description | Syntax Aliases |
 |----------|-------------|----------------|
 | `ARRAY(elems...)` | Create sequence | `[a, b, c]` |
-| `SET(elems...)` | Create set | `{| a, b, c }` |
+| `SET(elems...)` | Create set | `{\| a, b, c \|}` |
 | `TUPLE(elems...)` | Create tuple | `{: a, b, c }` |
 | `MAP(pairs...)` | Create map/object | `{= k=v, ... }` |
-| `INTERVAL(lo, hi)` | Create interval | `a:b` |
+| `INTERVAL(args...)` | Create interval or check betweenness | `a:b` or `a:b:c` |
 | `LEN(coll)` | Length of collection/string | — |
 | `FIRST(coll)` | First element | — |
 | `LAST(coll)` | Last element | — |

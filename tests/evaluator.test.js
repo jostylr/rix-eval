@@ -524,7 +524,13 @@ describe("RiX Evaluator", () => {
             expect(result.values[0].value).toBe(1n);
         });
 
-        test("set literal", () => {
+        test("set literal with |} closer", () => {
+            const result = evalRix("{| 1, 2, 3 |};");
+            expect(result.type).toBe("set");
+            expect(result.values.length).toBe(3);
+        });
+
+        test("set literal with } closer", () => {
             const result = evalRix("{| 1, 2, 3 };");
             expect(result.type).toBe("set");
             expect(result.values.length).toBe(3);
@@ -534,6 +540,38 @@ describe("RiX Evaluator", () => {
             const result = evalRix("{: 1, 2, 3 };");
             expect(result.type).toBe("tuple");
             expect(result.values.length).toBe(3);
+        });
+
+        test("betweenness: 2:3:5 = 1", () => {
+            const result = evalRix("2:3:5;");
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(1n);
+        });
+
+        test("betweenness: 5:3:2 = 1 (descending)", () => {
+            const result = evalRix("5:3:2;");
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(1n);
+        });
+
+        test("betweenness: 2:4:3 = null", () => {
+            const result = evalRix("2:4:3;");
+            expect(result).toBeNull();
+        });
+
+        test("betweenness: 3:3:4 = 1 (inclusive)", () => {
+            const result = evalRix("3:3:4;");
+            expect(result.value).toBe(1n);
+        });
+
+        test("betweenness with sets: 2:{|3, 4|}:5 = 1", () => {
+            const result = evalRix("2:{|3, 4|}:5;");
+            expect(result.value).toBe(1n);
+        });
+
+        test("betweenness with sets failure: 2:{|3, 6|}:5 = null", () => {
+            const result = evalRix("2:{|3, 6|}:5;");
+            expect(result).toBeNull();
         });
     });
 

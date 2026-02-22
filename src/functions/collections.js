@@ -111,34 +111,110 @@ export const collectionFunctions = {
 
     INTERVAL: {
         impl(args) {
-            const lo = args[0];
-            const hi = args[1];
+            if (args.length === 2) {
+                const lo = args[0];
+                const hi = args[1];
 
-            // Try to create a proper RationalInterval if both are ratmath types
-            try {
-                let loRat, hiRat;
-                if (lo instanceof Integer) {
-                    loRat = new Rational(lo.value, 1n);
-                } else if (lo instanceof Rational) {
-                    loRat = lo;
+                // Try to create a proper RationalInterval if both are ratmath types
+                try {
+                    let loRat, hiRat;
+                    if (lo instanceof Integer) {
+                        loRat = new Rational(lo.value, 1n);
+                    } else if (lo instanceof Rational) {
+                        loRat = lo;
+                    }
+
+                    if (hi instanceof Integer) {
+                        hiRat = new Rational(hi.value, 1n);
+                    } else if (hi instanceof Rational) {
+                        hiRat = hi;
+                    }
+
+                    if (loRat && hiRat) {
+                        return new RationalInterval(loRat, hiRat);
+                    }
+                } catch {
+                    // Fall through to generic
                 }
 
-                if (hi instanceof Integer) {
-                    hiRat = new Rational(hi.value, 1n);
-                } else if (hi instanceof Rational) {
-                    hiRat = hi;
-                }
-
-                if (loRat && hiRat) {
-                    return new RationalInterval(loRat, hiRat);
-                }
-            } catch {
-                // Fall through to generic
+                return { type: "interval", lo, hi };
             }
 
-            return { type: "interval", lo, hi };
+            // Betweenness check for 3 or more arguments
+            const getValues = (arg) => {
+                if (arg && arg.type === "set" && Array.isArray(arg.values)) {
+                    return arg.values;
+                }
+                return [arg];
+            };
+
+            const compare = (a, b) => {
+                let aRat, bRat;
+                try {
+                    if (a && typeof a === 'object' && a.constructor.name === 'Integer') {
+                        aRat = new Rational(a.value, 1n);
+                    } else if (a instanceof Rational) {
+                        aRat = a;
+                    } else if (typeof a === 'number' || typeof a === 'bigint' || typeof a === 'string') {
+                        aRat = new Rational(a);
+                    }
+
+                    if (b && typeof b === 'object' && b.constructor.name === 'Integer') {
+                        bRat = new Rational(b.value, 1n);
+                    } else if (b instanceof Rational) {
+                        bRat = b;
+                    } else if (typeof b === 'number' || typeof b === 'bigint' || typeof b === 'string') {
+                        bRat = new Rational(b);
+                    }
+
+                    if (aRat && bRat) {
+                        return aRat.compareTo(bRat);
+                    }
+                } catch {
+                    // Fallback to JS comparison below
+                }
+                if (a < b) return -1;
+                if (a > b) return 1;
+                return 0;
+            };
+
+            let allAscending = true;
+            let allDescending = true;
+
+            const checkPaths = (idx, currentVal, direction) => {
+                if (idx === args.length) return true;
+
+                const nextVals = getValues(args[idx]);
+                for (const nextVal of nextVals) {
+                    const cmp = compare(currentVal, nextVal);
+                    if (direction === 1 && cmp > 0) return false;
+                    if (direction === -1 && cmp < 0) return false;
+
+                    if (!checkPaths(idx + 1, nextVal, direction)) {
+                        return false;
+                    }
+                }
+                return true;
+            };
+
+            const firstVals = getValues(args[0]);
+
+            for (const firstVal of firstVals) {
+                if (allAscending && !checkPaths(1, firstVal, 1)) {
+                    allAscending = false;
+                }
+                if (allDescending && !checkPaths(1, firstVal, -1)) {
+                    allDescending = false;
+                }
+                if (!allAscending && !allDescending) break;
+            }
+
+            if (allAscending || allDescending) {
+                return new Integer(1);
+            }
+            return null;
         },
         pure: true,
-        doc: "Create an interval [lo, hi]",
+        doc: "Create an interval [lo, hi] or test betweenness like a:b:c",
     },
 };

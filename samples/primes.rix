@@ -5,11 +5,11 @@
 HasDivisor(n, divs) -> REDUCE(
   MAP(divs, (d) -> EQ(MOD(n, d), 0)),
   (acc, val) -> acc OR val,
-  0
+  _
 )
 
 ## Predicate: Is 'n' prime?
-IsPrime(n) -> IF(n < 2, 0, 
+IsPrime(n) -> IF(n < 2, _, 
   IF(n == 2, 1,
     NOT(HasDivisor(n, IRANGE(2, SQRT(n) // 1)))
   )

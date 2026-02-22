@@ -14,9 +14,13 @@ function parseLiteral(str) {
 
     // Helper for base parsing
     const parseWithBase = (numStr, baseSystem) => {
-        if (baseSystem.base <= 36 && baseSystem.name !== "Roman Numerals") {
-            numStr = numStr.toLowerCase();
-        }
+        const normalizeCase = (s, sys) => {
+            const usesLower = sys.characters.some(c => c >= 'a' && c <= 'z');
+            const usesUpper = sys.characters.some(c => c >= 'A' && c <= 'Z');
+            if (usesLower && !usesUpper) return s.toLowerCase();
+            if (usesUpper && !usesLower) return s.toUpperCase();
+            return s;
+        };
 
         // Decimal form: a.b
         if (numStr.includes(".")) {
@@ -27,8 +31,8 @@ function parseLiteral(str) {
             const sign = numStr.startsWith("-") ? -1n : 1n;
             const absIntStr = intStr.startsWith("-") ? intStr.slice(1) : intStr;
 
-            const intVal = baseSystem.toDecimal(absIntStr);
-            const fracVal = fracStr ? baseSystem.toDecimal(fracStr) : 0n;
+            const intVal = baseSystem.toDecimal(normalizeCase(absIntStr, baseSystem));
+            const fracVal = fracStr ? baseSystem.toDecimal(normalizeCase(fracStr, baseSystem)) : 0n;
             const den = BigInt(baseSystem.base) ** BigInt(fracStr ? fracStr.length : 0);
             const num = sign * (intVal * den + fracVal);
             return new Rational(num, den);
@@ -49,7 +53,7 @@ function parseLiteral(str) {
                 // e.g. 0xA..B/C -> extract A, B, C
                 const getVal = (s) => {
                     const m = s.match(/^(?:0[a-zA-Z]|0z\[\d+\])?(.*)$/);
-                    return baseSystem.toDecimal(m ? m[1] : s);
+                    return baseSystem.toDecimal(normalizeCase(m ? m[1] : s, baseSystem));
                 };
 
                 const whole = getVal(absWholeStr);
@@ -65,7 +69,7 @@ function parseLiteral(str) {
 
                 const getVal = (s) => {
                     const m = s.match(/^(?:0[a-zA-Z]|0z\[\d+\])?(.*)$/);
-                    return baseSystem.toDecimal(m ? m[1] : s);
+                    return baseSystem.toDecimal(normalizeCase(m ? m[1] : s, baseSystem));
                 };
 
                 const num = getVal(absNumStr);
@@ -75,7 +79,7 @@ function parseLiteral(str) {
         }
 
         // Integer form
-        return new Integer(baseSystem.toDecimal(numStr));
+        return new Integer(baseSystem.toDecimal(normalizeCase(numStr, baseSystem)));
     };
 
     let baseSystem = null;

@@ -438,6 +438,11 @@ export const functionFunctions = {
                 throw new Error("PALL requires a collection");
             }
 
+            if (collection.values.length === 0) {
+                return null;
+            }
+
+            let lastItem = null;
             for (const item of collection.values) {
                 const func = evaluate(funcNode);
                 let result;
@@ -458,10 +463,11 @@ export const functionFunctions = {
                     throw new Error("PALL function is not callable");
                 }
                 if (result === null || result === undefined) return null;
+                lastItem = item;
             }
-            return new Integer(1);
+            return lastItem;
         },
-        doc: "Every: returns Integer(1) if predicate is truthy for ALL elements, null on first failure",
+        doc: "Every: returns the last element if predicate is truthy for ALL elements, null on first failure",
     },
 
     PANY: {
@@ -493,11 +499,11 @@ export const functionFunctions = {
                 } else {
                     throw new Error("PANY function is not callable");
                 }
-                if (result !== null && result !== undefined) return result;
+                if (result !== null && result !== undefined) return item;
             }
             return null;
         },
-        doc: "Any: returns first truthy predicate result, null if none pass",
+        doc: "Any: returns first item that passed predicate, null if none pass",
     },
 
     KWARG: {

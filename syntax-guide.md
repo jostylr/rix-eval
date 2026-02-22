@@ -69,8 +69,8 @@
 | `coll \|:> init >: fn` | `PREDUCE` | Reduce with explicit initial value |
 | `coll \|><` | `PREVERSE` | Reverse collection (new copy) |
 | `coll \|<> fn` | `PSORT` | Sort with comparator (new copy) |
-| `coll \|>&& pred` | `PALL` | Every: `1` if all pass, `null` on first failure (short-circuits) |
-| `coll \|>\|\| pred` | `PANY` | Any/Some: `1` on first pass, `null` if none (short-circuits) |
+| `coll |>&& pred` | `PALL` | Every: last item if all pass, `null` on first failure or empty (short-circuits) |
+| `coll |>\|\| pred` | `PANY` | Any/Some: first passing item, `null` if none pass or empty (short-circuits) |
 
 All pipe operators return **new** collections; they never mutate the original.
 

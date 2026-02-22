@@ -721,9 +721,9 @@ describe("RiX Evaluator", () => {
             expect(result.values[2].value).toBe(4n);
         });
 
-        test("[1,2,3] |>&& (x) -> x > 0 = 1 (all positive)", () => {
+        test("[1,2,3] |>&& (x) -> x > 0 = 3 (all positive, returns last item)", () => {
             const result = evalRix("[1, 2, 3] |>&& (x) -> x > 0;");
-            expect(result.value).toBe(1n);
+            expect(result.value).toBe(3n);
         });
 
         test("[1,-2,3] |>&& (x) -> x > 0 = null (not all positive)", () => {
@@ -731,13 +731,23 @@ describe("RiX Evaluator", () => {
             expect(result).toBeNull();
         });
 
-        test("[1,-2,3] |>|| (x) -> x > 0 = 1 (some positive)", () => {
-            const result = evalRix("[1, -2, 3] |>|| (x) -> x > 0;");
-            expect(result.value).toBe(1n);
+        test("[] |>&& (x) -> x > 0 = null (empty array)", () => {
+            const result = evalRix("[] |>&& (x) -> x > 0;");
+            expect(result).toBeNull();
+        });
+
+        test("[-1,2,3] |>|| (x) -> x > 0 = 2 (some positive, returns first truthy item)", () => {
+            const result = evalRix("[-1, 2, 3] |>|| (x) -> x > 0;");
+            expect(result.value).toBe(2n);
         });
 
         test("[-1,-2,-3] |>|| (x) -> x > 0 = null (none positive)", () => {
             const result = evalRix("[-1, -2, -3] |>|| (x) -> x > 0;");
+            expect(result).toBeNull();
+        });
+
+        test("[] |>|| (x) -> x > 0 = null (empty array)", () => {
+            const result = evalRix("[] |>|| (x) -> x > 0;");
             expect(result).toBeNull();
         });
     });

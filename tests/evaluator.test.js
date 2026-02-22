@@ -209,6 +209,40 @@ describe("RiX Evaluator", () => {
             expect(result.value).toBe(5n);
         });
 
+        test("snake_case variable coexistence with _ as null", () => {
+            const ctx = new Context();
+            // _ is null, snake_case is a variable
+            evalRix("my_var = 10;", ctx);
+            evalRix("other_var = _;", ctx);
+            const resultMy = evalRix("my_var;", ctx);
+            const resultOther = evalRix("other_var;", ctx);
+            const resultLiteral = evalRix("_;", ctx);
+
+            expect(resultMy).toBeInstanceOf(Integer);
+            expect(resultMy.value).toBe(10n);
+            expect(resultOther).toBeNull();
+            expect(resultLiteral).toBeNull();
+        });
+
+        test("@_ function alongside snake_case and _", () => {
+            const ctx = new Context();
+            const registry = createDefaultRegistry();
+            const code = `
+                my_var = 5;
+                val = @_ADD(my_var, 5);
+                val;
+            `;
+            const tokens = tokenize(code);
+            const ast = parse(tokens, systemLookup);
+            const irNodes = lower(ast);
+            let result;
+            for (const ir of irNodes) {
+                result = evaluate(ir, ctx, registry);
+            }
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(10n);
+        });
+
         test("multiple variables", () => {
             const ctx = new Context();
             const registry = createDefaultRegistry();

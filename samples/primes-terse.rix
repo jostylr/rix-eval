@@ -1,8 +1,10 @@
 ## Primes — Terse Syntax ##
 ## Uses operator syntax: %, ==, OR, !, //, {? }, sequence generators ##
 
+tHD = 0;
+
 ## Predicate: Does 'n' have any divisor in list 'divs'?
-HasDivisor(n, divs) -> (divs |>> (d) -> n % d == 0 |:> 0 >: (acc, val) -> acc OR val)
+HasDivisor(n, divs) -> (divs |>> (d) -> {; @tHD +=1; n % d == 0;} |:> _ >: (acc, val) -> acc OR val)
 
 ## Predicate: Is 'n' prime?
 IsPrime(n) -> {?
@@ -15,5 +17,6 @@ primes = [1, |+1, |; 50] |>? IsPrime;
 
 PRINT(
   "Primes up to 50: " + primes,
-  "Count: " + LEN(primes)
+  "Count: " + LEN(primes),
+  "div called: " + tHD
 )

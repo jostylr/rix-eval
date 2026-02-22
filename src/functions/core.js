@@ -114,6 +114,18 @@ export const coreFunctions = {
         doc: "Look up a variable in the current scope chain",
     },
 
+    OUTER_RETRIEVE: {
+        impl(args, context) {
+            const name = args[0];
+            const value = context.getOuter(name);
+            if (value === undefined) {
+                throw new Error(`Undefined outer variable: @${name}`);
+            }
+            return value;
+        },
+        doc: "Look up a variable strictly in the outer scope chains",
+    },
+
     ASSIGN: {
         lazy: true,
         impl(args, context, evaluate) {
@@ -132,6 +144,24 @@ export const coreFunctions = {
             return value;
         },
         doc: "Assign a value to a variable in the current scope",
+    },
+
+    OUTER_ASSIGN: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            let name = typeof args[0] === "object" && args[0] !== null && args[0].fn
+                ? evaluate(args[0])
+                : args[0];
+
+            if (name && typeof name === "object" && name.type === "string") {
+                name = name.value;
+            }
+
+            const value = evaluate(args[1]);
+            context.setOuter(name, value);
+            return value;
+        },
+        doc: "Assign a value to an existing outer scope variable",
     },
 
     GLOBAL: {

@@ -96,6 +96,10 @@ const LOWERERS = {
     return ir("RETRIEVE", node.name);
   },
 
+  OuterIdentifier(node) {
+    return ir("OUTER_RETRIEVE", node.name);
+  },
+
   SystemFunctionRef(node) {
     return ir("SYSREF", node.name);
   },
@@ -122,6 +126,42 @@ const LOWERERS = {
     // Assignment operators
     if (op === "=" || op === ":=") {
       return lowerAssignment(node);
+    }
+
+    // Combo assignment operators
+    const comboOpMap = {
+      "+=": true,
+      "-=": true,
+      "*=": true,
+      "/=": true,
+      "//=": true,
+      "%=": true,
+      "^=": true,
+      "**=": true,
+    };
+
+    if (comboOpMap[op]) {
+      // De-sugar exactly as `left = left OP right`
+      // Create a virtual AST node for the `left OP right` math operation
+      const mathOpStr = op.slice(0, -1); // Remove '='
+      const mathAstNode = {
+        type: "BinaryOperation",
+        operator: mathOpStr,
+        left: node.left,
+        right: node.right,
+        pos: node.pos,
+      };
+
+      // Create a virtual AST node for `left = mathAstNode`
+      const assignAstNode = {
+        type: "BinaryOperation",
+        operator: "=",
+        left: node.left,
+        right: mathAstNode,
+        pos: node.pos,
+      };
+
+      return lowerAssignment(assignAstNode);
     }
     if (op === ":=:") {
       return ir("SOLVE", lowerNode(node.left), lowerNode(node.right));
@@ -551,6 +591,11 @@ const LOWERERS = {
  */
 function lowerAssignment(node) {
   const left = node.left;
+
+  // Outer variable assignment: @a = 5
+  if (left.type === "OuterIdentifier") {
+    return ir("OUTER_ASSIGN", left.name, lowerNode(node.right));
+  }
 
   // Simple variable assignment: x = 5
   if (left.type === "UserIdentifier" || left.type === "SystemIdentifier") {

@@ -231,6 +231,43 @@ describe("RiX Evaluator", () => {
             expect(result.value).toBe(6n);
         });
 
+        test("combo assignments", () => {
+            const ctx = new Context();
+            evalRix("x = 5;", ctx);
+            evalRix("x += 3;", ctx);
+            let result = evalRix("x;", ctx);
+            expect(result.value).toBe(8n);
+
+            evalRix("x *= 2;", ctx);
+            result = evalRix("x;", ctx);
+            expect(result.value).toBe(16n);
+        });
+
+        test("@ outer scope variable mutation", () => {
+            const code = `
+                times = 0;
+                [1, 2, 3] |>> (x) -> {;
+                    @times += 1;
+                    x * 2;
+                };
+            `;
+            const ctx = new Context();
+            const registry = createDefaultRegistry();
+            const tokens = tokenize(code);
+            const ast = parse(tokens, systemLookup);
+            const irNodes = lower(ast);
+            for (const ir of irNodes) {
+                evaluate(ir, ctx, registry);
+            }
+            // `times` should be 3 because it was mutated in the outer scope
+            const timesResult = evalRix("times;", ctx);
+            expect(timesResult.value).toBe(3n);
+        });
+
+        test("@ outer scope assignment fails if not exist", () => {
+            expect(() => evalRix("@nope = 5;")).toThrow("Cannot assign to outer variable '@nope'");
+        });
+
         test("undefined variable throws", () => {
             expect(() => evalRix("undeclared;")).toThrow("Undefined variable");
         });

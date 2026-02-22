@@ -89,6 +89,46 @@ export class Context {
     }
 
     /**
+     * Get a variable value from the outer scopes (skipping the innermost local scope).
+     * @param {string} name 
+     */
+    getOuter(name) {
+        // Search local scopes from second-innermost to outermost
+        for (let i = this.localScopes.length - 2; i >= 0; i--) {
+            if (this.localScopes[i].has(name)) {
+                return this.localScopes[i].get(name);
+            }
+        }
+        // Fall back to global
+        if (this.globalScope.has(name)) {
+            return this.globalScope.get(name);
+        }
+        // Check functions
+        if (this.functions.has(name)) {
+            return this.functions.get(name);
+        }
+        return undefined;
+    }
+
+    /**
+     * Set a variable value in an outer scope where it already exists (skipping innermost).
+     * If the variable doesn't exist anywhere in the outer scopes (or global), an error is thrown.
+     */
+    setOuter(name, value) {
+        for (let i = this.localScopes.length - 2; i >= 0; i--) {
+            if (this.localScopes[i].has(name)) {
+                this.localScopes[i].set(name, value);
+                return;
+            }
+        }
+        if (this.globalScope.has(name)) {
+            this.globalScope.set(name, value);
+            return;
+        }
+        throw new Error(`Cannot assign to outer variable '@${name}' because it does not exist in any outer scope.`);
+    }
+
+    /**
      * Check if a variable exists in any scope.
      */
     has(name) {

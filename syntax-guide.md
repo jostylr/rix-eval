@@ -230,3 +230,7 @@ All pipe operators return **new** collections; they never mutate the original.
 | `ASSIGN(name, val)` | Set local variable | `name := val`, `name = val` |
 | `GLOBAL(name, val)` | Set global variable | — |
 | `RETRIEVE(name)` | Look up variable | `name` |
+| `OUTER_ASSIGN(name, val)` | Set an existing outer scope variable | `@name = val`, `@name += val`, etc. |
+| `OUTER_RETRIEVE(name)` | Look up an outer scope variable | `@name` |
+
+*Note: Combo assignments (`+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `^=`, `**=`) automatically desugar into `ASSIGN(x, OP(RETRIEVE(x), y))` or their `OUTER` equivalents if prefixed with `@`.*

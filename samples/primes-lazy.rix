@@ -5,7 +5,7 @@ timesHDcalled = 0;
 
 ## Predicate: Does 'n' have any divisor in list 'divs'?
 ## This terseness has if n/d has no remainder, then d is a diviso and n % d == 0. This should then return d. 
-HasDivisor(n, divs) -> divs |>|| d -> {; timesHDcalled = timesHDcalled + 1;   n % d == 0 && d; }
+HasDivisor(n, divs) -> divs |>|| d -> {; @timesHDcalled += 1;   n % d == 0 && d; }
 
 ## Predicate: Is 'n' prime?
 IsPrime(n) -> {?

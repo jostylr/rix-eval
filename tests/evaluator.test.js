@@ -573,6 +573,36 @@ describe("RiX Evaluator", () => {
             const result = evalRix("2:{|3, 6|}:5;");
             expect(result).toBeNull();
         });
+
+        test("n-ary betweenness: 2:3:5:7:9 = 1", () => {
+            const result = evalRix("2:3:5:7:9;");
+            expect(result.value).toBe(1n);
+        });
+
+        test("n-ary betweenness descending: 9:7:5:3:1 = 1", () => {
+            const result = evalRix("9:7:5:3:1;");
+            expect(result.value).toBe(1n);
+        });
+
+        test("n-ary betweenness failure: 2:3:5:9:7 = null", () => {
+            const result = evalRix("2:3:5:9:7;");
+            expect(result).toBeNull();
+        });
+
+        test("nested interval betweenness: 2:(3:4):5 = 1", () => {
+            const result = evalRix("2:(3:4):5;");
+            expect(result.value).toBe(1n);
+        });
+
+        test("nested interval betweenness failure: 2:(3:6):5 = null", () => {
+            const result = evalRix("2:(3:6):5;");
+            expect(result).toBeNull();
+        });
+
+        test("betweenness with set of intervals: 2:{|3:4, 4.1:4.5|}:5 = 1", () => {
+            const result = evalRix("2:{|3:4, 4.1:4.5|}:5;");
+            expect(result.value).toBe(1n);
+        });
     });
 
     describe("Implicit Multiplication", () => {

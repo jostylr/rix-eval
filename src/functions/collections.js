@@ -142,8 +142,16 @@ export const collectionFunctions = {
 
             // Betweenness check for 3 or more arguments
             const getValues = (arg) => {
-                if (arg && arg.type === "set" && Array.isArray(arg.values)) {
-                    return arg.values;
+                if (arg && typeof arg === 'object') {
+                    if (arg.type === "set" && Array.isArray(arg.values)) {
+                        return arg.values;
+                    }
+                    if (arg instanceof RationalInterval) {
+                        return [arg.start, arg.end];
+                    }
+                    if (arg.type === "interval") {
+                        return [arg.lo, arg.hi];
+                    }
                 }
                 return [arg];
             };

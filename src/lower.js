@@ -73,6 +73,10 @@ const LOWERERS = {
   // === Literals & Identifiers ===
 
   Number(node) {
+    if (node.value && node.value.includes(":")) {
+      const parts = node.value.split(":");
+      return ir("INTERVAL", ...parts.map(p => ir("LITERAL", p)));
+    }
     return ir("LITERAL", node.value);
   },
 
@@ -185,7 +189,13 @@ const LOWERERS = {
           extractArgs(n.left);
           extractArgs(n.right);
         } else {
-          args.push(lowerNode(n));
+          const lowered = lowerNode(n);
+          // If it lowered to an INTERVAL IR node, flatten it
+          if (lowered && typeof lowered === "object" && lowered.fn === "INTERVAL") {
+            args.push(...lowered.args);
+          } else {
+            args.push(lowered);
+          }
         }
       };
       extractArgs(node.left);

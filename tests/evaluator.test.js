@@ -920,5 +920,53 @@ describe("RiX Evaluator", () => {
             expect(result.denominator).toBe(2n);
         });
     });
+
+    describe("Regex Literals", () => {
+        test("ONE mode (default) execution", () => {
+            const result = evalRix('F = {/a(b)c/}; F("xyz_abc_def");');
+            expect(result.type).toBe("map");
+            const textMatch = result.entries.get("text");
+            expect(textMatch.value).toBe("abc");
+            const groups = result.entries.get("groups");
+            expect(groups.type).toBe("sequence");
+            expect(groups.values[1].value).toBe("b"); // 0-based index 1 is group 1
+        });
+
+        test("TEST mode (?) execution", () => {
+            const result = evalRix('F = {/abc/?}; F("xyz_abc_def");');
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(1n);
+
+            const result2 = evalRix('F = {/abc/?}; F("xyz_def");');
+            expect(result2).toBeNull();
+        });
+
+        test("ALL mode (*) execution", () => {
+            const result = evalRix('F = {/a./*}; F("ab_ac_ad");');
+            expect(result.type).toBe("sequence");
+            expect(result.values.length).toBe(3);
+            expect(result.values[0].entries.get("text").value).toBe("ab");
+            expect(result.values[1].entries.get("text").value).toBe("ac");
+            expect(result.values[2].entries.get("text").value).toBe("ad");
+        });
+
+        test("ITER mode (:) execution", () => {
+            const result1 = evalRix('F = {/a./:}; M = F("ab_ac_ad"); RES = M(); RES.text;');
+            expect(result1.value).toBe("ab");
+
+            const result2 = evalRix('F = {/a./:}; M = F("ab_ac_ad"); M(); M(); RES = M(); RES.text;');
+            expect(result2.value).toBe("ad");
+
+            const result3 = evalRix('F = {/a./:}; M = F("ab_ac_ad"); M(); M(); M(); RES = M(); RES;');
+            expect(result3).toBeNull();
+
+            // Random access:
+            const resultRandom = evalRix('F = {/a./:}; M = F("ab_ac_ad"); M(2).text;');
+            expect(resultRandom.value).toBe("ac");
+
+            const resultRandomOOB = evalRix('F = {/a./:}; M = F("ab_ac_ad"); M(5);');
+            expect(resultRandomOOB).toBeNull();
+        });
+    });
 });
 

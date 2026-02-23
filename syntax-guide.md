@@ -48,6 +48,7 @@
 | `{* a, b, c }` | `MUL` | N-ary multiplication |
 | `{&& a, b, c }` | `AND` | N-ary logical AND (short-circuits on falsy) |
 | `{\|\| a, b, c }` | `OR` | N-ary logical OR (short-circuits on truthy) |
+| `{/pattern/flags?mode}` | `REGEX` | Regular expression literal |
 
 ### Deferred Syntax & System Aliases
 
@@ -245,12 +246,14 @@ Other registered prefixes: `0q` (Base 4), `0f` (5), `0s` (7), `0d` (12), `0v` (2
 | `LAMBDA(params, body)` | Anonymous function | `(params) -> body` |
 | `CALL(name, args...)` | Call a function | `Name(args)` |
 
-### Strings
-
-| Function | Description |
-|----------|-------------|
 | `UPPER(str)` | Convert to uppercase |
 | `SUBSTR(str, start, len)` | Get substring |
+
+### Regex
+
+| Function | Description | Syntax Aliases |
+|----------|-------------|----------------|
+| `REGEX(pat, fl, mode)` | Create regex matching function | `{/pat/fl?mode}` |
 
 ### I/O
 

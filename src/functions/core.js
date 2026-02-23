@@ -160,6 +160,181 @@ export const coreFunctions = {
         doc: "Parse a number literal string into a ratmath type",
     },
 
+    REGEX: {
+        impl(args) {
+            const patternObj = args[0];
+            const flagsObj = args[1];
+            const pattern = patternObj && patternObj.type === "string" ? patternObj.value : String(patternObj || "");
+            const flags = flagsObj && flagsObj.type === "string" ? flagsObj.value : String(flagsObj || "");
+
+            const modeObj = args[2];
+            const mode = modeObj && modeObj.constructor.name === "Integer" ? Number(modeObj.value) : Number(modeObj); // 0=ONE, 1=TEST, 2=ALL, 3=ITER
+
+            let actualFlags = flags;
+            if ((mode === 2 || mode === 3) && !actualFlags.includes('g')) {
+                actualFlags += 'g';
+            }
+            if (!actualFlags.includes('d')) {
+                actualFlags += 'd'; // Enable match indices
+            }
+
+            let re;
+            try {
+                re = new RegExp(pattern, actualFlags);
+            } catch (e) {
+                throw new Error(`unsupported regex flag or pattern: ${e.message}`);
+            }
+
+            const buildMatchObject = (match) => {
+                const groups = [];
+                const spans = [];
+                for (let i = 0; i < match.length; i++) {
+                    const text = match[i];
+                    groups.push(text === undefined ? null : { type: "string", value: text });
+                    if (match.indices && match.indices[i]) {
+                        const [start, end] = match.indices[i];
+                        spans.push({
+                            type: "tuple",
+                            values: [
+                                new Integer(BigInt(start + 1)),
+                                new Integer(BigInt(end))
+                            ]
+                        });
+                    } else {
+                        spans.push(null);
+                    }
+                }
+
+                // Maps for named
+                const named = new Map();
+                const namedSpans = new Map();
+                if (match.groups) {
+                    for (const [key, text] of Object.entries(match.groups)) {
+                        named.set(key, text === undefined ? null : { type: "string", value: text });
+
+                        if (match.indices && match.indices.groups && match.indices.groups[key]) {
+                            const [s, e] = match.indices.groups[key];
+                            namedSpans.set(key, {
+                                type: "tuple",
+                                values: [
+                                    new Integer(BigInt(s + 1)),
+                                    new Integer(BigInt(e))
+                                ]
+                            });
+                        } else {
+                            namedSpans.set(key, null);
+                        }
+                    }
+                }
+
+                const entries = new Map();
+                entries.set("text", { type: "string", value: match[0] });
+                entries.set("span", spans[0]);
+                entries.set("groups", { type: "sequence", values: groups });
+                entries.set("spans", { type: "sequence", values: spans });
+                entries.set("named", { type: "map", entries: named });
+                entries.set("named spans", { type: "map", entries: namedSpans });
+                entries.set("input", { type: "string", value: match.input });
+
+                return { type: "map", entries };
+            };
+
+            const regexFunc = (inputVal) => {
+                const str = inputVal && inputVal.type === "string" ? inputVal.value : inputVal;
+                if (typeof str !== "string") {
+                    throw new Error("regex expects string");
+                }
+
+                re.lastIndex = 0; // Reset state for global/sticky
+
+                if (mode === 0) { // ONE
+                    const m = re.exec(str);
+                    return m ? buildMatchObject(m) : null;
+                } else if (mode === 1) { // TEST
+                    return re.test(str) ? new Integer(1n) : null;
+                } else if (mode === 2) { // ALL
+                    const results = [];
+                    let m;
+                    while ((m = re.exec(str)) !== null) {
+                        results.push(buildMatchObject(m));
+                        if (m[0].length === 0) {
+                            re.lastIndex++; // Prevent infinite loops on empty matches
+                        }
+                    }
+                    return { type: "sequence", values: results };
+                } else if (mode === 3) { // ITER
+                    const matches = [];
+                    let isExhausted = false;
+                    let lastIdx = 0;
+
+                    const fetchNext = () => {
+                        if (isExhausted) return null;
+                        re.lastIndex = lastIdx;
+                        const m = re.exec(str);
+                        lastIdx = re.lastIndex;
+                        if (m) {
+                            const obj = buildMatchObject(m);
+                            matches.push(obj);
+                            if (m[0].length === 0) {
+                                re.lastIndex++;
+                                lastIdx++;
+                            }
+                            return obj;
+                        } else {
+                            isExhausted = true;
+                            return null;
+                        }
+                    };
+
+                    let currentIndex = 0;
+
+                    const iteratorFunc = (nVal) => {
+                        if (nVal !== undefined && nVal !== null) {
+                            const n = Number(nVal instanceof Integer ? nVal.value : nVal);
+                            if (isNaN(n) || n < 1) {
+                                throw new Error("iterator index must be a positive integer");
+                            }
+                            // 1-based random access
+                            while (!isExhausted && matches.length < n) {
+                                fetchNext();
+                            }
+                            currentIndex = n;
+                            return n <= matches.length ? matches[n - 1] : null;
+                        } else {
+                            currentIndex++;
+                            if (currentIndex <= matches.length) {
+                                return matches[currentIndex - 1];
+                            } else {
+                                return fetchNext();
+                            }
+                        }
+                    };
+
+                    iteratorFunc.toString = () => {
+                        return `[Regex Iterator: {/${pattern}/${flags}} (NextIndex=${currentIndex})]`;
+                    };
+
+                    return iteratorFunc;
+                }
+            };
+
+            regexFunc.toString = () => {
+                const modeNames = ["ONE", "TEST", "ALL", "ITER"];
+                const modeName = modeNames[mode];
+                const signatures = [
+                    "(String) -> Match|null",
+                    "(String) -> 1|null",
+                    "(String) -> Sequence<Match>",
+                    "(String) -> Iterator"
+                ];
+                return `[Regex ${modeName}: {/${pattern}/${flags}} ${signatures[mode]}]`;
+            };
+
+            return regexFunc;
+        },
+        doc: "Create a regex matching function",
+    },
+
     STRING: {
         impl(args) {
             return { type: "string", value: args[0] };

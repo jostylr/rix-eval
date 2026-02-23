@@ -84,6 +84,21 @@ const LOWERERS = {
     return ir("STRING", node.value);
   },
 
+  RegexLiteral(node) {
+    const modeMap = {
+      "ONE": 0,
+      "TEST": 1,
+      "ALL": 2,
+      "ITER": 3
+    };
+    return ir(
+      "REGEX",
+      ir("STRING", node.pattern),
+      ir("STRING", node.flags),
+      ir("LITERAL", modeMap[node.mode] || 0)
+    );
+  },
+
   NULL() {
     return ir("NULL");
   },

@@ -93,14 +93,28 @@ All pipe operators return **new** collections; they never mutate the original.
 | Syntax | System Function | Example |
 |--------|----------------|---------|
 | `[a, b, c]` | `ARRAY` | `[1, 2, 3]` |
-| `a:b` | `INTERVAL` | `1:10` |
-| `a:b:c` | `INTERVAL` | `2:3:5` (betweenness) |
+| `a:b` | `INTERVAL` | `1:10` (RationalInterval) |
+| `a:b:c:d...` | `INTERVAL` | `2:3:5:7` (n-ary betweenness) |
+| `a:(b:c):d` | `INTERVAL` | `2:(3:4):5` (nested betweenness) |
+| `a:{|b:c|}:d` | `INTERVAL` | `2:{|3:4|}:5` (set unpacking) |
+
+### Number Base Literals
+
+| Prefix | Base System | Example | System Function |
+|--------|-------------|---------|-----------------|
+| `0x` | Hexadecimal (16) | `0xFF` | `LITERAL` |
+| `0b` | Binary (2) | `0b1010` | `LITERAL` |
+| `0o` | Octal (8) | `0o755` | `LITERAL` |
+| `0t` | Ternary (3) | `0t121` | `LITERAL` |
+| `0z[N]` | Base N | `0z[32]abc` | `LITERAL` |
+
+Other registered prefixes: `0q` (Base 4), `0f` (5), `0s` (7), `0d` (12), `0v` (20), `0u` (36), `0m` (60), `0y` (64).
 
 ### Assertions
 
 | Syntax | System Function | Description |
 |--------|----------------|-------------|
-| `:=:` | `SOLVE` | Solve/assert equality |
+| `:=:` | `SOLVE` | Solve/assert equality (assigns to variable to satisfy expr) |
 | `:<:` | `ASSERT_LT` | Assert less than |
 | `:>:` | `ASSERT_GT` | Assert greater than |
 | `:<=:` | `ASSERT_LTE` | Assert less or equal |
@@ -131,6 +145,16 @@ All pipe operators return **new** collections; they never mutate the original.
 ---
 
 ## Part 2: System Function Reference
+
+### Core
+
+| Function | Description | Syntax Aliases |
+|----------|-------------|----------------|
+| `LITERAL(str)` | Parse number literal string (with base prefixes) | — |
+| `STRING(val)` | Create string value | `"..."` |
+| `NULL()` | Null value | `_` |
+| `ASSIGN(name, val)` | Local assignment | `x = 5`, `x := 5` |
+| `RETRIEVE(name)` | Variable lookup | `x` |
 
 ### Arithmetic
 
@@ -166,6 +190,16 @@ All pipe operators return **new** collections; they never mutate the original.
 | `OR(a, b)` | Logical OR | `a OR b` |
 | `NOT(a)` | Logical NOT | `NOT(expr)` or prefix `NOT expr` |
 
+### Assertions & Constraints
+
+| Function | Description | Syntax Aliases |
+|----------|-------------|----------------|
+| `SOLVE(name, expr)` | Solve/constrain variable | `:=:` |
+| `ASSERT_LT(a, b)` | Assert `a < b` | `:<:` |
+| `ASSERT_GT(a, b)` | Assert `a > b` | `:>:` |
+| `ASSERT_LTE(a, b)` | Assert `a <= b` | `:<=:` |
+| `ASSERT_GTE(a, b)` | Assert `a >= b` | `:>=:` |
+
 ### Control Flow
 
 | Function | Description | Syntax Aliases |
@@ -185,7 +219,7 @@ All pipe operators return **new** collections; they never mutate the original.
 | `SET(elems...)` | Create set | `{\| a, b, c \|}` |
 | `TUPLE(elems...)` | Create tuple | `{: a, b, c }` |
 | `MAP(pairs...)` | Create map/object | `{= k=v, ... }` |
-| `INTERVAL(args...)` | Create interval or check betweenness | `a:b` or `a:b:c` |
+| `INTERVAL(args...)` | Create interval or check n-ary betweenness (unpacks nested intervals/sets) | `a:b` or `a:b:c...` |
 | `LEN(coll)` | Length of collection/string | — |
 | `FIRST(coll)` | First element | — |
 | `LAST(coll)` | Last element | — |
@@ -233,5 +267,18 @@ All pipe operators return **new** collections; they never mutate the original.
 | `RETRIEVE(name)` | Look up variable | `name` |
 | `OUTER_ASSIGN(name, val)` | Set an existing outer scope variable | `@name = val`, `@name += val`, etc. |
 | `OUTER_RETRIEVE(name)` | Look up an outer scope variable | `@name` |
+
+### Future Extensions (Stubs)
+
+| Function | Description |
+|----------|-------------|
+| `DERIVATIVE(expr, var)` | Symbolic derivative (future) |
+| `INTEGRAL(expr, var)` | Symbolic integral (future) |
+| `GENERATOR(args...)` | Sequence generator (future) |
+| `STEP(start, end, step)` | Step/range generator (future) |
+| `MATRIX(rows...)` | Matrix literal |
+| `TENSOR(data...)` | Tensor literal |
+| `UNIT(val, unit)` | Scientific unit annotation |
+| `MATHUNIT(val, unit)` | Mathematical unit annotation |
 
 *Note: Combo assignments (`+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `^=`, `**=`) automatically desugar into `ASSIGN(x, OP(RETRIEVE(x), y))` or their `OUTER` equivalents if prefixed with `@`.*

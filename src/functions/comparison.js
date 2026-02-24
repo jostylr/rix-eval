@@ -13,9 +13,11 @@ function compare(a, b) {
         const diff = a.subtract(b);
         return diff.sign();
     }
+    const valA = a && a.type === "string" ? a.value : a;
+    const valB = b && b.type === "string" ? b.value : b;
     // Fallback for primitives
-    if (a < b) return -1;
-    if (a > b) return 1;
+    if (valA < valB) return -1;
+    if (valA > valB) return 1;
     return 0;
 }
 
@@ -30,7 +32,7 @@ export const comparisonFunctions = {
             if (a && b && typeof a.equals === "function") {
                 return boolResult(a.equals(b));
             }
-            return boolResult(a === b);
+            if (a && b && a.type === "string" && b.type === "string") return boolResult(a.value === b.value); return boolResult(a === b);
         },
         pure: true,
         doc: "Equality check — returns 1 or null",
@@ -42,7 +44,7 @@ export const comparisonFunctions = {
             if (a && b && typeof a.equals === "function") {
                 return boolResult(!a.equals(b));
             }
-            return boolResult(a !== b);
+            if (a && b && a.type === "string" && b.type === "string") return boolResult(a.value !== b.value); return boolResult(a !== b);
         },
         pure: true,
         doc: "Inequality check — returns 1 or null",

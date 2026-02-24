@@ -62,20 +62,24 @@
 
 Note that in the text version below there is a leading escape slash in front of the pipes for markdown table compatibility. In actual use, do not use the escape slash.
 
+Collections in pipes are arrays, tuples (become arrays), and strings. 
+
 | Syntax | System Function | Description |
 |--------|----------------|-------------|
 | `x \|> F` | `PIPE` | Pipe `x` as first arg to `F` |
 | `x \|\|> F(_1)` | `PIPE_EXPLICIT` | Pipe with explicit placeholder |
 | `coll \|>/ i:j` | `PSLICE_STRICT` | Strict slice a collection based on interval; `null` if bounds are non-integers or invalid |
 | `coll \|>// i:j` | `PSLICE_CLAMP` | Clamped slice a collection based on interval; clamps exactly without failing |
+| `coll \|>\| sep` | `PSPLIT` | Split string or collection by delimiter string, regex or predicate |
+| `coll \|>#\| nOrFn`| `PCHUNK` | Chunk string or collection by integer size or predicate boundary |
 | `coll \|>> fn` | `PMAP` | Map `fn` over collection |
 | `coll \|>? pred` | `PFILTER` | Filter collection by predicate |
 | `coll \|>: fn` | `PREDUCE` | Reduce (first element as init) |
 | `coll \|:> init >: fn` | `PREDUCE` | Reduce with explicit initial value |
 | `coll \|><` | `PREVERSE` | Reverse collection (new copy) |
 | `coll \|<> fn` | `PSORT` | Sort with comparator (new copy) |
-| `coll |>&& pred` | `PALL` | Every: last item if all pass, `null` on first failure or empty (short-circuits) |
-| `coll |>\|\| pred` | `PANY` | Any/Some: first passing item, `null` if none pass or empty (short-circuits) |
+| `coll \|>&& pred` | `PALL` | Every: last item if all pass, `null` on first failure or empty (short-circuits) |
+| `coll \|>\|\| pred` | `PANY` | Any/Some: first passing item, `null` if none pass or empty (short-circuits) |
 
 All pipe operators return **new** collections; they never mutate the original.
 
@@ -237,8 +241,10 @@ Other registered prefixes: `0q` (Base 4), `0f` (5), `0s` (7), `0d` (12), `0v` (2
 |----------|-------------|----------------|
 | `PIPE(val, fn)` | Pipe value into function | `val \|> fn` |
 | `PIPE_EXPLICIT(val, fn)` | Pipe value into function explicitly | `val ||> fn` |
-| `PSLICE_STRICT(coll, i:j)` | Strict slice collection | `coll |>/ i:j` |
-| `PSLICE_CLAMP(coll, i:j)` | Clamped slice collection | `coll |>// i:j` |
+| `PSLICE_STRICT(coll, i:j)` | Strict slice collection | `coll \|>/ i:j` |
+| `PSLICE_CLAMP(coll, i:j)` | Clamped slice collection | `coll \|>// i:j` |
+| `PSPLIT(coll, sep)` | Split collection by delimiter | `coll \|>/\| sep` |
+| `PCHUNK(coll, n)` | Chunk collection by size or predicate | `coll \|>#\| nOrFn` |
 | `PMAP(coll, fn)` | Map function over collection | `coll \|>> fn`, `MAP(coll, fn)` |
 | `PFILTER(coll, pred)` | Filter by predicate | `coll \|>? pred`, `FILTER(coll, pred)` |
 | `PREDUCE(coll, fn, init)` | Reduce/fold | `coll \|>: fn`, `coll \|:> init >: fn`, `REDUCE(coll, fn, init)` |

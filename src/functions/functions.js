@@ -291,6 +291,7 @@ export const functionFunctions = {
 
             if (isString) {
                 items = isStringObj ? coll.value : coll;
+                items = Array.from(items);
                 n = items.length;
             } else if (coll && Array.isArray(coll.values)) {
                 n = coll.values.length;
@@ -357,6 +358,7 @@ export const functionFunctions = {
             if (coll !== null && coll !== undefined) {
                 if (isString) {
                     items = isStringObj ? coll.value : coll;
+                    items = Array.from(items);
                     n = items.length;
                 } else if (coll && Array.isArray(coll.values)) {
                     n = coll.values.length;
@@ -452,18 +454,302 @@ export const functionFunctions = {
         doc: "Explicit pipe operator",
     },
 
+    PSPLIT: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const collection = evaluate(args[0]);
+            const sepNode = args[1];
+
+            if (collection === null || collection === undefined) {
+                return null;
+            }
+
+            const isStringObj = collection && collection.type === "string";
+            const isString = typeof collection === "string" || isStringObj;
+            let items = null;
+
+            if (isString) {
+                items = Array.from(isStringObj ? collection.value : collection).map(ch => isStringObj ? { type: "string", value: ch } : ch);
+            } else if (collection && Array.isArray(collection.values)) {
+                items = collection.values;
+            } else {
+                return null; // or throw
+            }
+
+            const sepVal = evaluate(sepNode);
+            const results = [];
+
+            // Check if sepVal is a regex function
+            const isRegex = typeof sepVal === "function" && sepVal.toString && sepVal.toString().startsWith("[Regex");
+
+            const isFunc = !isRegex && (
+                (sepVal && (sepVal.type === "function" || sepVal.type === "lambda")) ||
+                typeof sepVal === "function"
+            );
+
+            if (isString && isRegex) {
+                const strItems = items.map(r => r && r.type === "string" ? r.value : r).join("");
+                const matchStr = sepVal.toString().match(/{\/(.*)\/([^}]*)}/);
+                if (!matchStr) throw new Error("Invalid regex for splitting");
+                const pattern = matchStr[1];
+                let flags = matchStr[2];
+                if (!flags.includes("g")) flags += "g";
+
+                let re;
+                try {
+                    re = new RegExp(pattern, flags);
+                } catch (e) { throw new Error(e); }
+
+                let lastIdx = 0;
+                let m;
+                // Important: `expect u flag for unicode` handled by user if they specified it.
+                while ((m = re.exec(strItems)) !== null) {
+                    results.push(Array.from(strItems.slice(lastIdx, m.index)).map(ch => isStringObj ? { type: "string", value: ch } : ch));
+                    lastIdx = re.lastIndex;
+                    if (m[0].length === 0) re.lastIndex++; // no infinite loops
+                }
+                results.push(Array.from(strItems.slice(lastIdx)).map(ch => isStringObj ? { type: "string", value: ch } : ch));
+            }
+            else if (isFunc) {
+                let currentPiece = [];
+                let inSeparator = false;
+
+                for (let i = 0; i < items.length; i++) {
+                    const item = items[i];
+                    let isSep = false;
+                    if (sepVal && (sepVal.type === "function" || sepVal.type === "lambda")) {
+                        const scope = new Map();
+                        if (sepVal.params?.positional?.length > 0) {
+                            scope.set(sepVal.params.positional[0].name, item);
+                        }
+                        context.push(scope);
+                        try {
+                            const res = evaluate(sepVal.body);
+                            isSep = res !== null && res !== undefined;
+                        } finally {
+                            context.pop();
+                        }
+                    } else {
+                        const res = sepVal(item);
+                        isSep = res !== null && res !== undefined;
+                    }
+
+                    if (isSep) {
+                        if (!inSeparator) {
+                            results.push(currentPiece);
+                            currentPiece = [];
+                            inSeparator = true;
+                        }
+                    } else {
+                        if (inSeparator) {
+                            inSeparator = false;
+                        }
+                        currentPiece.push(item);
+                    }
+                }
+                results.push(currentPiece);
+            } else {
+                if (isString) {
+                    const sepStrVal = sepVal && sepVal.type === "string" ? sepVal.value : String(typeof sepVal === "object" && sepVal?.constructor?.name === "Integer" ? sepVal.value : sepVal);
+                    const sepItems = Array.from(sepStrVal);
+
+                    let currentPiece = [];
+                    for (let i = 0; i < items.length;) {
+                        let match = true;
+                        if (sepItems.length > 0 && i + sepItems.length <= items.length) {
+                            for (let j = 0; j < sepItems.length; j++) {
+                                const val = items[i + j] && items[i + j].type === "string" ? items[i + j].value : items[i + j];
+                                if (val !== sepItems[j]) {
+                                    match = false; break;
+                                }
+                            }
+                        } else {
+                            match = false;
+                        }
+
+                        if (match && sepItems.length > 0) {
+                            results.push(currentPiece);
+                            currentPiece = [];
+                            i += sepItems.length;
+                        } else if (sepItems.length === 0) {
+                            results.push(currentPiece);
+                            currentPiece = [];
+                            i++;
+                        } else {
+                            currentPiece.push(items[i]);
+                            i++;
+                        }
+                    }
+                    if (sepItems.length > 0 || currentPiece.length > 0 || items.length === 0) {
+                        results.push(currentPiece);
+                    }
+                } else {
+                    let currentPiece = [];
+                    for (let i = 0; i < items.length; i++) {
+                        let match = false;
+                        const a = items[i];
+                        const b = sepVal;
+
+                        // Handle primitive equality or ratmath types
+                        if (typeof a === typeof b && a === b) match = true;
+                        else if (a && b && a.constructor && b.constructor && a.constructor.name === b.constructor.name && ['Integer', 'Rational'].includes(a.constructor.name) && a.value === b.value && a.numerator === b.numerator) match = true;
+                        else if (a && a.type === "string" && typeof b === "string" && a.value === b) match = true;
+                        else if (a && b && a.type === "string" && b.type === "string" && a.value === b.value) match = true;
+                        else if (a && b && a.constructor && b.constructor && a.constructor.name === "Integer" && b.constructor.name === "Integer" && a.value === b.value) match = true;
+
+                        if (match) {
+                            results.push(currentPiece);
+                            currentPiece = [];
+                        } else {
+                            currentPiece.push(a);
+                        }
+                    }
+                    results.push(currentPiece);
+                }
+            }
+
+            if (isString) {
+                return {
+                    type: "sequence",
+                    values: results.map(arr => {
+                        const extracted = arr && Array.isArray(arr) ? arr.map(r => r && r.type === "string" ? r.value : r) : arr;
+                        const s = typeof extracted === "string" ? extracted : extracted.map(r => r && r.type === 'string' ? r.value : r).join("");
+                        return isStringObj ? { type: "string", value: s } : s;
+                    })
+                };
+            } else {
+                return {
+                    type: "sequence",
+                    values: results.map(arr => {
+                        if (collection.type === "tuple") return { type: "tuple", values: arr };
+                        return { type: collection.type || "sequence", values: arr };
+                    })
+                };
+            }
+        },
+        doc: "Split a collection by a delimiter or predicate",
+    },
+
+    PCHUNK: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const collection = evaluate(args[0]);
+            const boundNode = args[1];
+
+            if (collection === null || collection === undefined) {
+                return null;
+            }
+
+            const isStringObj = collection && collection.type === "string";
+            const isString = typeof collection === "string" || isStringObj;
+            let items = null;
+
+            if (isString) {
+                items = Array.from(isStringObj ? collection.value : collection).map(ch => isStringObj ? { type: "string", value: ch } : ch);
+            } else if (collection && Array.isArray(collection.values)) {
+                items = collection.values;
+            } else {
+                return null;
+            }
+
+            const boundVal = evaluate(boundNode);
+            const results = [];
+
+            const isFunc = (boundVal && (boundVal.type === "function" || boundVal.type === "lambda")) || typeof boundVal === "function";
+
+            if (isFunc) {
+                let currentChunk = [];
+                for (let i = 0; i < items.length; i++) {
+                    const idx = i + 1; // 1-based index
+                    let isBound = false;
+                    if (boundVal && (boundVal.type === "function" || boundVal.type === "lambda")) {
+                        const scope = new Map();
+                        if (boundVal.params?.positional?.length > 0) {
+                            scope.set(boundVal.params.positional[0].name, new Integer(BigInt(idx)));
+                        }
+                        context.push(scope);
+                        try {
+                            const res = evaluate(boundVal.body);
+                            isBound = res !== null && res !== undefined;
+                        } finally {
+                            context.pop();
+                        }
+                    } else {
+                        const res = boundVal(new Integer(BigInt(idx)));
+                        isBound = res !== null && res !== undefined;
+                    }
+
+                    currentChunk.push(items[i]);
+                    if (isBound) {
+                        results.push(currentChunk);
+                        currentChunk = [];
+                    }
+                }
+                if (currentChunk.length > 0) {
+                    results.push(currentChunk);
+                }
+            } else {
+                // Integer n
+                const nRaw = (boundVal && boundVal.constructor && boundVal.constructor.name === "Integer") ? Number(boundVal.value) : Number(boundVal);
+                if (isNaN(nRaw) || nRaw <= 0) {
+                    throw new Error("PCHUNK requires a positive integer size or a predicate function");
+                }
+                const n = Math.floor(nRaw);
+                let currentChunk = [];
+                for (let i = 0; i < items.length; i++) {
+                    currentChunk.push(items[i]);
+                    if (currentChunk.length === n) {
+                        results.push(currentChunk);
+                        currentChunk = [];
+                    }
+                }
+                if (currentChunk.length > 0) {
+                    results.push(currentChunk);
+                }
+            }
+
+            if (isString) {
+                return {
+                    type: "sequence",
+                    values: results.map(arr => {
+                        const s = arr.map(x => typeof x === "string" ? x : (x && x.type === "string" ? x.value : x)).join("");
+                        return isStringObj ? { type: "string", value: s } : s;
+                    })
+                };
+            } else {
+                return {
+                    type: "sequence",
+                    values: results.map(arr => {
+                        if (collection.type === "tuple") return { type: "tuple", values: arr };
+                        return { type: collection.type || "sequence", values: arr };
+                    })
+                };
+            }
+        },
+        doc: "Chunk a collection into subarrays by size or boundary predicate",
+    },
+
     PMAP: {
         lazy: true,
         impl(args, context, evaluate) {
             const collection = evaluate(args[0]);
             const funcNode = args[1];
 
-            if (!collection || !collection.values) {
+            if (collection === null || collection === undefined) return null;
+
+            const isStringObj = (collection && collection.type === "string");
+            const isString = typeof collection === "string" || isStringObj;
+            let items = null;
+
+            if (isString) {
+                items = Array.from(isStringObj ? collection.value : collection).map(ch => isStringObj ? { type: "string", value: ch } : ch);
+            } else if (collection && Array.isArray(collection.values)) {
+                items = collection.values;
+            } else {
                 throw new Error("PMAP requires a collection");
             }
 
-            const results = collection.values.map((item) => {
-                // Make item available and apply function
+            const results = items.map((item) => {
                 const func = evaluate(funcNode);
                 if (func && (func.type === "function" || func.type === "lambda")) {
                     const scope = new Map();
@@ -481,7 +767,27 @@ export const functionFunctions = {
                 throw new Error("PMAP function is not callable");
             });
 
-            return { type: collection.type || "sequence", values: results };
+            if (isString) {
+                let allSingleCharStr = true;
+                for (let r of results) {
+                    const rv = (r && r.type === "string") ? r.value : r;
+                    if (rv === null) {
+                        // Include null in the array-result case, treat as "not single code point"
+                        allSingleCharStr = false;
+                        break;
+                    }
+                    if (typeof rv !== "string" || Array.from(rv).length !== 1) {
+                        allSingleCharStr = false;
+                        break;
+                    }
+                }
+                if (allSingleCharStr) {
+                    const strVal = results.map(r => (r && r.type === "string") ? r.value : r).join("");
+                    return isStringObj ? { type: "string", value: strVal } : strVal;
+                }
+            }
+
+            return { type: (collection.type && !isString) ? collection.type : "sequence", values: results };
         },
         doc: "Map a function over a collection",
     },
@@ -492,7 +798,17 @@ export const functionFunctions = {
             const collection = evaluate(args[0]);
             const funcNode = args[1];
 
-            if (!collection || !collection.values) {
+            if (collection === null || collection === undefined) return null;
+
+            const isStringObj = (collection && collection.type === "string");
+            const isString = typeof collection === "string" || isStringObj;
+            let items = null;
+
+            if (isString) {
+                items = Array.from(isStringObj ? collection.value : collection).map(ch => isStringObj ? { type: "string", value: ch } : ch);
+            } else if (collection && Array.isArray(collection.values)) {
+                items = collection.values;
+            } else {
                 throw new Error("PFILTER requires a collection");
             }
 
@@ -500,7 +816,7 @@ export const functionFunctions = {
                 return val !== null && val !== undefined;
             };
 
-            const results = collection.values.filter((item) => {
+            const results = items.filter((item) => {
                 const func = evaluate(funcNode);
                 if (func && (func.type === "function" || func.type === "lambda")) {
                     const scope = new Map();
@@ -518,6 +834,11 @@ export const functionFunctions = {
                 throw new Error("PFILTER function is not callable");
             });
 
+            if (isString) {
+                const filteredStr = results.map(r => r && r.type === "string" ? r.value : r).join("");
+                return isStringObj ? { type: "string", value: filteredStr } : filteredStr;
+            }
+
             return { type: collection.type || "sequence", values: results };
         },
         doc: "Filter a collection with a predicate",
@@ -530,20 +851,30 @@ export const functionFunctions = {
             const funcNode = args[1];
             const init = args.length > 2 ? evaluate(args[2]) : null;
 
-            if (!collection || !collection.values) {
+            if (collection === null || collection === undefined) return null;
+
+            const isStringObj = (collection && collection.type === "string");
+            const isString = typeof collection === "string" || isStringObj;
+            let items = null;
+
+            if (isString) {
+                items = Array.from(isStringObj ? collection.value : collection).map(ch => isStringObj ? { type: "string", value: ch } : ch);
+            } else if (collection && Array.isArray(collection.values)) {
+                items = collection.values;
+            } else {
                 throw new Error("PREDUCE requires a collection");
             }
 
             const func = evaluate(funcNode);
-            let acc = init ?? collection.values[0];
+            let acc = init ?? items[0];
             const startIdx = init !== null ? 0 : 1;
 
-            for (let i = startIdx; i < collection.values.length; i++) {
+            for (let i = startIdx; i < items.length; i++) {
                 if (func && (func.type === "function" || func.type === "lambda")) {
                     const scope = new Map();
                     if (func.params?.positional?.length >= 2) {
                         scope.set(func.params.positional[0].name, acc);
-                        scope.set(func.params.positional[1].name, collection.values[i]);
+                        scope.set(func.params.positional[1].name, items[i]);
                     }
                     context.push(scope);
                     try {
@@ -552,7 +883,7 @@ export const functionFunctions = {
                         context.pop();
                     }
                 } else if (typeof func === "function") {
-                    acc = func(acc, collection.values[i]);
+                    acc = func(acc, items[i]);
                 } else {
                     throw new Error("PREDUCE function is not callable");
                 }
@@ -566,10 +897,21 @@ export const functionFunctions = {
     PREVERSE: {
         impl(args) {
             const collection = args[0];
-            if (!collection || !collection.values) {
+            if (collection === null || collection === undefined) return null;
+
+            const isStringObj = (collection && collection.type === "string");
+            const isString = typeof collection === "string" || isStringObj;
+            let items = null;
+
+            if (isString) {
+                items = Array.from(isStringObj ? collection.value : collection).map(ch => isStringObj ? { type: "string", value: ch } : ch);
+                const reversed = items.reverse().map(r => r && r.type === "string" ? r.value : r).join("");
+                return isStringObj ? { type: "string", value: reversed } : reversed;
+            } else if (collection && Array.isArray(collection.values)) {
+                return { type: collection.type || "sequence", values: [...collection.values].reverse() };
+            } else {
                 throw new Error("PREVERSE requires a collection");
             }
-            return { type: collection.type || "sequence", values: [...collection.values].reverse() };
         },
         pure: true,
         doc: "Reverse a collection (returns new copy)",
@@ -581,12 +923,22 @@ export const functionFunctions = {
             const collection = evaluate(args[0]);
             const funcNode = args[1];
 
-            if (!collection || !collection.values) {
+            if (collection === null || collection === undefined) return null;
+
+            const isStringObj = (collection && collection.type === "string");
+            const isString = typeof collection === "string" || isStringObj;
+            let items = null;
+
+            if (isString) {
+                items = Array.from(isStringObj ? collection.value : collection).map(ch => isStringObj ? { type: "string", value: ch } : ch);
+            } else if (collection && Array.isArray(collection.values)) {
+                items = collection.values;
+            } else {
                 throw new Error("PSORT requires a collection");
             }
 
             const func = evaluate(funcNode);
-            const sorted = [...collection.values].sort((a, b) => {
+            const sorted = [...items].sort((a, b) => {
                 if (func && (func.type === "function" || func.type === "lambda")) {
                     const scope = new Map();
                     if (func.params?.positional?.length >= 2) {
@@ -596,7 +948,7 @@ export const functionFunctions = {
                     context.push(scope);
                     try {
                         const result = evaluate(func.body);
-                        if (result instanceof Integer) return Number(result.value);
+                        if (result && result.constructor && result.constructor.name === "Integer") return Number(result.value);
                         if (typeof result === "number") return result;
                         return 0;
                     } finally {
@@ -607,11 +959,24 @@ export const functionFunctions = {
                     const result = func(a, b);
                     return typeof result === "number" ? result : 0;
                 }
+                // Default string ordering for code points if no comparator and is string
+                if (isString) {
+                    const valA = a && a.type === "string" ? a.value : a;
+                    const valB = b && b.type === "string" ? b.value : b;
+                    if (valA < valB) return -1;
+                    if (valA > valB) return 1;
+                    return 0;
+                }
                 // Default: numeric sort
-                const na = a instanceof Integer ? Number(a.value) : Number(a);
-                const nb = b instanceof Integer ? Number(b.value) : Number(b);
+                const na = (a && a.constructor && a.constructor.name === "Integer") ? Number(a.value) : Number(a);
+                const nb = (b && b.constructor && b.constructor.name === "Integer") ? Number(b.value) : Number(b);
                 return na - nb;
             });
+
+            if (isString) {
+                const joined = sorted.map(r => r && r.type === "string" ? r.value : r).join("");
+                return isStringObj ? { type: "string", value: joined } : joined;
+            }
 
             return { type: collection.type || "sequence", values: sorted };
         },
@@ -624,16 +989,26 @@ export const functionFunctions = {
             const collection = evaluate(args[0]);
             const funcNode = args[1];
 
-            if (!collection || !collection.values) {
+            if (collection === null || collection === undefined) return null;
+
+            const isStringObj = (collection && collection.type === "string");
+            const isString = typeof collection === "string" || isStringObj;
+            let items = null;
+
+            if (isString) {
+                items = Array.from(isStringObj ? collection.value : collection).map(ch => isStringObj ? { type: "string", value: ch } : ch);
+            } else if (collection && Array.isArray(collection.values)) {
+                items = collection.values;
+            } else {
                 throw new Error("PALL requires a collection");
             }
 
-            if (collection.values.length === 0) {
+            if (items.length === 0) {
                 return null;
             }
 
             let lastItem = null;
-            for (const item of collection.values) {
+            for (const item of items) {
                 const func = evaluate(funcNode);
                 let result;
                 if (func && (func.type === "function" || func.type === "lambda")) {
@@ -666,11 +1041,21 @@ export const functionFunctions = {
             const collection = evaluate(args[0]);
             const funcNode = args[1];
 
-            if (!collection || !collection.values) {
-                console.log("PANY collection:", collection, "args:", args); throw new Error("PANY requires a collection");
+            if (collection === null || collection === undefined) return null;
+
+            const isStringObj = (collection && collection.type === "string");
+            const isString = typeof collection === "string" || isStringObj;
+            let items = null;
+
+            if (isString) {
+                items = Array.from(isStringObj ? collection.value : collection).map(ch => isStringObj ? { type: "string", value: ch } : ch);
+            } else if (collection && Array.isArray(collection.values)) {
+                items = collection.values;
+            } else {
+                throw new Error("PANY requires a collection");
             }
 
-            for (const item of collection.values) {
+            for (const item of items) {
                 const func = evaluate(funcNode);
                 let result;
                 if (func && (func.type === "function" || func.type === "lambda")) {

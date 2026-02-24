@@ -478,6 +478,14 @@ const LOWERERS = {
     return ir("PSLICE_CLAMP", lowerNode(node.left), lowerNode(node.right));
   },
 
+  Split(node) {
+    return ir("PSPLIT", lowerNode(node.left), lowerNode(node.right));
+  },
+
+  Chunk(node) {
+    return ir("PCHUNK", lowerNode(node.left), lowerNode(node.right));
+  },
+
   Map(node) {
     return ir("PMAP", lowerNode(node.left), lowerNode(node.right));
   },

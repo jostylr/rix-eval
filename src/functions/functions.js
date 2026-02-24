@@ -253,6 +253,196 @@ export const functionFunctions = {
         doc: "Pipe a value into a function",
     },
 
+
+    PSLICE_STRICT: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const collNode = args[0];
+            const intervalNode = args[1];
+
+            const coll = evaluate(collNode);
+            if (coll === null || coll === undefined) return null;
+
+            const interval = evaluate(intervalNode);
+            let i_val, j_val;
+
+            if (interval && interval.constructor && interval.constructor.name === "RationalInterval") {
+                i_val = Number(interval.start.numerator) / Number(interval.start.denominator);
+                j_val = Number(interval.end.numerator) / Number(interval.end.denominator);
+            } else if (interval && interval.type === "interval") {
+                const getNum = x => {
+                    if (x && x.numerator !== undefined) return Number(x.numerator) / Number(x.denominator);
+                    if (x && x.value !== undefined) return Number(x.value);
+                    return Number(x);
+                };
+                i_val = getNum(interval.lo);
+                j_val = getNum(interval.hi);
+            } else {
+                return null;
+            }
+
+            if (isNaN(i_val) || isNaN(j_val)) { console.log("ret null 3"); return null; }
+            if (!Number.isInteger(i_val) || !Number.isInteger(j_val)) return null;
+
+            let isStringObj = coll && coll.type === "string";
+            let isString = typeof coll === "string" || isStringObj;
+            let n = 0;
+            let items = null;
+
+            if (isString) {
+                items = isStringObj ? coll.value : coll;
+                n = items.length;
+            } else if (coll && Array.isArray(coll.values)) {
+                n = coll.values.length;
+                items = coll.values;
+            } else {
+                return null;
+            }
+
+            const normalize = (k) => {
+                if (k === 0) return null;
+                if (k > 0) return k;
+                if (k < 0) return n + 1 + k;
+                return null;
+            };
+
+            let I = normalize(i_val);
+            let J = normalize(j_val);
+
+            if (I === null || J === null) return null;
+
+            if (I < 1 || I > n || J < 1 || J > n) return null;
+
+            const indices = [];
+            if (I <= J) {
+                let start = Math.ceil(I);
+                let end = Math.floor(J);
+                for (let k = start; k <= end; k++) indices.push(k);
+            } else {
+                let start = Math.floor(I);
+                let end = Math.ceil(J);
+                for (let k = start; k >= end; k--) indices.push(k);
+            }
+
+            if (isString) {
+                let slice = indices.map(idx => items[idx - 1]).join("");
+                return isStringObj ? { type: "string", value: slice } : slice;
+            } else {
+                const results = indices.map(idx => items[idx - 1]);
+                if (coll.type === "tuple") {
+                    return { type: "tuple", values: results };
+                }
+                return { type: coll.type || "sequence", values: results };
+            }
+        },
+        doc: "Strict slice operator |>/"
+    },
+
+    PSLICE_CLAMP: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const collNode = args[0];
+            const intervalNode = args[1];
+
+            const coll = evaluate(collNode);
+            const isStringObj = coll && coll.type === "string";
+            const isString = typeof coll === "string" || isStringObj;
+            let n = 0;
+            let items = null;
+
+            const emptyOutput = isStringObj
+                ? { type: "string", value: "" }
+                : (isString ? "" : { type: "sequence", values: [] });
+
+            if (coll !== null && coll !== undefined) {
+                if (isString) {
+                    items = isStringObj ? coll.value : coll;
+                    n = items.length;
+                } else if (coll && Array.isArray(coll.values)) {
+                    n = coll.values.length;
+                    items = coll.values;
+
+                    if (coll.type !== "array" && coll.type !== "sequence" && coll.type !== "tuple") {
+                        throw new Error("Slicing not supported for this collection type");
+                    }
+                } else {
+                    return emptyOutput;
+                }
+            } else {
+                return emptyOutput;
+            }
+
+            const interval = evaluate(intervalNode);
+            if (!interval) throw new Error("Invalid interval for clamping");
+
+            let i_val, j_val;
+            if (interval && interval.constructor && interval.constructor.name === "RationalInterval") {
+                i_val = Number(interval.start.numerator) / Number(interval.start.denominator);
+                j_val = Number(interval.end.numerator) / Number(interval.end.denominator);
+            } else if (interval && interval.type === "interval") {
+                const getNum = x => {
+                    if (x && x.numerator !== undefined) return Number(x.numerator) / Number(x.denominator);
+                    if (x && x.value !== undefined) return Number(x.value);
+                    return Number(x);
+                };
+                i_val = getNum(interval.lo);
+                j_val = getNum(interval.hi);
+            } else {
+                throw new Error("Invalid interval representation");
+            }
+
+            if (isNaN(i_val) || isNaN(j_val)) throw new Error("Interval bounds must be numeric");
+
+            // Handle 0 in clamped mode
+            if (i_val === 0 && j_val !== 0) i_val = Math.sign(j_val) * 1;
+            if (j_val === 0 && i_val !== 0) j_val = Math.sign(i_val) * 1;
+            if (i_val === 0 && j_val === 0) { i_val = 1; j_val = 1; }
+
+            const normalize = (k) => {
+                if (k > 0) return k;
+                if (k < 0) return n + 1 + k;
+                return null;
+            };
+
+            let I = normalize(i_val);
+            let J = normalize(j_val);
+
+            if (I === null || J === null) return emptyOutput;
+
+            if (n === 0) return emptyOutput;
+
+            if (I < 1) I = 1;
+            if (I > n) I = n;
+            if (J < 1) J = 1;
+            if (J > n) J = n;
+
+            const indices = [];
+            if (I <= J) {
+                let start = Math.ceil(I);
+                let end = Math.floor(J);
+                for (let k = start; k <= end; k++) indices.push(k);
+            } else {
+                let start = Math.floor(I);
+                let end = Math.ceil(J);
+                for (let k = start; k >= end; k--) indices.push(k);
+            }
+
+            if (indices.length === 0) return emptyOutput;
+
+            if (isString) {
+                let slice = indices.map(idx => items[idx - 1]).join("");
+                return isStringObj ? { type: "string", value: slice } : slice;
+            } else {
+                const results = indices.map(idx => items[idx - 1]);
+                if (coll.type === "tuple") {
+                    return { type: "tuple", values: results };
+                }
+                return { type: coll.type || "sequence", values: results };
+            }
+        },
+        doc: "Clamped slice operator |>//"
+    },
+
     PIPE_EXPLICIT: {
         lazy: true,
         impl(args, context, evaluate) {

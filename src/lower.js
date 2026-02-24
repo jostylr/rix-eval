@@ -470,6 +470,14 @@ const LOWERERS = {
     return ir("PIPE_EXPLICIT", lowerNode(node.left), lowerNode(node.right));
   },
 
+  SliceStrict(node) {
+    return ir("PSLICE_STRICT", lowerNode(node.left), lowerNode(node.right));
+  },
+
+  SliceClamp(node) {
+    return ir("PSLICE_CLAMP", lowerNode(node.left), lowerNode(node.right));
+  },
+
   Map(node) {
     return ir("PMAP", lowerNode(node.left), lowerNode(node.right));
   },

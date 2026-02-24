@@ -60,10 +60,14 @@
 
 ### Pipe Operators
 
+Note that in the text version below there is a leading escape slash in front of the pipes for markdown table compatibility. In actual use, do not use the escape slash.
+
 | Syntax | System Function | Description |
 |--------|----------------|-------------|
 | `x \|> F` | `PIPE` | Pipe `x` as first arg to `F` |
 | `x \|\|> F(_1)` | `PIPE_EXPLICIT` | Pipe with explicit placeholder |
+| `coll \|>/ i:j` | `PSLICE_STRICT` | Strict slice a collection based on interval; `null` if bounds are non-integers or invalid |
+| `coll \|>// i:j` | `PSLICE_CLAMP` | Clamped slice a collection based on interval; clamps exactly without failing |
 | `coll \|>> fn` | `PMAP` | Map `fn` over collection |
 | `coll \|>? pred` | `PFILTER` | Filter collection by predicate |
 | `coll \|>: fn` | `PREDUCE` | Reduce (first element as init) |
@@ -232,6 +236,9 @@ Other registered prefixes: `0q` (Base 4), `0f` (5), `0s` (7), `0d` (12), `0v` (2
 | Function | Description | Syntax Aliases |
 |----------|-------------|----------------|
 | `PIPE(val, fn)` | Pipe value into function | `val \|> fn` |
+| `PIPE_EXPLICIT(val, fn)` | Pipe value into function explicitly | `val ||> fn` |
+| `PSLICE_STRICT(coll, i:j)` | Strict slice collection | `coll |>/ i:j` |
+| `PSLICE_CLAMP(coll, i:j)` | Clamped slice collection | `coll |>// i:j` |
 | `PMAP(coll, fn)` | Map function over collection | `coll \|>> fn`, `MAP(coll, fn)` |
 | `PFILTER(coll, pred)` | Filter by predicate | `coll \|>? pred`, `FILTER(coll, pred)` |
 | `PREDUCE(coll, fn, init)` | Reduce/fold | `coll \|>: fn`, `coll \|:> init >: fn`, `REDUCE(coll, fn, init)` |

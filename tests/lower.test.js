@@ -506,8 +506,8 @@ describe("Lowering Pass", () => {
   });
 
   describe("Code Blocks", () => {
-    test("{{ a; b }} → BLOCK", () => {
-      const ir = L("{{ a; b }};");
+    test("{; a; b } → BLOCK", () => {
+      const ir = L("{; a; b };");
       expect(ir.fn).toBe("BLOCK");
       expect(ir.args.length).toBe(2);
     });

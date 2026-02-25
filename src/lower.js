@@ -418,10 +418,6 @@ const LOWERERS = {
     return ir("DEFER", lowerNode(node.body));
   },
 
-  CodeBlock(node) {
-    return ir("BLOCK", ...node.statements.map(lowerNode));
-  },
-
   // === Property Access ===
 
   DotAccess(node) {

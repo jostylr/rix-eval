@@ -12,6 +12,8 @@ import { Integer, Rational } from "@ratmath/core";
  */
 function ensureNumeric(val) {
     if (val instanceof Integer || val instanceof Rational) return val;
+    // Robust check for ratmath types across different instances of core
+    if (val && typeof val === "object" && typeof val.add === "function" && typeof val.multiply === "function") return val;
     if (typeof val === "bigint") return new Integer(val);
     if (typeof val === "number") {
         if (Number.isInteger(val)) return new Integer(val);

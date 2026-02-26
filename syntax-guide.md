@@ -66,8 +66,8 @@ Collections in pipes are arrays, tuples (become arrays), and strings.
 
 | Syntax | System Function | Description |
 |--------|----------------|-------------|
-| `x \|> F` | `PIPE` | Pipe `x` as first arg to `F` |
-| `x \|\|> F(_1)` | `PIPE_EXPLICIT` | Pipe with explicit placeholder |
+| `x \|> F` | `PIPE` | Pipe `x` as first arg to `F` (or concrete call if `F` is partial) |
+| `x \|\|> F(_1)` | `PIPE_EXPLICIT` | Alias for `PIPE`; used with placeholders for clarity |
 | `coll \|>/ i:j` | `PSLICE_STRICT` | Strict slice a collection based on interval; `null` if bounds are non-integers or invalid |
 | `coll \|>// i:j` | `PSLICE_CLAMP` | Clamped slice a collection based on interval; clamps exactly without failing |
 | `coll \|>\| sep` | `PSPLIT` | Split string or collection by delimiter string, regex or predicate |
@@ -83,7 +83,19 @@ Collections in pipes are arrays, tuples (become arrays), and strings.
 
 All pipe operators return **new** collections; they never mutate the original.
 
-### Sequence Generation (inside `[...]`)
+### Partial Functions & Placeholders
+
+| Syntax | Description | Example |
+|--------|-------------|---------|
+| `_1`, `_2`, ... | Argument placeholders (1-indexed) | `Double = @*(_1, 2)` |
+| `__1`, `__2`, ... | Alternative placeholder syntax | `Double = @*(__1, 2)` |
+
+Partial application occurs when a function is called with one or more placeholders. This returns a `[Partial: N]` object (where `N` is the arity).
+
+- **Reordering**: `@-(_2, _1)` creates a function that subtracts its first argument from its second.
+- **Duplication**: `F(_1, _1)` calls `F` with the same argument in both slots.
+- **Integration**: Works seamlessly with pipes: `[1, 2, 3] |>> @*(_1, 10)` → `[10, 20, 30]`.
+- **Automatic Appending**: Any arguments passed to a partial that aren't consumed by placeholders are appended. For example, if `F(a, b, c)` is called via `G = F(_1, _2)`, then `G(1, 2, 3)` becomes `F(1, 2, 3)`.
 
 | Syntax | Description | Example |
 |--------|-------------|---------|

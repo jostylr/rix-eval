@@ -4,6 +4,76 @@
 
 import { Integer } from "@ratmath/core";
 
+// --- Partial Application Helpers ---
+
+/**
+ * True if a raw IR node (unevaluated arg) is a PLACEHOLDER.
+ */
+function isPlaceholderNode(node) {
+    return node && typeof node === "object" && node.fn === "PLACEHOLDER";
+}
+
+/**
+ * Apply a partial to concrete call args.
+ * Placeholders _N are replaced by callArgs[N-1]; extra args are appended.
+ */
+function resolvePartial(partial, callArgs) {
+    const { fn, template } = partial;
+    const filled = template.map(t =>
+        (t && t.type === "placeholder") ? callArgs[t.index - 1] : t
+    );
+    const maxIdx = template.reduce(
+        (max, t) => (t && t.type === "placeholder") ? Math.max(max, t.index) : max,
+        0
+    );
+    return { fn, args: [...filled, ...callArgs.slice(maxIdx)] };
+}
+
+/**
+ * Call a resolved function value (function/lambda/sysref/partial/native) with
+ * concrete (already-evaluated) args.
+ */
+function callWithConcreteArgs(fn, callArgs, context, evaluate) {
+    if (!fn) throw new Error("Cannot call null/undefined");
+
+    if (fn.type === "partial") {
+        const { fn: innerFn, args } = resolvePartial(fn, callArgs);
+        return callWithConcreteArgs(innerFn, args, context, evaluate);
+    }
+
+    if (fn.type === "function" || fn.type === "lambda") {
+        const scope = new Map();
+        if (fn.params?.positional) {
+            for (let i = 0; i < fn.params.positional.length; i++) {
+                const param = fn.params.positional[i];
+                scope.set(param.name, i < callArgs.length
+                    ? callArgs[i]
+                    : (param.default ? evaluate(param.default) : null));
+            }
+        }
+        context.push(scope);
+        if (fn.name) context.pushCall(fn.name);
+        try {
+            return evaluate(fn.body);
+        } finally {
+            if (fn.name) context.popCall();
+            context.pop();
+        }
+    }
+
+    // System function reference — concrete values have no .fn so they pass
+    // through evaluate() unchanged, whether the sysref is lazy or not.
+    if (fn.type === "sysref") {
+        return evaluate({ fn: fn.name, args: callArgs });
+    }
+
+    if (typeof fn === "function") {
+        return fn(...callArgs);
+    }
+
+    throw new Error("Value is not callable");
+}
+
 export const functionFunctions = {
     CALL: {
         lazy: true,
@@ -11,13 +81,23 @@ export const functionFunctions = {
             // args[0] = function name (string)
             // args[1..] = argument IR nodes
             const name = args[0];
+            const argNodes = args.slice(1);
+
+            // If any arg is a placeholder, build a partial application instead.
+            if (argNodes.some(isPlaceholderNode)) {
+                const template = argNodes.map(a => evaluate(a));
+                const funcDef = context.get(name);
+                const fn = funcDef || { type: "sysref", name };
+                return { type: "partial", fn, template };
+            }
+
             // Look up the function
             const funcDef = context.get(name);
 
             if (!funcDef) {
                 // FALLBACK: Try evaluating as a system function call (could be lazy)
                 try {
-                    return evaluate({ fn: name, args: args.slice(1) });
+                    return evaluate({ fn: name, args: argNodes });
                 } catch (e) {
                     if (e.message.startsWith("Unknown system function")) {
                         throw new Error(`Undefined function: ${name}`);
@@ -26,13 +106,19 @@ export const functionFunctions = {
                 }
             }
 
+            // If it's a partial, apply it with the concrete call args.
+            if (funcDef.type === "partial") {
+                const callArgs = argNodes.map(a => evaluate(a));
+                return callWithConcreteArgs(funcDef, callArgs, context, evaluate);
+            }
+
             // If it's a user-defined function (FUNCDEF or LAMBDA result)
             if (funcDef.type === "function" || funcDef.type === "lambda") {
                 const params = funcDef.params;
                 const body = funcDef.body;
 
                 // Evaluate arguments (user functions are NOT lazy by default for now)
-                const callArgs = args.slice(1).map((a) => evaluate(a));
+                const callArgs = argNodes.map((a) => evaluate(a));
 
                 // Create a new scope with parameter bindings
                 const scope = new Map();
@@ -64,12 +150,12 @@ export const functionFunctions = {
             // If it's a sysref (system function reference)
             if (funcDef.type === "sysref") {
                 // Evaluate as system function
-                return evaluate({ fn: funcDef.name, args: args.slice(1) });
+                return evaluate({ fn: funcDef.name, args: argNodes });
             }
 
             // If it's a native JS function (from packages)
             if (typeof funcDef === "function") {
-                const callArgs = args.slice(1).map((a) => evaluate(a));
+                const callArgs = argNodes.map((a) => evaluate(a));
                 return funcDef(...callArgs);
             }
 
@@ -84,8 +170,23 @@ export const functionFunctions = {
         impl(args, context, evaluate) {
             // args[0] = expression that evaluates to a function
             // args[1..] = argument IR nodes
-            const funcVal = evaluate(args[0]);
-            const callArgs = args.slice(1).map((a) => evaluate(a));
+            const funcNode = args[0];
+            const argNodes = args.slice(1);
+
+            // If any arg is a placeholder, build a partial application.
+            if (argNodes.some(isPlaceholderNode)) {
+                const funcVal = evaluate(funcNode);
+                const template = argNodes.map(a => evaluate(a));
+                return { type: "partial", fn: funcVal, template };
+            }
+
+            const funcVal = evaluate(funcNode);
+            const callArgs = argNodes.map((a) => evaluate(a));
+
+            // If it's a partial, apply it.
+            if (funcVal && funcVal.type === "partial") {
+                return callWithConcreteArgs(funcVal, callArgs, context, evaluate);
+            }
 
             if (funcVal && (funcVal.type === "function" || funcVal.type === "lambda")) {
                 const params = funcVal.params;
@@ -111,6 +212,10 @@ export const functionFunctions = {
                 } finally {
                     context.pop();
                 }
+            }
+
+            if (funcVal && funcVal.type === "sysref") {
+                return evaluate({ fn: funcVal.name, args: callArgs });
             }
 
             if (typeof funcVal === "function") {
@@ -231,6 +336,15 @@ export const functionFunctions = {
 
             // Try evaluating the function and applying
             const func = evaluate(funcNode);
+
+            if (func && func.type === "partial") {
+                return callWithConcreteArgs(func, [value], context, evaluate);
+            }
+
+            if (func && func.type === "sysref") {
+                return evaluate({ fn: func.name, args: [value] });
+            }
+
             if (func && (func.type === "function" || func.type === "lambda")) {
                 const scope = new Map();
                 if (func.params?.positional?.length > 0) {
@@ -751,6 +865,12 @@ export const functionFunctions = {
 
             const results = items.map((item) => {
                 const func = evaluate(funcNode);
+                if (func && func.type === "partial") {
+                    return callWithConcreteArgs(func, [item], context, evaluate);
+                }
+                if (func && func.type === "sysref") {
+                    return evaluate({ fn: func.name, args: [item] });
+                }
                 if (func && (func.type === "function" || func.type === "lambda")) {
                     const scope = new Map();
                     if (func.params?.positional?.length > 0) {
@@ -818,6 +938,12 @@ export const functionFunctions = {
 
             const results = items.filter((item) => {
                 const func = evaluate(funcNode);
+                if (func && func.type === "partial") {
+                    return isTruthy(callWithConcreteArgs(func, [item], context, evaluate));
+                }
+                if (func && func.type === "sysref") {
+                    return isTruthy(evaluate({ fn: func.name, args: [item] }));
+                }
                 if (func && (func.type === "function" || func.type === "lambda")) {
                     const scope = new Map();
                     if (func.params?.positional?.length > 0) {
@@ -870,7 +996,11 @@ export const functionFunctions = {
             const startIdx = init !== null ? 0 : 1;
 
             for (let i = startIdx; i < items.length; i++) {
-                if (func && (func.type === "function" || func.type === "lambda")) {
+                if (func && func.type === "partial") {
+                    acc = callWithConcreteArgs(func, [acc, items[i]], context, evaluate);
+                } else if (func && func.type === "sysref") {
+                    acc = evaluate({ fn: func.name, args: [acc, items[i]] });
+                } else if (func && (func.type === "function" || func.type === "lambda")) {
                     const scope = new Map();
                     if (func.params?.positional?.length >= 2) {
                         scope.set(func.params.positional[0].name, acc);
@@ -939,6 +1069,18 @@ export const functionFunctions = {
 
             const func = evaluate(funcNode);
             const sorted = [...items].sort((a, b) => {
+                if (func && func.type === "partial") {
+                    const result = callWithConcreteArgs(func, [a, b], context, evaluate);
+                    if (result && result.constructor && result.constructor.name === "Integer") return Number(result.value);
+                    if (typeof result === "number") return result;
+                    return 0;
+                }
+                if (func && func.type === "sysref") {
+                    const result = evaluate({ fn: func.name, args: [a, b] });
+                    if (result && result.constructor && result.constructor.name === "Integer") return Number(result.value);
+                    if (typeof result === "number") return result;
+                    return 0;
+                }
                 if (func && (func.type === "function" || func.type === "lambda")) {
                     const scope = new Map();
                     if (func.params?.positional?.length >= 2) {
@@ -1011,7 +1153,11 @@ export const functionFunctions = {
             for (const item of items) {
                 const func = evaluate(funcNode);
                 let result;
-                if (func && (func.type === "function" || func.type === "lambda")) {
+                if (func && func.type === "partial") {
+                    result = callWithConcreteArgs(func, [item], context, evaluate);
+                } else if (func && func.type === "sysref") {
+                    result = evaluate({ fn: func.name, args: [item] });
+                } else if (func && (func.type === "function" || func.type === "lambda")) {
                     const scope = new Map();
                     if (func.params?.positional?.length > 0) {
                         scope.set(func.params.positional[0].name, item);
@@ -1058,7 +1204,11 @@ export const functionFunctions = {
             for (const item of items) {
                 const func = evaluate(funcNode);
                 let result;
-                if (func && (func.type === "function" || func.type === "lambda")) {
+                if (func && func.type === "partial") {
+                    result = callWithConcreteArgs(func, [item], context, evaluate);
+                } else if (func && func.type === "sysref") {
+                    result = evaluate({ fn: func.name, args: [item] });
+                } else if (func && (func.type === "function" || func.type === "lambda")) {
                     const scope = new Map();
                     if (func.params?.positional?.length > 0) {
                         scope.set(func.params.positional[0].name, item);

@@ -182,7 +182,11 @@ const LOWERERS = {
       return lowerAssignment(assignAstNode);
     }
     if (op === ":=:") {
-      return ir("SOLVE", lowerNode(node.left), lowerNode(node.right));
+      const left = node.left;
+      if (left.type === "UserIdentifier" || left.type === "SystemIdentifier") {
+        return ir("SOLVE", left.name, lowerNode(node.right));
+      }
+      return ir("SOLVE", lowerNode(left), lowerNode(node.right));
     }
     if (op === ":<:") {
       return ir("ASSERT_LT", lowerNode(node.left), lowerNode(node.right));
@@ -384,7 +388,7 @@ const LOWERERS = {
   // === Brace Sigil Containers ===
 
   MapContainer(node) {
-    return ir("MAP", ...node.elements.map(lowerNode));
+    return ir("MAP_OBJ", ...node.elements.map(lowerNode));
   },
 
   CaseContainer(node) {
@@ -407,10 +411,10 @@ const LOWERERS = {
     return ir("LOOP", ...node.elements.map((el) => ir("DEFER", lowerNode(el))));
   },
 
-  // Inference-based brace containers (plain {})
-  Set(node) {
-    return ir("SET", ...node.elements.map(lowerNode));
+  SystemContainer(node) {
+    return ir("SYSTEM", ...node.elements.map(lowerNode));
   },
+
 
   // === Deferred Blocks ===
 

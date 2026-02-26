@@ -38,9 +38,11 @@
 
 | Syntax | System Function | Description |
 |--------|----------------|-------------|
-| `{; a; b; c }` | `BLOCK` | Sequential execution, returns last value |
+| `{ a; b; c }` | `BLOCK` | Sequential execution, returns last value |
+| `{; a; b; c }` | `BLOCK` | Sequential execution (explicit block) |
 | `{? c1 ? v1; c2 ? v2; default }` | `CASE` | Conditional branching (if/elseif/else) |
 | `{@ init; cond; body; update }` | `LOOP` | Loop with init, condition, body, update |
+| `{$ eq1; eq2 }` | `SYSTEM` | Mathematical system (equations/assertions) |
 | `{= k1=v1, k2=v2 }` | `MAP` | Map/object literal |
 | `{\| a, b, c }` | `SET` | Set literal |
 | `{: a, b, c }` | `TUPLE` | Tuple literal |
@@ -225,9 +227,10 @@ Other registered prefixes: `0q` (Base 4), `0f` (5), `0s` (7), `0d` (12), `0v` (2
 
 | Function | Description | Syntax Aliases |
 |----------|-------------|----------------|
-| `BLOCK(stmts...)` | Execute sequentially, return last | `{; a; b; c }` |
+| `BLOCK(stmts...)` | Execute sequentially, return last | `{ a; b }`, `{; a; b }` |
 | `CASE(branches...)` | If/elseif/else branching | `{? cond ? val; default }` |
 | `LOOP(init, cond, body, update)` | Loop | `{@ init; cond; body; update }` |
+| `SYSTEM(stmts...)` | Mathematical system container | `{$ eq1; eq2 }` |
 | `TERNARY(cond, t, f)` | Ternary conditional | `cond ?? t ?: f` |
 | `IF(cond, t, f)` | If-then-else (stdlib) | — |
 | `MULTI(a, b, c...)` | Evaluate all, return last (stdlib) | — |

@@ -338,9 +338,9 @@ describe("Lowering Pass", () => {
       expect(ir.args.length).toBe(2);
     });
 
-    test("{= a, b, c } → MAP", () => {
+    test("{= a, b, c } → MAP_OBJ", () => {
       const ir = L("{= a, b, c };");
-      expect(ir.fn).toBe("MAP");
+      expect(ir.fn).toBe("MAP_OBJ");
     });
   });
 

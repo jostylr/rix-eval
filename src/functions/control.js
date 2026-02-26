@@ -123,4 +123,16 @@ export const controlFunctions = {
         },
         doc: "Ternary conditional: condition ?? trueExpr ?: falseExpr",
     },
+
+    SYSTEM: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            let result = null;
+            for (const stmt of args) {
+                result = evaluate(stmt);
+            }
+            return result;
+        },
+        doc: "Mathematical system container, currently evaluates as a block",
+    },
 };

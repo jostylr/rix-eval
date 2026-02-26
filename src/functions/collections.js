@@ -85,27 +85,33 @@ export const collectionFunctions = {
         doc: "Create a set (unique values)",
     },
 
-    MAP: {
-        impl(args) {
+    MAP_OBJ: {
+        lazy: true,
+        impl(args, context, evaluate) {
             // MAP args come in as lowered elements
             // For {= a=3, b=6 }, the lowered form has assignment IR nodes
             // We store as key-value pairs
             const entries = new Map();
             for (const arg of args) {
                 if (arg && arg.fn === "ASSIGN") {
-                    // During evaluation, ASSIGN args will have been evaluated
-                    // but for MAP we treat them as key-value pairs
-                    entries.set(arg.args?.[0], arg.args?.[1]);
-                } else if (Array.isArray(arg) && arg.length === 2) {
-                    entries.set(arg[0], arg[1]);
+                    // Extract name and evaluate the value
+                    const name = arg.args[0];
+                    const val = evaluate(arg.args[1]);
+                    entries.set(name, val);
+                } else if (arg && arg.fn === "KWARG") {
+                    // Keyword args also used in MAP literals sometimes
+                    const name = arg.args[0];
+                    const val = evaluate(arg.args[1]);
+                    entries.set(name, val);
                 } else {
-                    // Single-value entry
-                    entries.set(arg?.toString?.() ?? String(args.indexOf(arg)), arg);
+                    // Single-value entry: evaluate and use index/value as key
+                    const val = evaluate(arg);
+                    entries.set(val?.toString?.() ?? String(args.indexOf(arg)), val);
                 }
             }
             return { type: "map", entries };
         },
-        pure: true,
+        pure: true, // It might not be pure if evaluate calls non-pure functions, but usually for literals it's okay.
         doc: "Create a map/object",
     },
 

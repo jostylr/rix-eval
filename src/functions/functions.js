@@ -2,7 +2,9 @@
  * Function-related system functions: CALL, LAMBDA, FUNCDEF, PATTERNDEF, PIPE
  */
 
-import { Integer } from "@ratmath/core";
+import { Integer, Rational } from "@ratmath/core";
+
+const isTruthy = (val) => val !== null && val !== undefined;
 
 // --- Partial Application Helpers ---
 
@@ -863,8 +865,8 @@ export const functionFunctions = {
                 throw new Error("PMAP requires a collection");
             }
 
+            const func = evaluate(funcNode);
             const results = items.map((item) => {
-                const func = evaluate(funcNode);
                 if (func && func.type === "partial") {
                     return callWithConcreteArgs(func, [item], context, evaluate);
                 }
@@ -932,12 +934,9 @@ export const functionFunctions = {
                 throw new Error("PFILTER requires a collection");
             }
 
-            const isTruthy = (val) => {
-                return val !== null && val !== undefined;
-            };
 
+            const func = evaluate(funcNode);
             const results = items.filter((item) => {
-                const func = evaluate(funcNode);
                 if (func && func.type === "partial") {
                     return isTruthy(callWithConcreteArgs(func, [item], context, evaluate));
                 }
@@ -1150,13 +1149,13 @@ export const functionFunctions = {
             }
 
             let lastItem = null;
+            const func = evaluate(funcNode);
             for (const item of items) {
-                const func = evaluate(funcNode);
-                let result;
+                let passed = false;
                 if (func && func.type === "partial") {
-                    result = callWithConcreteArgs(func, [item], context, evaluate);
+                    passed = isTruthy(callWithConcreteArgs(func, [item], context, evaluate));
                 } else if (func && func.type === "sysref") {
-                    result = evaluate({ fn: func.name, args: [item] });
+                    passed = isTruthy(evaluate({ fn: func.name, args: [item] }));
                 } else if (func && (func.type === "function" || func.type === "lambda")) {
                     const scope = new Map();
                     if (func.params?.positional?.length > 0) {
@@ -1164,16 +1163,16 @@ export const functionFunctions = {
                     }
                     context.push(scope);
                     try {
-                        result = evaluate(func.body);
+                        passed = isTruthy(evaluate(func.body));
                     } finally {
                         context.pop();
                     }
                 } else if (typeof func === "function") {
-                    result = func(item);
+                    passed = isTruthy(func(item));
                 } else {
                     throw new Error("PALL function is not callable");
                 }
-                if (result === null || result === undefined) return null;
+                if (!passed) return null; // Changed from `result === null || result === undefined` to `!passed`
                 lastItem = item;
             }
             return lastItem;
@@ -1201,13 +1200,13 @@ export const functionFunctions = {
                 throw new Error("PANY requires a collection");
             }
 
+            const func = evaluate(funcNode);
             for (const item of items) {
-                const func = evaluate(funcNode);
-                let result;
+                let passed = false;
                 if (func && func.type === "partial") {
-                    result = callWithConcreteArgs(func, [item], context, evaluate);
+                    passed = isTruthy(callWithConcreteArgs(func, [item], context, evaluate));
                 } else if (func && func.type === "sysref") {
-                    result = evaluate({ fn: func.name, args: [item] });
+                    passed = isTruthy(evaluate({ fn: func.name, args: [item] }));
                 } else if (func && (func.type === "function" || func.type === "lambda")) {
                     const scope = new Map();
                     if (func.params?.positional?.length > 0) {
@@ -1215,16 +1214,16 @@ export const functionFunctions = {
                     }
                     context.push(scope);
                     try {
-                        result = evaluate(func.body);
+                        passed = isTruthy(evaluate(func.body));
                     } finally {
                         context.pop();
                     }
                 } else if (typeof func === "function") {
-                    result = func(item);
+                    passed = isTruthy(func(item));
                 } else {
                     throw new Error("PANY function is not callable");
                 }
-                if (result !== null && result !== undefined) return item;
+                if (passed) return item; // Changed from `result !== null && result !== undefined` to `passed`
             }
             return null;
         },

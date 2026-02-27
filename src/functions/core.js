@@ -6,11 +6,54 @@ import { Integer, Rational, RationalInterval, BaseSystem } from "@ratmath/core";
 
 /**
  * Parse a number literal string into a ratmath type.
- * Uses a simplified parser for common cases; the full packages/parser
- * can be plugged in later for complex formats.
+ * Handles: integers, rationals, decimals, mixed numbers, repeating decimals (#),
+ * radix shift (_^), continued fractions (.~), and prefixed bases (0x, 0b, etc.).
+ * E notation is intentionally NOT supported.
  */
 function parseLiteral(str) {
     if (typeof str !== "string") return str;
+
+    const isNegative = str.startsWith("-");
+    const posStr = isNegative ? str.slice(1) : str;
+
+    // Continued fractions: integer.~term~term~... (e.g. 3.~7~15~1~292)
+    if (posStr.includes(".~")) {
+        const cfMatch = posStr.match(/^(\d+)\.~(\d+(?:~\d+)*)$/);
+        if (cfMatch) {
+            const intPart = BigInt(cfMatch[1]);
+            const cfTerms = cfMatch[2].split("~").map(t => BigInt(t));
+            const cfArray = [intPart, ...cfTerms];
+            let result = Rational.fromContinuedFraction(cfArray);
+            return isNegative ? result.negate() : result;
+        }
+        throw new Error(`Invalid continued fraction format: ${str}`);
+    }
+
+    // Radix shift: number_^exponent (e.g. 1_^2 = 100, 1_^-2 = 1/100)
+    if (posStr.includes("_^")) {
+        const shiftMatch = posStr.match(/^(.*?)_\^([+-]?\d+)$/);
+        if (shiftMatch) {
+            const baseVal = parseLiteral((isNegative ? "-" : "") + shiftMatch[1]);
+            const exp = BigInt(shiftMatch[2]);
+            // _^ uses base 10 for decimal literals
+            const base = 10n;
+            let scale;
+            if (exp >= 0n) {
+                scale = new Rational(base ** exp);
+            } else {
+                scale = new Rational(1n, base ** (-exp));
+            }
+            const baseRat = baseVal instanceof Integer ? baseVal.toRational() : baseVal;
+            const result = baseRat.multiply(scale);
+            return result.denominator === 1n ? new Integer(result.numerator) : result;
+        }
+        throw new Error(`Invalid radix shift format: ${str}`);
+    }
+
+    // Repeating decimals: digits.digits#digits, .digits#digits, digits#digits
+    if (posStr.includes("#")) {
+        return parseRepeatingDecimalLiteral(str);
+    }
 
     // Helper for base parsing
     const parseWithBase = (numStr, baseSystem) => {
@@ -49,8 +92,6 @@ function parseLiteral(str) {
                 const sign = wholeStr.startsWith("-") ? -1n : 1n;
                 const absWholeStr = wholeStr.startsWith("-") ? wholeStr.slice(1) : wholeStr;
 
-                // Allow inner prefixes? For simplicity assume inner parts use the outer base or explicitly prefix
-                // e.g. 0xA..B/C -> extract A, B, C
                 const getVal = (s) => {
                     const m = s.match(/^(?:0[a-zA-Z]|0z\[\d+\])?(.*)$/);
                     return baseSystem.toDecimal(normalizeCase(m ? m[1] : s, baseSystem));
@@ -84,8 +125,6 @@ function parseLiteral(str) {
 
     let baseSystem = null;
     let valueStr = str;
-    let isNegative = str.startsWith("-");
-    const posStr = isNegative ? str.slice(1) : str;
 
     // Check for 0z[N]
     const customMatch = posStr.match(/^0z\[(\d+)\](.*)$/);
@@ -105,8 +144,6 @@ function parseLiteral(str) {
     }
 
     if (baseSystem) {
-        // We know it's a base literal, so if it fails, throw the actual error
-        // instead of silently falling back to a string literal.
         return parseWithBase(valueStr, baseSystem);
     }
 
@@ -149,6 +186,61 @@ function parseLiteral(str) {
     } catch {
         throw new Error(`Invalid number format: ${str}`);
     }
+}
+
+/**
+ * Parse a repeating decimal string like "1.3#", "0.#3", "1.23#45", "5#3"
+ * into an exact Rational.
+ * Format: nonRepeating#repeating where repeating part repeats forever.
+ */
+function parseRepeatingDecimalLiteral(str) {
+    const isNeg = str.startsWith("-");
+    const s = isNeg ? str.slice(1) : str;
+
+    const hashIdx = s.indexOf("#");
+    if (hashIdx === -1) throw new Error(`Expected # in repeating decimal: ${str}`);
+
+    const nonRepStr = s.slice(0, hashIdx);  // e.g. "1.23" or "5" or "1."
+    const repStr = s.slice(hashIdx + 1);    // e.g. "45" or "3" or ""
+
+    // If repeating part is empty or "0", treat as terminating decimal
+    if (repStr === "" || repStr === "0") {
+        // Parse the non-repeating part as a regular decimal
+        return parseLiteral(isNeg ? "-" + nonRepStr : nonRepStr);
+    }
+
+    // Split non-repeating part into integer and fractional portions
+    let intStr, fracStr;
+    if (nonRepStr.includes(".")) {
+        const dotIdx = nonRepStr.indexOf(".");
+        intStr = nonRepStr.slice(0, dotIdx) || "0";
+        fracStr = nonRepStr.slice(dotIdx + 1);  // may be empty string ""
+    } else {
+        intStr = nonRepStr || "0";
+        fracStr = "";
+    }
+
+    // The value is: (intStr + fracStr + repStr - intStr + fracStr) / (10^(fracStr.length) * (10^repStr.length - 1))
+    // More precisely:
+    //   Let n = fracStr.length, m = repStr.length
+    //   full = intStr + fracStr + repStr (as integer)
+    //   base = intStr + fracStr (as integer)
+    //   result = (full - base) / (10^n * (10^m - 1))
+
+    const n = fracStr.length;
+    const m = repStr.length;
+
+    const fullStr = intStr + fracStr + repStr;
+    const baseStr = intStr + fracStr || "0";
+
+    const full = BigInt(fullStr);
+    const base = BigInt(baseStr || "0");
+
+    const den = (10n ** BigInt(n)) * (10n ** BigInt(m) - 1n);
+    const num = full - base;
+
+    const result = new Rational(isNeg ? -num : num, den);
+    return result;
 }
 
 export const coreFunctions = {

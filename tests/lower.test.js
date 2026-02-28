@@ -138,6 +138,13 @@ describe("Lowering Pass", () => {
       const ir = L("arr[i] = val;");
       expect(ir.fn).toBe("INDEX_ASSIGN");
     });
+
+    test("base definition assignment 0A = \"...\" lowers to DEFINEBASE", () => {
+      const ir = L('0A = "0123456789ABCDEF";');
+      expect(ir.fn).toBe("DEFINEBASE");
+      expect(ir.args[0]).toBe("A");
+      expect(ir.args[1]).toEqual({ fn: "STRING", args: ["0123456789ABCDEF"] });
+    });
   });
 
   describe("Arithmetic", () => {
@@ -187,6 +194,14 @@ describe("Lowering Pass", () => {
     test("unary plus → identity", () => {
       const ir = L("+42;");
       expect(ir).toEqual({ fn: "LITERAL", args: ["42"] });
+    });
+
+    test("base conversion operators lower correctly", () => {
+      const toIr = L("5 _> 0b;");
+      expect(toIr.fn).toBe("TOBASE");
+
+      const fromIr = L('"101" <_ 0b;');
+      expect(fromIr.fn).toBe("FROMBASE");
     });
   });
 

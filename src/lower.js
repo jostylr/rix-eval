@@ -227,6 +227,14 @@ const LOWERERS = {
       return ir("CONDITION", lowerNode(node.left), lowerNode(node.right));
     }
 
+    // Base conversion operators
+    if (op === "_>") {
+      return ir("TOBASE", lowerNode(node.left), lowerNode(node.right));
+    }
+    if (op === "<_") {
+      return ir("FROMBASE", lowerNode(node.left), lowerNode(node.right));
+    }
+
     // Standard binary ops
     const sysFn = BINARY_OP_MAP[op];
     if (sysFn) {
@@ -646,6 +654,14 @@ const LOWERERS = {
  */
 function lowerAssignment(node) {
   const left = node.left;
+
+  // Base prefix definition assignment: 0A = ...
+  if (left.type === "Number" && typeof left.value === "string") {
+    const m = left.value.match(/^0([A-Z])$/);
+    if (m) {
+      return ir("DEFINEBASE", m[1], lowerNode(node.right));
+    }
+  }
 
   // Outer variable assignment: @a = 5
   if (left.type === "OuterIdentifier") {

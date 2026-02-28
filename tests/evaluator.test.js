@@ -1,10 +1,10 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, beforeEach } from "bun:test";
 import { tokenize } from "../../parser/src/tokenizer.js";
 import { parse } from "../../parser/src/parser.js";
 import { lower } from "../src/lower.js";
 import { evaluate, createDefaultRegistry } from "../src/evaluator.js";
 import { Context } from "../src/context.js";
-import { Integer, Rational } from "@ratmath/core";
+import { Integer, Rational, BaseSystem } from "@ratmath/core";
 
 function systemLookup(name) {
     const symbols = {
@@ -68,6 +68,10 @@ function evalRixWithContext(code) {
 
 describe("RiX Evaluator", () => {
     describe("Literals", () => {
+        beforeEach(() => {
+            for (const p of ["A"]) BaseSystem.unregisterPrefix(p);
+        });
+
         test("integer literal", () => {
             const result = evalRix("42;");
             expect(result).toBeInstanceOf(Integer);
@@ -108,6 +112,114 @@ describe("RiX Evaluator", () => {
         test("null literal", () => {
             const result = evalRix("_;");
             expect(result).toBeNull();
+        });
+
+        test("uppercase prefixed quoted literal", () => {
+            const ctx = new Context();
+            evalRix('0A = "0123456789ABCDEF";', ctx);
+            const result = evalRix('0A"4A.F";', ctx);
+            expect(result).toBeInstanceOf(Rational);
+            expect(result.toString()).toBe("1199/16");
+        });
+
+        test("prefixed continued fraction literal", () => {
+            const result = evalRix("0b101.~11~10;");
+            expect(result).toBeInstanceOf(Rational);
+            expect(result.toString()).toBe("37/7");
+        });
+
+        test("explicit prefixed continued fraction literal", () => {
+            const result = evalRix("~0b101.~11~10;");
+            expect(result).toBeInstanceOf(Rational);
+            expect(result.toString()).toBe("37/7");
+        });
+
+        test("radix shift allows grouped separators before _^", () => {
+            const result = evalRix("1.234_4_^10;");
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(12344000000n);
+        });
+    });
+
+    describe("Base conversion operators", () => {
+        beforeEach(() => {
+            for (const p of ["B", "O", "W", "Z"]) BaseSystem.unregisterPrefix(p);
+        });
+
+        test("define base prefix and format with _>", () => {
+            const ctx = new Context();
+            evalRix('0Z = "0123456789ABCDEF";', ctx);
+            const result = evalRix("74 _> 0Z;", ctx);
+            expect(result.type).toBe("string");
+            expect(result.value).toBe("4A");
+        });
+
+        test("uppercase definitions do not conflict with lowercase builtins", () => {
+            const ctx = new Context();
+            const bRes = evalRix('0B = "01";', ctx);
+            expect(bRes).toBeInstanceOf(Integer);
+            expect(bRes.value).toBe(1n);
+            const oRes = evalRix('0O = "01234567";', ctx);
+            expect(oRes).toBeInstanceOf(Integer);
+            expect(oRes.value).toBe(1n);
+        });
+
+        test("parse with <_", () => {
+            const result = evalRix('"101" <_ 0b;');
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(5n);
+        });
+
+        test("mode aliases", () => {
+            const mixed = evalRix('1.#3 _> "..";');
+            expect(mixed.type).toBe("string");
+            expect(mixed.value).toBe("1..1/3");
+
+            const repeat = evalRix('4/3 _> ".";');
+            expect(repeat.type).toBe("string");
+            expect(repeat.value).toBe("1.#3");
+        });
+
+        test("radix and shifted modes group fractional digits", () => {
+            const repeat = evalRix('1231234.2134213421 _> ".";');
+            expect(repeat.type).toBe("string");
+            expect(repeat.value).toContain("1_231_234.213_421_342_1");
+
+            const shifted = evalRix('1231234.2134213421 _> "^";');
+            expect(shifted.type).toBe("string");
+            expect(shifted.value).toContain("1.231_234_213_421_342_1");
+            expect(shifted.value).toMatch(/_\^6$/);
+        });
+
+        test("mode limits with .N and ^N", () => {
+            const radixLimited = evalRix('1/97 _> ".50";');
+            expect(radixLimited.type).toBe("string");
+            expect(radixLimited.value).toContain("...");
+
+            const shiftedLimited = evalRix('1/97 _> "^50";');
+            expect(shiftedLimited.type).toBe("string");
+            expect(shiftedLimited.value).toContain("...");
+        });
+
+        test("shifted output has a single radix point", () => {
+            const shifted = evalRix('~12341234.~234324~123 _> "^";');
+            expect(shifted.type).toBe("string");
+            const mantissa = shifted.value.split("_^")[0].replace(/\.\.\./g, "");
+            const radixPoints = Array.from(mantissa).filter((ch) => ch === ".").length;
+            expect(radixPoints).toBe(1);
+            expect(shifted.value).toContain("_^7");
+        });
+
+        test("tuple mode accepts named base prefix tokens", () => {
+            const withBuiltin = evalRix('-9/7 _> (0b, "~");');
+            expect(withBuiltin.type).toBe("string");
+            expect(withBuiltin.value).toBe("~-10.~1~10~10");
+
+            const ctx = new Context();
+            evalRix('0W = "01";', ctx);
+            const withCustom = evalRix('-9/7 _> (0W, "~");', ctx);
+            expect(withCustom.type).toBe("string");
+            expect(withCustom.value).toBe("~-10.~1~10~10");
         });
     });
 
@@ -969,4 +1081,3 @@ describe("RiX Evaluator", () => {
         });
     });
 });
-

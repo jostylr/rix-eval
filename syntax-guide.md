@@ -189,6 +189,17 @@ A continued fraction `[a₀; a₁, a₂, …]` is written as `a₀.~a₁~a₂~�
 
 Other registered prefixes: `0q` (Base 4), `0f` (5), `0s` (7), `0d` (12), `0v` (20), `0u` (36), `0m` (60), `0y` (64).
 
+Custom uppercase prefixes can be defined at runtime:
+- `0A = "0123456789ABCDEF"`
+- `0B = {: 2, "01" }`
+
+Base conversion operators:
+- `_>`: `value _> baseSpec` returns a string in that base.
+- `<_`: `string <_ baseSpec` parses into an exact rational/integer.
+
+Quoted prefixed literals are also valid:
+- `0A"4A.F"`
+
 ### Assertions
 
 | Syntax | System Function | Description |

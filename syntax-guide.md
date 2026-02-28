@@ -121,6 +121,62 @@ Partial application occurs when a function is called with one or more placeholde
 | `a:(b:c):d` | `INTERVAL` | `2:(3:4):5` (nested betweenness) |
 | `a:{|b:c|}:d` | `INTERVAL` | `2:{|3:4|}:5` (set unpacking) |
 
+### Special Number Literals
+
+These formats all produce exact rational values parsed by `LITERAL`.
+
+#### Repeating Decimals (`#`)
+
+The `#` separates the non-repeating fractional part from the (infinitely) repeating part.
+
+| Syntax | Value | Notes |
+|--------|-------|-------|
+| `1.23#45` | 1.234̄5̄… | non-repeating `23`, repeating `45` |
+| `0.#3` | 1/3 | no non-repeating fractional digits |
+| `1.#6` | 5/3 | integer + immediate repeating |
+| `5#3` | 16/3 | integer part with repeating decimal |
+
+#### Radix Shift (`_^`)
+
+`n_^k` multiplies `n` by `10^k`. Positive exponent shifts the decimal right; negative shifts left.
+
+| Syntax | Value | Notes |
+|--------|-------|-------|
+| `1_^2` | 100 | 1 × 10² |
+| `3.14_^2` | 314 | 3.14 × 10² |
+| `1_^-2` | 1/100 | 1 × 10⁻² |
+| `1/3_^2` | 100/3 | 1/3 × 10² |
+
+#### Continued Fractions (`.~`)
+
+A continued fraction `[a₀; a₁, a₂, …]` is written as `a₀.~a₁~a₂~…`.
+
+**Implicit-start** — unsigned integer part, no leading `~`:
+
+| Syntax | Value |
+|--------|-------|
+| `3.~7~15~1` | 355/113 |
+| `1.~2` | 3/2 |
+
+**Explicit-start** — leading `~` marker, allows a signed integer part:
+
+| Syntax | Value | Notes |
+|--------|-------|-------|
+| `~1.~2` | 3/2 | same as `1.~2` |
+| `~-1.~2` | −1/2 | first coefficient is −1 |
+| `~-2.~1~2~2` | −9/7 | |
+
+**Negating the CF value** — unary minus on an explicit-start CF:
+
+| Syntax | Value | Notes |
+|--------|-------|-------|
+| `-~1.~2` | −3/2 | negate the value of `~1.~2` (= 3/2) |
+
+**Forbidden — syntax error:**
+```
+-1.~2      ## ❌  ambiguous: write ~-1.~2 (neg. coefficient) or -~1.~2 (negate value)
+```
+
 ### Number Base Literals
 
 | Prefix | Base System | Example | System Function |

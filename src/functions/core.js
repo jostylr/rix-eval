@@ -13,18 +13,29 @@ import { Integer, Rational, RationalInterval, BaseSystem } from "@ratmath/core";
 function parseLiteral(str) {
     if (typeof str !== "string") return str;
 
-    const isNegative = str.startsWith("-");
-    const posStr = isNegative ? str.slice(1) : str;
-
-    // Continued fractions: integer.~term~term~... (e.g. 3.~7~15~1~292)
-    if (posStr.includes(".~")) {
-        const cfMatch = posStr.match(/^(\d+)\.~(\d+(?:~\d+)*)$/);
+    // Explicit-start continued fractions: ~INT.~term~term~... or ~-INT.~term~term~...
+    // The ~ prefix is the explicit coefficient marker.
+    if (str.startsWith("~")) {
+        const cfStr = str.slice(1); // strip leading ~
+        const cfMatch = cfStr.match(/^(-?\d+)\.~(\d+(?:~\d+)*)$/);
         if (cfMatch) {
             const intPart = BigInt(cfMatch[1]);
             const cfTerms = cfMatch[2].split("~").map(t => BigInt(t));
-            const cfArray = [intPart, ...cfTerms];
-            let result = Rational.fromContinuedFraction(cfArray);
-            return isNegative ? result.negate() : result;
+            return Rational.fromContinuedFraction([intPart, ...cfTerms]);
+        }
+        throw new Error(`Invalid explicit continued fraction format: ${str}`);
+    }
+
+    const isNegative = str.startsWith("-");
+    const posStr = isNegative ? str.slice(1) : str;
+
+    // Implicit-start continued fractions: INT.~term~term~... (no sign, no ~ prefix)
+    if (str.includes(".~")) {
+        const cfMatch = str.match(/^(\d+)\.~(\d+(?:~\d+)*)$/);
+        if (cfMatch) {
+            const intPart = BigInt(cfMatch[1]);
+            const cfTerms = cfMatch[2].split("~").map(t => BigInt(t));
+            return Rational.fromContinuedFraction([intPart, ...cfTerms]);
         }
         throw new Error(`Invalid continued fraction format: ${str}`);
     }

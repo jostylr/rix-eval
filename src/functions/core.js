@@ -1185,15 +1185,7 @@ export const coreFunctions = {
         impl(args) {
             // Fallback for unrecognized binary operators
             const op = args[0];
-            const left = args[1];
-            const right = args[2];
-            return {
-                type: "binop",
-                operator: op,
-                left,
-                right,
-                message: `Unrecognized operator "${op}"`,
-            };
+            throw new Error(`Unrecognized operator "${op}"`);
         },
         pure: true,
         doc: "Fallback for unrecognized binary operators",

@@ -122,21 +122,37 @@ describe("Lowering Pass", () => {
       expect(ir.args[1].args[0]).toBe("y");
     });
 
-    test("dot assignment obj.a = 7", () => {
+    test("meta assignment obj.a = 7 → META_SET", () => {
       const ir = L("obj.a = 7;");
-      expect(ir.fn).toBe("DOT_ASSIGN");
+      expect(ir.fn).toBe("META_SET");
       expect(ir.args[1]).toBe("a");
     });
 
-    test("external property assignment obj..b = 9", () => {
-      const ir = L("obj..b = 9;");
-      expect(ir.fn).toBe("EXTSET");
-      expect(ir.args[1]).toBe("b");
+    test("index assignment arr[i] = val → INDEX_SET", () => {
+      const ir = L("arr[i] = val;");
+      expect(ir.fn).toBe("INDEX_SET");
     });
 
-    test("index assignment arr[i] = val", () => {
-      const ir = L("arr[i] = val;");
-      expect(ir.fn).toBe("INDEX_ASSIGN");
+    test("key literal index assignment obj[:foo] = val → INDEX_SET with string key", () => {
+      const ir = L("obj[:foo] = val;");
+      expect(ir.fn).toBe("INDEX_SET");
+      expect(ir.args[1]).toBe("foo");
+    });
+
+    test("method call arr.Push(1) desugars to CALL_EXPR(META_GET(...))", () => {
+      const ir = L("arr.PUSH(1);");
+      expect(ir.fn).toBe("CALL_EXPR");
+      expect(ir.args[0].fn).toBe("META_GET");
+      expect(ir.args[0].args[1]).toBe("PUSH");
+    });
+
+    test("compound meta assignment obj.x += 1 → META_SET(obj, 'x', ADD(META_GET(obj,'x'), 1))", () => {
+      const ir = L("obj.x += 1;");
+      expect(ir.fn).toBe("META_SET");
+      expect(ir.args[1]).toBe("x");
+      expect(ir.args[2].fn).toBe("ADD");
+      expect(ir.args[2].args[0].fn).toBe("META_GET");
+      expect(ir.args[2].args[0].args[1]).toBe("x");
     });
 
     test("base definition assignment 0A = \"...\" lowers to DEFINEBASE", () => {
@@ -403,27 +419,38 @@ describe("Lowering Pass", () => {
   });
 
   describe("Property Access", () => {
-    test("obj.a → DOT", () => {
+    test("obj.a → META_GET", () => {
       const ir = L("obj.a;");
-      expect(ir.fn).toBe("DOT");
+      expect(ir.fn).toBe("META_GET");
       expect(ir.args[0]).toEqual({ fn: "RETRIEVE", args: ["obj"] });
       expect(ir.args[1]).toBe("a");
     });
 
-    test("arr[i] → INDEX", () => {
+    test("arr[i] → INDEX_GET", () => {
       const ir = L("arr[i];");
-      expect(ir.fn).toBe("INDEX");
+      expect(ir.fn).toBe("INDEX_GET");
     });
 
-    test("obj..b → EXTGET", () => {
-      const ir = L("obj..b;");
-      expect(ir.fn).toBe("EXTGET");
-      expect(ir.args[1]).toBe("b");
+    test("obj[:foo] → INDEX_GET with string key", () => {
+      const ir = L("obj[:foo];");
+      expect(ir.fn).toBe("INDEX_GET");
+      expect(ir.args[1]).toBe("foo");
     });
 
-    test("obj.. → EXTALL", () => {
+    test("obj.. → META_ALL", () => {
       const ir = L("obj..;");
-      expect(ir.fn).toBe("EXTALL");
+      expect(ir.fn).toBe("META_ALL");
+    });
+
+    test("obj .= map → META_MERGE", () => {
+      const ir = L("obj .= updates;");
+      expect(ir.fn).toBe("META_MERGE");
+      expect(ir.args[0]).toEqual({ fn: "RETRIEVE", args: ["obj"] });
+      expect(ir.args[1]).toEqual({ fn: "RETRIEVE", args: ["updates"] });
+    });
+
+    test("obj..name is a parse error", () => {
+      expect(() => L("obj..b;")).toThrow();
     });
 
     test("obj.| → KEYS", () => {

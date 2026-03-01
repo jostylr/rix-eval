@@ -1,8 +1,8 @@
 /**
- * Property access, external properties, and mutation system functions.
+ * Property access, meta properties, and mutation system functions.
  *
- * DOT, INDEX, DOT_ASSIGN, INDEX_ASSIGN — object/array access
- * EXTGET, EXTSET, EXTALL — external property layer (._ext)
+ * META_GET, META_SET, META_ALL, META_MERGE — meta property layer (._ext)
+ * INDEX_GET, INDEX_SET — collection index/key access
  * KEYS, VALUES — map key/value extraction
  * MUTCOPY, MUTINPLACE — map mutation operators
  */
@@ -10,88 +10,39 @@
 import { Integer } from "@ratmath/core";
 
 /**
- * Get a property from a map-type object.
- * Supports: { type: "map", entries: Map } or plain objects.
+ * Convert a key value to a numeric index.
  */
-function getProperty(obj, key) {
-    if (obj && obj.type === "map" && obj.entries instanceof Map) {
-        return obj.entries.get(key);
-    }
-    if (obj && typeof obj === "object" && key in obj) {
-        return obj[key];
-    }
-    return undefined;
+function toInteger(key) {
+    if (key instanceof Integer) return Number(key.value);
+    if (typeof key === "number" || typeof key === "bigint") return Number(key);
+    throw new Error(`Index must be numeric, got ${typeof key}`);
 }
 
 /**
- * Set a property on a map-type object.
+ * Get a non-string key entry from _refEntries.
  */
-function setProperty(obj, key, value) {
-    if (obj && obj.type === "map" && obj.entries instanceof Map) {
-        obj.entries.set(key, value);
-        return value;
-    }
-    if (obj && typeof obj === "object") {
-        obj[key] = value;
-        return value;
-    }
-    throw new Error(`Cannot set property "${key}" on ${typeof obj}`);
+function getRefEntry(obj, key) {
+    if (!obj._refEntries) return undefined;
+    const entry = obj._refEntries.find(e => e.key === key);
+    return entry ? entry.value : undefined;
 }
 
 /**
- * Get from a sequence by numeric index (1-based).
+ * Set a non-string key entry in _refEntries.
  */
-function getIndex(obj, idx) {
-    if (obj && (obj.type === "sequence" || obj.type === "tuple")) {
-        let index;
-        if (idx instanceof Integer) {
-            index = Number(idx.value);
-        } else if (typeof idx === "number" || typeof idx === "bigint") {
-            index = Number(idx);
-        } else {
-            throw new Error(`Index must be numeric, got ${typeof idx}`);
-        }
-        // 1-based indexing
-        return obj.values[index - 1];
-    }
-    // For maps, treat idx as a key
-    if (obj && obj.type === "map" && obj.entries instanceof Map) {
-        const key = idx instanceof Integer ? idx.toString() : String(idx);
-        return obj.entries.get(key);
-    }
-    throw new Error(`Cannot index into ${obj?.type || typeof obj}`);
+function setRefEntry(obj, key, value) {
+    if (!obj._refEntries) obj._refEntries = [];
+    const existing = obj._refEntries.find(e => e.key === key);
+    if (existing) existing.value = value;
+    else obj._refEntries.push({ key, value });
 }
 
 /**
- * Set element in a sequence by numeric index (1-based).
+ * Ensure an object has a meta properties map (_ext).
  */
-function setIndex(obj, idx, value) {
-    if (obj && (obj.type === "sequence" || obj.type === "tuple")) {
-        let index;
-        if (idx instanceof Integer) {
-            index = Number(idx.value);
-        } else if (typeof idx === "number" || typeof idx === "bigint") {
-            index = Number(idx);
-        } else {
-            throw new Error(`Index must be numeric, got ${typeof idx}`);
-        }
-        obj.values[index - 1] = value;
-        return value;
-    }
-    if (obj && obj.type === "map" && obj.entries instanceof Map) {
-        const key = idx instanceof Integer ? idx.toString() : String(idx);
-        obj.entries.set(key, value);
-        return value;
-    }
-    throw new Error(`Cannot set index on ${obj?.type || typeof obj}`);
-}
-
-/**
- * Ensure an object has an external properties map.
- */
-function ensureExt(obj) {
+function ensureMeta(obj) {
     if (!obj || typeof obj !== "object") {
-        throw new Error(`Cannot attach external properties to ${typeof obj}`);
+        throw new Error(`Cannot attach meta properties to ${typeof obj}`);
     }
     if (!obj._ext) {
         obj._ext = new Map();
@@ -152,91 +103,164 @@ function applyMutations(target, ops) {
 }
 
 export const propertyFunctions = {
-    DOT: {
-        impl(args) {
-            const obj = args[0];
-            const prop = args[1];
-            const result = getProperty(obj, prop);
-            if (result === undefined) {
-                throw new Error(`Property "${prop}" not found`);
-            }
-            return result;
-        },
-        doc: "Access a named property (obj.prop)",
-    },
-
-    INDEX: {
-        impl(args) {
-            const obj = args[0];
-            const idx = args[1];
-            return getIndex(obj, idx);
-        },
-        doc: "Access by index (obj[i])",
-    },
-
-    DOT_ASSIGN: {
-        lazy: true,
-        impl(args, context, evaluate) {
-            // args: [objExpr, propName, valueExpr]
-            const obj = evaluate(args[0]);
-            const prop = args[1]; // raw string
-            const value = evaluate(args[2]);
-            setProperty(obj, prop, value);
-            return value;
-        },
-        doc: "Assign to a named property (obj.prop = val)",
-    },
-
-    INDEX_ASSIGN: {
-        lazy: true,
-        impl(args, context, evaluate) {
-            // args: [objExpr, idxExpr, valueExpr]
-            const obj = evaluate(args[0]);
-            const idx = evaluate(args[1]);
-            const value = evaluate(args[2]);
-            setIndex(obj, idx, value);
-            return value;
-        },
-        doc: "Assign by index (obj[i] = val)",
-    },
-
-    EXTGET: {
+    META_GET: {
         impl(args) {
             const obj = args[0];
             const prop = args[1];
             const ext = obj?._ext;
-            if (!ext || !ext.has(prop)) {
-                throw new Error(`External property "${prop}" not found`);
-            }
+            if (!ext || !ext.has(prop)) return null;
             return ext.get(prop);
         },
-        doc: "Access an external property (obj..prop)",
+        doc: "Get meta property (returns null if absent) — obj.name",
     },
 
-    EXTSET: {
+    META_SET: {
         lazy: true,
         impl(args, context, evaluate) {
-            // args: [objExpr, propName, valueExpr]
+            // args: [objExpr, propName (raw string), valueExpr]
             const obj = evaluate(args[0]);
-            const prop = args[1];
+            const prop = args[1];      // raw string
             const value = evaluate(args[2]);
-            const ext = ensureExt(obj);
-            ext.set(prop, value);
+
+            // Immutability checks
+            const ext = obj?._ext;
+            if (ext) {
+                if (ext.get("immutable")) {
+                    throw new Error(`Cannot set meta property "${prop}": object is immutable`);
+                }
+                if (ext.get("frozen") && prop !== "frozen") {
+                    throw new Error(`Cannot set meta property "${prop}": object is frozen`);
+                }
+            }
+
+            const metaMap = ensureMeta(obj);
+            if (value === null) {
+                metaMap.delete(prop);  // null = delete
+            } else {
+                metaMap.set(prop, value);
+            }
             return value;
         },
-        doc: "Set an external property (obj..prop = val)",
+        doc: "Set meta property (null deletes; respects immutable/frozen) — obj.name = val",
     },
 
-    EXTALL: {
+    META_ALL: {
         impl(args) {
             const obj = args[0];
             const ext = obj?._ext;
             if (!ext) {
                 return { type: "map", entries: new Map() };
             }
-            return { type: "map", entries: new Map(ext) };
+            return { type: "map", entries: new Map(ext) };  // read-only copy
         },
-        doc: "Get all external properties as a map (obj..)",
+        doc: "Get all meta properties as a map (read-only copy) — obj..",
+    },
+
+    META_MERGE: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const obj = evaluate(args[0]);
+            const mergeMap = evaluate(args[1]);
+
+            // Check immutability
+            const ext = obj?._ext;
+            if (ext?.get("immutable")) throw new Error("Cannot merge meta: object is immutable");
+            if (ext?.get("frozen")) throw new Error("Cannot merge meta: object is frozen");
+
+            if (!mergeMap || mergeMap.type !== "map") {
+                throw new Error("META_MERGE requires a map on the right side");
+            }
+
+            const metaMap = ensureMeta(obj);
+            for (const [key, value] of mergeMap.entries) {
+                if (value === null) {
+                    metaMap.delete(key);  // null = delete
+                } else {
+                    metaMap.set(key, value);
+                }
+            }
+            return obj;
+        },
+        doc: "Bulk merge map into object meta properties (null values = delete) — obj .= map",
+    },
+
+    INDEX_GET: {
+        impl(args) {
+            const obj = args[0];
+            const key = args[1];
+
+            // Sequences / tuples (1-based, negative allowed)
+            if (obj && (obj.type === "sequence" || obj.type === "tuple")) {
+                const idx = toInteger(key);
+                const len = obj.values.length;
+                const i = idx < 0 ? len + idx : idx - 1;  // 1-based, -1 = last
+                if (i < 0 || i >= len) return null;  // out of range = null
+                return obj.values[i];
+            }
+
+            // Strings (1-based character access)
+            if (obj && obj.type === "string") {
+                const idx = toInteger(key);
+                const s = obj.value;
+                const i = idx < 0 ? s.length + idx : idx - 1;
+                if (i < 0 || i >= s.length) return null;
+                return { type: "string", value: s[i] };
+            }
+
+            // Maps — string or value keys
+            if (obj && obj.type === "map" && obj.entries instanceof Map) {
+                // Normalize RiX string objects to JS strings for map lookup
+                const mapKey = (typeof key === "string") ? key
+                    : (key && key.type === "string") ? key.value
+                    : null;
+                if (mapKey !== null) {
+                    return obj.entries.has(mapKey) ? obj.entries.get(mapKey) : null;
+                }
+                // Non-string keys: use _refEntries
+                const refVal = getRefEntry(obj, key);
+                return refVal !== undefined ? refVal : null;
+            }
+
+            // Not indexable
+            throw new Error(`Type "${obj?.type || typeof obj}" is not indexable`);
+        },
+        doc: "Index into collection (1-based for sequences; string or value keys for maps) — obj[i]",
+    },
+
+    INDEX_SET: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            // args: [objExpr, keyExpr, valueExpr]
+            const obj = evaluate(args[0]);
+            const key = evaluate(args[1]);
+            const value = evaluate(args[2]);
+
+            // Check mutable flag
+            const ext = obj?._ext;
+            if (ext?.get("immutable")) throw new Error("Cannot set index: object is immutable");
+            if (ext?.get("frozen")) throw new Error("Cannot set index: object is frozen");
+            if (!ext?.get("mutable")) throw new Error("Cannot set index: collection is not mutable. Set meta property 'mutable' to true first.");
+
+            if (obj && (obj.type === "sequence" || obj.type === "tuple")) {
+                const idx = toInteger(key);
+                const len = obj.values.length;
+                const i = idx < 0 ? len + idx : idx - 1;
+                obj.values[i] = value;
+                return value;
+            }
+
+            if (obj && obj.type === "map" && obj.entries instanceof Map) {
+                if (typeof key === "string") {
+                    obj.entries.set(key, value);
+                } else {
+                    setRefEntry(obj, key, value);
+                }
+                return value;
+            }
+
+            throw new Error(`Cannot set index on "${obj?.type || typeof obj}"`);
+        },
+        doc: "Set index in collection (requires mutable=true meta flag) — obj[i] = val",
     },
 
     KEYS: {

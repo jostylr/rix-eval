@@ -758,22 +758,57 @@ describe("RiX Evaluator", () => {
     });
 
     describe("Properties", () => {
-        test("map DOT access", () => {
+        test("map [:key] bracket access", () => {
             const ctx = new Context();
             const m = { type: "map", entries: new Map([["a", new Integer(42)]]) };
             ctx.set("obj", m);
-            const result = evalRix("obj.a;", ctx);
+            const result = evalRix("obj[:a];", ctx);
             expect(result).toBeInstanceOf(Integer);
             expect(result.value).toBe(42n);
         });
 
-        test("array INDEX access (1-based)", () => {
+        test("map [expr] string key access", () => {
+            const ctx = new Context();
+            const m = { type: "map", entries: new Map([["version", new Integer(1)]]) };
+            ctx.set("m", m);
+            const result = evalRix('m["version"];', ctx);
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(1n);
+        });
+
+        test("array INDEX_GET access (1-based)", () => {
             const ctx = new Context();
             const arr = { type: "sequence", values: [new Integer(10), new Integer(20), new Integer(30)] };
             ctx.set("arr", arr);
             const result = evalRix("arr[2];", ctx);
             expect(result).toBeInstanceOf(Integer);
             expect(result.value).toBe(20n);
+        });
+
+        test("sequence negative index (-1 = last)", () => {
+            const ctx = new Context();
+            const arr = { type: "sequence", values: [new Integer(10), new Integer(20), new Integer(30)] };
+            ctx.set("arr", arr);
+            const result = evalRix("arr[-1];", ctx);
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(30n);
+        });
+
+        test("meta property returns null when absent", () => {
+            const ctx = new Context();
+            ctx.set("x", new Integer(5));
+            const result = evalRix("x.foo;", ctx);
+            expect(result).toBeNull();
+        });
+
+        test("META_SET and META_GET roundtrip", () => {
+            const ctx = new Context();
+            const m = { type: "map", entries: new Map() };
+            ctx.set("obj", m);
+            evalRix("obj.tag = 42;", ctx);
+            const result = evalRix("obj.tag;", ctx);
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(42n);
         });
 
         test("KEYS of a map", () => {
@@ -795,13 +830,112 @@ describe("RiX Evaluator", () => {
             expect(result.values.length).toBe(2);
         });
 
-        test("EXTALL returns empty map when no ext properties", () => {
+        test("META_ALL returns empty map when no meta properties", () => {
             const ctx = new Context();
             const m = { type: "map", entries: new Map() };
             ctx.set("obj", m);
             const result = evalRix("obj..;", ctx);
             expect(result.type).toBe("map");
             expect(result.entries.size).toBe(0);
+        });
+
+        test("set type is not indexable", () => {
+            const ctx = new Context();
+            ctx.set("s", { type: "set", values: [new Integer(1), new Integer(2)] });
+            expect(() => evalRix("s[1];", ctx)).toThrow("not indexable");
+        });
+
+        test("out-of-range sequence index returns null", () => {
+            const ctx = new Context();
+            const arr = { type: "sequence", values: [new Integer(1), new Integer(2)] };
+            ctx.set("arr", arr);
+            expect(evalRix("arr[5];", ctx)).toBeNull();
+            expect(evalRix("arr[-5];", ctx)).toBeNull();
+        });
+
+        test("string character access (1-based)", () => {
+            const ctx = new Context();
+            ctx.set("s", { type: "string", value: "hello" });
+            const result = evalRix("s[1];", ctx);
+            expect(result.type).toBe("string");
+            expect(result.value).toBe("h");
+        });
+
+        test("string negative index returns last character", () => {
+            const ctx = new Context();
+            ctx.set("s", { type: "string", value: "abc" });
+            const result = evalRix("s[-1];", ctx);
+            expect(result.type).toBe("string");
+            expect(result.value).toBe("c");
+        });
+
+        test("META_MERGE (.= operator) merges map into meta", () => {
+            const ctx = new Context();
+            const obj = { type: "map", entries: new Map() };
+            ctx.set("obj", obj);
+            const updates = { type: "map", entries: new Map([["color", { type: "string", value: "red" }], ["size", new Integer(5)]]) };
+            ctx.set("updates", updates);
+            evalRix("obj .= updates;", ctx);
+            const color = evalRix("obj.color;", ctx);
+            expect(color.value).toBe("red");
+            const size = evalRix("obj.size;", ctx);
+            expect(size.value).toBe(5n);
+        });
+
+        test("META_MERGE with null value deletes meta property", () => {
+            const ctx = new Context();
+            const obj = { type: "map", entries: new Map() };
+            obj._ext = new Map([["tag", new Integer(99)]]);
+            ctx.set("obj", obj);
+            const updates = { type: "map", entries: new Map([["tag", null]]) };
+            ctx.set("updates", updates);
+            evalRix("obj .= updates;", ctx);
+            expect(evalRix("obj.tag;", ctx)).toBeNull();
+        });
+
+        test("META_SET immutable flag prevents changes", () => {
+            const ctx = new Context();
+            const obj = { type: "map", entries: new Map() };
+            obj._ext = new Map([["immutable", new Integer(1)]]);
+            ctx.set("obj", obj);
+            expect(() => evalRix("obj.name = 5;", ctx)).toThrow("immutable");
+        });
+
+        test("META_SET frozen flag prevents changes (except unsetting frozen)", () => {
+            const ctx = new Context();
+            const obj = { type: "map", entries: new Map() };
+            obj._ext = new Map([["frozen", new Integer(1)]]);
+            ctx.set("obj", obj);
+            expect(() => evalRix("obj.name = 5;", ctx)).toThrow("frozen");
+        });
+
+        test("INDEX_SET requires mutable=true meta flag", () => {
+            const ctx = new Context();
+            const arr = { type: "sequence", values: [new Integer(1), new Integer(2), new Integer(3)] };
+            ctx.set("arr", arr);
+            expect(() => evalRix("arr[1] = 99;", ctx)).toThrow("mutable");
+        });
+
+        test("INDEX_SET works when mutable=true", () => {
+            const ctx = new Context();
+            const arr = { type: "sequence", values: [new Integer(1), new Integer(2), new Integer(3)] };
+            arr._ext = new Map([["mutable", new Integer(1)]]);
+            ctx.set("arr", arr);
+            evalRix("arr[1] = 99;", ctx);
+            const result = evalRix("arr[1];", ctx);
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(99n);
+        });
+
+        test("compound meta assignment (obj.count += 1)", () => {
+            const ctx = new Context();
+            const obj = { type: "map", entries: new Map() };
+            ctx.set("obj", obj);
+            evalRix("obj.count = 10;", ctx);
+            evalRix("obj.count += 1;", ctx);
+            const result = evalRix("obj.count;", ctx);
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(11n);
         });
     });
 
@@ -1063,17 +1197,17 @@ describe("RiX Evaluator", () => {
         });
 
         test("ITER mode (:) execution", () => {
-            const result1 = evalRix('F = {/a./:}; M = F("ab_ac_ad"); RES = M(); RES.text;');
+            const result1 = evalRix('F = {/a./:}; M = F("ab_ac_ad"); RES = M(); RES[:text];');
             expect(result1.value).toBe("ab");
 
-            const result2 = evalRix('F = {/a./:}; M = F("ab_ac_ad"); M(); M(); RES = M(); RES.text;');
+            const result2 = evalRix('F = {/a./:}; M = F("ab_ac_ad"); M(); M(); RES = M(); RES[:text];');
             expect(result2.value).toBe("ad");
 
             const result3 = evalRix('F = {/a./:}; M = F("ab_ac_ad"); M(); M(); M(); RES = M(); RES;');
             expect(result3).toBeNull();
 
             // Random access:
-            const resultRandom = evalRix('F = {/a./:}; M = F("ab_ac_ad"); M(2).text;');
+            const resultRandom = evalRix('F = {/a./:}; M = F("ab_ac_ad"); M(2)[:text];');
             expect(resultRandom.value).toBe("ac");
 
             const resultRandomOOB = evalRix('F = {/a./:}; M = F("ab_ac_ad"); M(5);');

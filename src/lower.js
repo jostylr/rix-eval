@@ -146,6 +146,11 @@ const LOWERERS = {
       return lowerAssignment(node);
     }
 
+    // Bulk meta merge
+    if (op === ".=") {
+      return ir("META_MERGE", lowerNode(node.left), lowerNode(node.right));
+    }
+
     // Combo assignment operators
     const comboOpMap = {
       "+=": true,
@@ -328,7 +333,13 @@ const LOWERERS = {
 
   Call(node) {
     const args = lowerCallArgs(node.arguments);
-    return ir("CALL_EXPR", lowerNode(node.target), ...args);
+    const target = node.target;
+    // Method call: expr.method(args) → CALL_EXPR(META_GET(expr,"method"), expr, ...args)
+    if (target.type === "DotAccess") {
+      const objIR = lowerNode(target.object);
+      return ir("CALL_EXPR", ir("META_GET", objIR, target.property), objIR, ...args);
+    }
+    return ir("CALL_EXPR", lowerNode(target), ...args);
   },
 
   CommandCall(node) {
@@ -433,18 +444,21 @@ const LOWERERS = {
   // === Property Access ===
 
   DotAccess(node) {
-    return ir("DOT", lowerNode(node.object), node.property);
+    return ir("META_GET", lowerNode(node.object), node.property);
   },
 
   PropertyAccess(node) {
-    return ir("INDEX", lowerNode(node.object), lowerNode(node.property));
+    const obj = lowerNode(node.object);
+    if (node.property && node.property.type === "KeyLiteral") {
+      // [:name] sugar — pass string key directly
+      return ir("INDEX_GET", obj, node.property.name);
+    }
+    return ir("INDEX_GET", obj, lowerNode(node.property));
   },
 
   ExternalAccess(node) {
-    if (node.property === null) {
-      return ir("EXTALL", lowerNode(node.object));
-    }
-    return ir("EXTGET", lowerNode(node.object), node.property);
+    // node.property === null always now (a..name is parse error)
+    return ir("META_ALL", lowerNode(node.object));
   },
 
   KeySet(node) {
@@ -673,31 +687,30 @@ function lowerAssignment(node) {
     return ir("ASSIGN", left.name, lowerNode(node.right));
   }
 
-  // Dot assignment: obj.a = 7
+  // Meta assignment: obj.name = val
   if (left.type === "DotAccess") {
     return ir(
-      "DOT_ASSIGN",
+      "META_SET",
       lowerNode(left.object),
       left.property,
       lowerNode(node.right),
     );
   }
 
-  // External property assignment: obj..b = 9
+  // ExternalAccess assignment: a..prop = val is no longer valid
   if (left.type === "ExternalAccess") {
-    return ir(
-      "EXTSET",
-      lowerNode(left.object),
-      left.property,
-      lowerNode(node.right),
-    );
+    throw new Error("a..prop assignment is no longer supported; use a.prop = val for meta access");
   }
 
-  // Index assignment: arr[i] = val
+  // Index assignment: arr[i] = val (with KeyLiteral support)
   if (left.type === "PropertyAccess") {
+    const obj = lowerNode(left.object);
+    if (left.property && left.property.type === "KeyLiteral") {
+      return ir("INDEX_SET", obj, left.property.name, lowerNode(node.right));
+    }
     return ir(
-      "INDEX_ASSIGN",
-      lowerNode(left.object),
+      "INDEX_SET",
+      obj,
       lowerNode(left.property),
       lowerNode(node.right),
     );

@@ -200,6 +200,25 @@ Base conversion operators:
 Quoted prefixed literals are also valid:
 - `0A"4A.F"`
 
+### Property & Meta Access
+
+RiX separates two distinct access concepts: **meta properties** (external annotations on any value, accessed with `.`) and **collection indices/keys** (actual content of sequences and maps, accessed with `[...]`).
+
+| Syntax | System Function | Description |
+|--------|----------------|-------------|
+| `obj.name` | `META_GET` | Get meta property (returns null if absent) |
+| `obj.name = val` | `META_SET` | Set meta property (null value = delete; respects immutable/frozen) |
+| `obj..` | `META_ALL` | Get all meta properties as read-only map |
+| `obj .= map` | `META_MERGE` | Bulk merge map into meta properties (null values = delete) |
+| `obj[expr]` | `INDEX_GET` | Index into collection (1-based for sequences/strings; key for maps) |
+| `obj[:name]` | `INDEX_GET` | Map access by string key literal |
+| `obj[i] = val` | `INDEX_SET` | Set collection index (requires `mutable=true` meta flag) |
+| `obj.\|` | `KEYS` | Get set of map keys |
+| `obj\|.` | `VALUES` | Get set of map values |
+| `obj.Method(args)` | `CALL_EXPR` | Method call — desugars to `CALL_EXPR(META_GET(obj,"Method"), obj, args...)` |
+
+**Note:** `obj..name` is a **parse error** — use `obj.name` for meta access.
+
 ### Assertions
 
 | Syntax | System Function | Description |
@@ -322,7 +341,7 @@ Quoted prefixed literals are also valid:
 | Function | Description | Syntax Aliases |
 |----------|-------------|----------------|
 | `PIPE(val, fn)` | Pipe value into function | `val \|> fn` |
-| `PIPE_EXPLICIT(val, fn)` | Pipe value into function explicitly | `val ||> fn` |
+| `PIPE_EXPLICIT(val, fn)` | Pipe value into function explicitly | `val \|\|> fn` |
 | `PSLICE_STRICT(coll, i:j)` | Strict slice collection | `coll \|>/ i:j` |
 | `PSLICE_CLAMP(coll, i:j)` | Clamped slice collection | `coll \|>// i:j` |
 | `PSPLIT(coll, sep)` | Split collection by delimiter | `coll \|>/\| sep` |
@@ -343,6 +362,21 @@ Quoted prefixed literals are also valid:
 
 | `UPPER(str)` | Convert to uppercase |
 | `SUBSTR(str, start, len)` | Get substring |
+
+### Property & Meta Access
+
+| Function | Description | Syntax Aliases |
+|----------|-------------|----------------|
+| `META_GET(obj, name)` | Get meta property (null if absent) | `obj.name` |
+| `META_SET(obj, name, val)` | Set meta property (null = delete; respects immutable/frozen) | `obj.name = val` |
+| `META_ALL(obj)` | Get all meta properties as read-only map | `obj..` |
+| `META_MERGE(obj, map)` | Bulk merge map into meta (null values = delete) | `obj .= map` |
+| `INDEX_GET(obj, key)` | Index into collection (1-based for sequences/strings; string/value keys for maps) | `obj[expr]`, `obj[:name]` |
+| `INDEX_SET(obj, key, val)` | Set index (requires `mutable=true` meta flag) | `obj[i] = val` |
+| `KEYS(obj)` | Get keys of map as set | `obj.\|` |
+| `VALUES(obj)` | Get values of map as set | `obj\|.` |
+
+**Meta property flags:** Objects may have `immutable` (blocks all meta changes), `frozen` (blocks meta changes except unsetting `frozen`), and `mutable` (required to allow `INDEX_SET`) flags.
 
 ### Regex
 

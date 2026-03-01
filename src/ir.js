@@ -68,11 +68,13 @@ export const IR = {
   // Deferred (lazy)
   defer: (body) => ir("DEFER", body),
 
-  // Property access
-  dot: (obj, prop) => ir("DOT", obj, prop),
-  index: (obj, idx) => ir("INDEX", obj, idx),
-  extget: (obj, prop) => ir("EXTGET", obj, prop),
-  extset: (obj, prop, val) => ir("EXTSET", obj, prop, val),
+  // Property / meta access
+  metaGet: (obj, prop) => ir("META_GET", obj, prop),
+  metaSet: (obj, prop, val) => ir("META_SET", obj, prop, val),
+  metaAll: (obj) => ir("META_ALL", obj),
+  metaMerge: (obj, map) => ir("META_MERGE", obj, map),
+  indexGet: (obj, idx) => ir("INDEX_GET", obj, idx),
+  indexSet: (obj, idx, val) => ir("INDEX_SET", obj, idx, val),
   keys: (obj) => ir("KEYS", obj),
   values: (obj) => ir("VALUES", obj),
 

@@ -107,4 +107,11 @@ export class Registry {
     list() {
         return Array.from(this.functions.keys()).sort();
     }
+
+    /**
+     * List all registered function names (alias for list).
+     */
+    getAllNames() {
+        return this.list();
+    }
 }

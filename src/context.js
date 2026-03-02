@@ -188,4 +188,24 @@ export class Context {
         child.callStack = [...this.callStack];
         return child;
     }
+    /**
+     * Clear all non-environment state.
+     */
+    clear() {
+        this.globalScope.clear();
+        this.localScopes = [];
+        this.functions.clear();
+        this.callStack = [];
+    }
+
+    /**
+     * Get all variable and function names defined in the context.
+     */
+    getAllNames() {
+        const names = new Set([
+            ...this.globalScope.keys(),
+            ...this.functions.keys()
+        ]);
+        return Array.from(names).sort();
+    }
 }

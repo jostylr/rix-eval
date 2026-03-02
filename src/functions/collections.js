@@ -4,6 +4,73 @@
 
 import { Integer, Rational, RationalInterval } from "@ratmath/core";
 
+function isTruthy(val) {
+    return val !== null && val !== undefined;
+}
+
+function valueKey(val) {
+    if (val === null || val === undefined) return "null";
+    if (typeof val === "object") {
+        if (typeof val.toString === "function" && val.toString !== Object.prototype.toString) {
+            return val.toString();
+        }
+        if (val.type) {
+            if (val.type === "tuple" || val.type === "sequence" || val.type === "set" || val.type === "array") {
+                const vals = val.values || val.elements || [];
+                return `${val.type}[${vals.map(valueKey).join(",")}]`;
+            }
+            if (val.type === "string") return JSON.stringify(val.value);
+            return JSON.stringify(val, (k, v) => typeof v === 'bigint' ? v.toString() : v);
+        }
+    }
+    return String(val);
+}
+
+const getValues = (arg) => {
+    if (arg && typeof arg === 'object') {
+        if (arg.type === "set" && Array.isArray(arg.values)) {
+            return arg.values;
+        }
+        if (arg instanceof RationalInterval) {
+            return [arg.start, arg.end];
+        }
+        if (arg.type === "interval") {
+            return [arg.lo, arg.hi];
+        }
+    }
+    return [arg];
+};
+
+const compare = (a, b) => {
+    let aRat, bRat;
+    try {
+        if (a && typeof a === 'object' && a.constructor.name === 'Integer') {
+            aRat = new Rational(a.value, 1n);
+        } else if (a instanceof Rational) {
+            aRat = a;
+        } else if (typeof a === 'number' || typeof a === 'bigint' || typeof a === 'string') {
+            aRat = new Rational(a);
+        }
+
+        if (b && typeof b === 'object' && b.constructor.name === 'Integer') {
+            bRat = new Rational(b.value, 1n);
+        } else if (b instanceof Rational) {
+            bRat = b;
+        } else if (typeof b === 'number' || typeof b === 'bigint' || typeof b === 'string') {
+            bRat = new Rational(b);
+        }
+
+        if (aRat && bRat) {
+            return aRat.compareTo(bRat);
+        }
+    } catch {
+        // Fallback to JS comparison below
+    }
+    if (a < b) return -1;
+    if (a > b) return 1;
+    return 0;
+};
+
 export const collectionFunctions = {
     ARRAY: {
         lazy: true,
@@ -73,7 +140,7 @@ export const collectionFunctions = {
             const seen = new Set();
             const values = [];
             for (const val of args) {
-                const key = val?.toString?.() ?? String(val);
+                const key = valueKey(val);
                 if (!seen.has(key)) {
                     seen.add(key);
                     values.push(val);
@@ -147,51 +214,6 @@ export const collectionFunctions = {
             }
 
             // Betweenness check for 3 or more arguments
-            const getValues = (arg) => {
-                if (arg && typeof arg === 'object') {
-                    if (arg.type === "set" && Array.isArray(arg.values)) {
-                        return arg.values;
-                    }
-                    if (arg instanceof RationalInterval) {
-                        return [arg.start, arg.end];
-                    }
-                    if (arg.type === "interval") {
-                        return [arg.lo, arg.hi];
-                    }
-                }
-                return [arg];
-            };
-
-            const compare = (a, b) => {
-                let aRat, bRat;
-                try {
-                    if (a && typeof a === 'object' && a.constructor.name === 'Integer') {
-                        aRat = new Rational(a.value, 1n);
-                    } else if (a instanceof Rational) {
-                        aRat = a;
-                    } else if (typeof a === 'number' || typeof a === 'bigint' || typeof a === 'string') {
-                        aRat = new Rational(a);
-                    }
-
-                    if (b && typeof b === 'object' && b.constructor.name === 'Integer') {
-                        bRat = new Rational(b.value, 1n);
-                    } else if (b instanceof Rational) {
-                        bRat = b;
-                    } else if (typeof b === 'number' || typeof b === 'bigint' || typeof b === 'string') {
-                        bRat = new Rational(b);
-                    }
-
-                    if (aRat && bRat) {
-                        return aRat.compareTo(bRat);
-                    }
-                } catch {
-                    // Fallback to JS comparison below
-                }
-                if (a < b) return -1;
-                if (a > b) return 1;
-                return 0;
-            };
-
             let allAscending = true;
             let allDescending = true;
 
@@ -230,5 +252,198 @@ export const collectionFunctions = {
         },
         pure: true,
         doc: "Create an interval [lo, hi] or test betweenness like a:b:c",
+    },
+
+    MEMBER: {
+        impl(args) {
+            const [x, coll] = args;
+            if (!coll || typeof coll !== "object") return null;
+
+            if (coll.type === "set" || coll.type === "tuple" || coll.type === "sequence") {
+                const values = coll.values || coll.elements || [];
+                const xKey = valueKey(x);
+                for (const v of values) {
+                    if (valueKey(v) === xKey) return new Integer(1);
+                }
+            } else if (coll instanceof RationalInterval || coll.type === "interval") {
+                // Interval membership check using compare logic from INTERVAL
+                // Actually INTERVAL already has logic for this if we pass x:lo:hi
+                // But let's implement it directly for simplicity/performance
+                const lo = coll instanceof RationalInterval ? coll.start : coll.lo;
+                const hi = coll instanceof RationalInterval ? coll.end : coll.hi;
+
+                const cmpLo = compare(lo, x);
+                const cmpHi = compare(x, hi);
+
+                if (cmpLo <= 0 && cmpHi <= 0) return new Integer(1);
+            } else if (coll.type === "map") {
+                const entries = coll.entries || coll.elements || new Map();
+                if (entries.has(x) || entries.has(valueKey(x))) return new Integer(1);
+            }
+            return null;
+        },
+        pure: true,
+        doc: "Check membership (1 if present, null otherwise)",
+    },
+
+    NOT_MEMBER: {
+        impl(args) {
+            return isTruthy(collectionFunctions.MEMBER.impl(args)) ? null : new Integer(1);
+        },
+        pure: true,
+        doc: "Check non-membership (1 if not present, null otherwise)",
+    },
+
+    INTERSECTS: {
+        impl(args) {
+            const [a, b] = args;
+            const intersect = collectionFunctions.INTERSECT.impl([a, b]);
+            return isTruthy(intersect) ? new Integer(1) : null;
+        },
+        pure: true,
+        doc: "Check if two collections intersect (1 if true, null otherwise)",
+    },
+
+    UNION: {
+        impl(args) {
+            const [a, b] = args;
+            if (!a || !b) return null;
+
+            if (a.type === "set" && b.type === "set") {
+                const seen = new Set();
+                const values = [];
+                for (const v of [...a.values, ...b.values]) {
+                    const key = valueKey(v);
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        values.push(v);
+                    }
+                }
+                return { type: "set", values };
+            }
+
+            if ((a instanceof RationalInterval || a.type === "interval") &&
+                (b instanceof RationalInterval || b.type === "interval")) {
+                // Interval hull
+                const alo = a instanceof RationalInterval ? a.start : a.lo;
+                const ahi = a instanceof RationalInterval ? a.end : a.hi;
+                const blo = b instanceof RationalInterval ? b.start : b.lo;
+                const bhi = b instanceof RationalInterval ? b.end : b.hi;
+
+                const lo = compare(alo, blo) <= 0 ? alo : blo;
+                const hi = compare(ahi, bhi) >= 0 ? ahi : bhi;
+
+                return collectionFunctions.INTERVAL.impl([lo, hi]);
+            }
+
+            throw new Error(`UNION not defined for these types: ${a.type || a.constructor.name} and ${b.type || b.constructor.name}`);
+        },
+        pure: true,
+        doc: "Join/Union of two collections (set union or interval hull)",
+    },
+
+    INTERSECT: {
+        impl(args) {
+            const [a, b] = args;
+            if (!a || !b) return null;
+
+            if (a.type === "set" && b.type === "set") {
+                const bValues = b.values.map(valueKey);
+                const values = a.values.filter(v => bValues.includes(valueKey(v)));
+                return { type: "set", values };
+            }
+
+            if ((a instanceof RationalInterval || a.type === "interval") &&
+                (b instanceof RationalInterval || b.type === "interval")) {
+                const alo = a instanceof RationalInterval ? a.start : a.lo;
+                const ahi = a instanceof RationalInterval ? a.end : a.hi;
+                const blo = b instanceof RationalInterval ? b.start : b.lo;
+                const bhi = b instanceof RationalInterval ? b.end : b.hi;
+
+                const lo = compare(alo, blo) >= 0 ? alo : blo;
+                const hi = compare(ahi, bhi) <= 0 ? ahi : bhi;
+
+                if (compare(lo, hi) <= 0) {
+                    return collectionFunctions.INTERVAL.impl([lo, hi]);
+                }
+                return null;
+            }
+
+            return null;
+        },
+        pure: true,
+        doc: "Intersection of two collections (set intersection or interval overlap)",
+    },
+
+    SET_DIFF: {
+        impl(args) {
+            const [a, b] = args;
+            if (a.type === "set" && b.type === "set") {
+                const bValues = b.values.map(valueKey);
+                const values = a.values.filter(v => !bValues.includes(valueKey(v)));
+                return { type: "set", values };
+            }
+            if (a.type === "map") {
+                // If b is set of keys or single key, remove them
+                const newEntries = new Map(a.entries);
+                if (b.type === "set") {
+                    for (const k of b.values) newEntries.delete(valueKey(k));
+                } else {
+                    newEntries.delete(valueKey(b));
+                    newEntries.delete(b);
+                }
+                return { type: "map", entries: newEntries };
+            }
+            throw new Error("Difference only defined for sets and maps");
+        },
+        pure: true,
+    },
+
+    SET_SYMDIFF: {
+        impl(args) {
+            const [a, b] = args;
+            const diff1 = collectionFunctions.SET_DIFF.impl([a, b]);
+            const diff2 = collectionFunctions.SET_DIFF.impl([b, a]);
+            return collectionFunctions.UNION.impl([diff1, diff2]);
+        },
+        pure: true,
+    },
+
+    SET_PROD: {
+        impl(args) {
+            const [a, b] = args;
+            if (a.type !== "set" || b.type !== "set") throw new Error("Cartesian product only for sets");
+            const values = [];
+            for (const va of a.values) {
+                for (const vb of b.values) {
+                    values.push({ type: "tuple", values: [va, vb] });
+                }
+            }
+            return { type: "set", values };
+        },
+        pure: true,
+    },
+
+    CONCAT: {
+        impl(args) {
+            const [a, b] = args;
+            if (a.type === "string" || b.type === "string") {
+                const getStr = (v) => (v && typeof v === 'object' && v.type === "string") ? v.value : String(v);
+                return { type: "string", value: getStr(a) + getStr(b) };
+            }
+            if (a.type === "sequence" || a.type === "tuple" || a.type === "array" ||
+                b.type === "sequence" || b.type === "tuple" || b.type === "array") {
+                const getVals = (v) => v.values || v.elements || (Array.isArray(v) ? v : [v]);
+                const vals = [...getVals(a), ...getVals(b)];
+                // If either is array/sequence, result is sequence. If both are tuples, result is tuple.
+                if (a.type === "tuple" && b.type === "tuple") return { type: "tuple", values: vals };
+                return { type: "sequence", values: vals };
+            }
+            if (a.type === "map" && b.type === "map") {
+                return { type: "map", entries: new Map([...a.entries, ...b.entries]) };
+            }
+            throw new Error("Concatenation not defined for these types");
+        },
+        pure: true,
     },
 };

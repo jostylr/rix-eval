@@ -18,7 +18,6 @@ const BINARY_OP_MAP = {
   "//": "INTDIV",
   "%": "MOD",
   "^": "POW",
-  "**": "POW",
   "==": "EQ",
   "!=": "NEQ",
   "<": "LT",
@@ -34,6 +33,15 @@ const BINARY_OP_MAP = {
   "&&": "AND",
   "OR": "OR",
   "||": "OR",
+  "\\/": "UNION",
+  "/\\": "INTERSECT",
+  "\\": "SET_DIFF",
+  "<>": "SET_SYMDIFF",
+  "?": "MEMBER",
+  "!?": "NOT_MEMBER",
+  "?&": "INTERSECTS",
+  "++": "CONCAT",
+  "**": "SET_PROD",
   "/^": "DIVUP",
   "/~": "DIVROUND",
   "/%": "DIVMOD",
@@ -225,11 +233,6 @@ const LOWERERS = {
       extractArgs(node.left);
       extractArgs(node.right);
       return ir("INTERVAL", ...args);
-    }
-
-    // Condition operator
-    if (op === "?") {
-      return ir("CONDITION", lowerNode(node.left), lowerNode(node.right));
     }
 
     // Base conversion operators

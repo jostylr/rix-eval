@@ -19,9 +19,9 @@
 | `>` or `?>` | `GT` | `a > b` |
 | `<=` or `?<=` | `LTE` | `x <= 10` |
 | `>=` or `?>=` | `GTE` | `x >= 0` |
-| `AND` or `&&` | `AND` | `a > 0 && b > 0` |
-| `OR` or `\|\|` | `OR` | `x == 0 \|\| y == 0` |
-| `NOT` or `!` | `NOT` | `!(x == 0)` |
+| `&&` | `AND` | `a > 0 && b > 0` |
+| `||` | `OR` | `x == 0 || y == 0` |
+| `!` | `NOT` | `!(x == 0)` |
 | `:=` or `=` | `ASSIGN` | `x := 5` or `x = 5` |
 | `-` (unary) | `NEG` | `-x` |
 
@@ -59,6 +59,20 @@
 | `@{; ... }` | Deferred block (returns AST tree, does not evaluate) | `f = @{; x + 1 }` |
 | `@{= ... }` | Deferred map | `lazyMap = @{= a=1 }` |
 | `@+, @*, @<`, etc | System function retrieval | `f = @+; f(10, 20)` evaluates to `30` |
+
+### Set & Interval Algebra
+
+| Syntax | System Function | Example | Description |
+|--------|----------------|---------|-------------|
+| `A \/ B` | `UNION` | `S1 \/ S2` | Set union or interval hull |
+| `A /\ B` | `INTERSECT` | `S1 /\ S2` | Set intersection or interval overlap |
+| `A \ B` | `SET_DIFF` | `S1 \ S2` | Set/Map difference |
+| `A <> B` | `SET_SYMDIFF` | `S1 <> S2` | Symmetric difference |
+| `x ? S` | `MEMBER` | `5 ? 1:10` | Membership test (returns 1/null) |
+| `x !? S` | `NOT_MEMBER` | `x !? S` | Non-membership test |
+| `A ?& B` | `INTERSECTS` | `A ?& B` | Intersects predicate |
+| `A ** B` | `SET_PROD` | `S1 ** S2` | Cartesian product |
+| `A ++ B` | `CONCAT` | `[1,2] ++ [3,4]` | Concatenation (ordered collections/strings) |
 
 ### Pipe Operators
 
@@ -295,9 +309,9 @@ RiX separates two distinct access concepts: **meta properties** (external annota
 
 | Function | Description | Syntax Aliases |
 |----------|-------------|----------------|
-| `AND(a, b)` | Logical AND | `a AND b` |
-| `OR(a, b)` | Logical OR | `a OR b` |
-| `NOT(a)` | Logical NOT | `NOT(expr)` or prefix `NOT expr` |
+| `AND(a, b)` | Logical AND | `&&` |
+| `OR(a, b)` | Logical OR | `||` |
+| `NOT(a)` | Logical NOT | `!` |
 
 ### Assertions & Constraints
 
@@ -413,4 +427,26 @@ RiX separates two distinct access concepts: **meta properties** (external annota
 | `UNIT(val, unit)` | Scientific unit annotation |
 | `MATHUNIT(val, unit)` | Mathematical unit annotation |
 
-*Note: Combo assignments (`+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `^=`, `**=`) automatically desugar into `ASSIGN(x, OP(RETRIEVE(x), y))` or their `OUTER` equivalents if prefixed with `@`.*
+*Note: Combo assignments (`+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `^=`) automatically desugar into `ASSIGN(x, OP(RETRIEVE(x), y))` or their `OUTER` equivalents if prefixed with `@`.*
+
+---
+
+## Part 3: REPL Dot-Commands
+
+REPL-specific commands start with a dot. They are not part of the RiX language itself but provide tooling and reflection.
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `.help` | Show help message | `.help` |
+| `.exit` | Exit REPL | `.exit` |
+| `.load[pkg]` | Load a package/file | `.load[:stats]` |
+| `.vars` | List all variables in current context | `.vars` |
+| `.fns` | List all registered system functions | `.fns` |
+| `.reset` | Clear the current context | `.reset` |
+| `.ast[expr]` | Show AST for an expression | `.ast[1 + 2]` |
+| `.tokens[expr]`| Show tokens for an expression | `.tokens[x = 5]` |
+| `.Name(args)` | Call a capitalized command (function-style) | `.Print(1, 2, 3)` |
+
+**Ctrl-C Behavior:**
+- If the current line is non-empty, Ctrl-C clears the line.
+- If the current line is empty, Ctrl-C exits the REPL.

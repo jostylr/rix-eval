@@ -50,6 +50,11 @@
 | `{* a, b, c }` | `MUL` | N-ary multiplication |
 | `{&& a, b, c }` | `AND` | N-ary logical AND (short-circuits on falsy) |
 | `{\|\| a, b, c }` | `OR` | N-ary logical OR (short-circuits on truthy) |
+| `{\/ a, b, c }` | `NARY_UNION` | N-ary set union / interval hull |
+| `{/\ a, b, c }` | `NARY_INTERSECT` | N-ary set intersection / interval overlap |
+| `{++ a, b, c }` | `NARY_CONCAT` | N-ary concatenation |
+| `{<< a, b, c }` | `MIN` | N-ary minimum (`null` args ignored) |
+| `{>> a, b, c }` | `MAX` | N-ary maximum (`null` args ignored) |
 | `{/pattern/flags?mode}` | `REGEX` | Regular expression literal |
 
 ### Deferred Syntax & System Aliases
@@ -73,6 +78,14 @@
 | `A ?& B` | `INTERSECTS` | `A ?& B` | Intersects predicate |
 | `A ** B` | `SET_PROD` | `S1 ** S2` | Cartesian product |
 | `A ++ B` | `CONCAT` | `[1,2] ++ [3,4]` | Concatenation (ordered collections/strings) |
+
+N-ary brace notes:
+- `{\/ X}` and `{/\ X}` return `X`.
+- `{\/ }` and `{/\ }` return the empty set `{| |}`.
+- `{++ X}` returns `X`, but `{++ }` is an error.
+- `{<< X}`/`{>> X}` return `X`; `{<< }`/`{>> }` are errors.
+- `<>` is binary only (no brace n-ary form).
+- `<<`/`>>` in brace form are min/max, not bit shifts.
 
 ### Pipe Operators
 
@@ -304,6 +317,8 @@ RiX separates two distinct access concepts: **meta properties** (external annota
 | `GT(a, b)` | Greater than | `a > b`, `a ?> b` |
 | `LTE(a, b)` | Less or equal | `a <= b`, `a ?<= b` |
 | `GTE(a, b)` | Greater or equal | `a >= b`, `a ?>= b` |
+| `MIN(args...)` | N-ary minimum (numbers or strings; null args ignored) | `{<< a, b, c }` |
+| `MAX(args...)` | N-ary maximum (numbers or strings; null args ignored) | `{>> a, b, c }` |
 
 ### Logic
 
@@ -344,6 +359,12 @@ RiX separates two distinct access concepts: **meta properties** (external annota
 | `TUPLE(elems...)` | Create tuple | `{: a, b, c }` |
 | `MAP(pairs...)` | Create map/object | `{= k=v, ... }` |
 | `INTERVAL(args...)` | Create interval or check n-ary betweenness (unpacks nested intervals/sets) | `a:b` or `a:b:c...` |
+| `UNION(a, b)` | Binary set union / interval hull | `A \/ B` |
+| `INTERSECT(a, b)` | Binary set intersection / interval overlap | `A /\ B` |
+| `CONCAT(a, b)` | Binary concatenation | `A ++ B` |
+| `NARY_UNION(args...)` | N-ary set union / interval hull | `{\/ A, B, C }` |
+| `NARY_INTERSECT(args...)` | N-ary set intersection / interval overlap | `{/\ A, B, C }` |
+| `NARY_CONCAT(args...)` | N-ary concatenation | `{++ A, B, C }` |
 | `LEN(coll)` | Length of collection/string | — |
 | `FIRST(coll)` | First element | — |
 | `LAST(coll)` | Last element | — |

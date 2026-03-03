@@ -71,6 +71,14 @@ const compare = (a, b) => {
     return 0;
 };
 
+const classifyUnionIntersectDomain = (val) => {
+    if (val && typeof val === "object") {
+        if (val.type === "set") return "set";
+        if (val instanceof RationalInterval || val.type === "interval") return "interval";
+    }
+    return null;
+};
+
 export const collectionFunctions = {
     ARRAY: {
         lazy: true,
@@ -375,6 +383,57 @@ export const collectionFunctions = {
         doc: "Intersection of two collections (set intersection or interval overlap)",
     },
 
+    NARY_UNION: {
+        impl(args) {
+            if (args.length === 0) return { type: "set", values: [] };
+            if (args.length === 1) return args[0];
+
+            const domain = classifyUnionIntersectDomain(args[0]);
+            if (!domain) {
+                throw new Error("NARY_UNION expects sets or intervals");
+            }
+            for (let i = 1; i < args.length; i++) {
+                if (classifyUnionIntersectDomain(args[i]) !== domain) {
+                    throw new Error("NARY_UNION operands must all be sets or all be intervals");
+                }
+            }
+
+            let acc = args[0];
+            for (let i = 1; i < args.length; i++) {
+                acc = collectionFunctions.UNION.impl([acc, args[i]]);
+            }
+            return acc;
+        },
+        pure: true,
+        doc: "N-ary union/hull fold for sets or intervals",
+    },
+
+    NARY_INTERSECT: {
+        impl(args) {
+            if (args.length === 0) return { type: "set", values: [] };
+            if (args.length === 1) return args[0];
+
+            const domain = classifyUnionIntersectDomain(args[0]);
+            if (!domain) {
+                throw new Error("NARY_INTERSECT expects sets or intervals");
+            }
+            for (let i = 1; i < args.length; i++) {
+                if (classifyUnionIntersectDomain(args[i]) !== domain) {
+                    throw new Error("NARY_INTERSECT operands must all be sets or all be intervals");
+                }
+            }
+
+            let acc = args[0];
+            for (let i = 1; i < args.length; i++) {
+                acc = collectionFunctions.INTERSECT.impl([acc, args[i]]);
+                if (acc === null) return null;
+            }
+            return acc;
+        },
+        pure: true,
+        doc: "N-ary intersection/overlap fold for sets or intervals",
+    },
+
     SET_DIFF: {
         impl(args) {
             const [a, b] = args;
@@ -445,5 +504,22 @@ export const collectionFunctions = {
             throw new Error("Concatenation not defined for these types");
         },
         pure: true,
+    },
+
+    NARY_CONCAT: {
+        impl(args) {
+            if (args.length === 0) {
+                throw new Error("NARY_CONCAT requires at least one argument");
+            }
+            if (args.length === 1) return args[0];
+
+            let acc = args[0];
+            for (let i = 1; i < args.length; i++) {
+                acc = collectionFunctions.CONCAT.impl([acc, args[i]]);
+            }
+            return acc;
+        },
+        pure: true,
+        doc: "N-ary concatenation fold",
     },
 };

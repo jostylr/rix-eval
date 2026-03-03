@@ -25,6 +25,42 @@ function boolResult(val) {
     return val ? new Integer(1) : null;
 }
 
+function classifyMinMaxType(val) {
+    if (val === null || val === undefined) return null;
+    if (val instanceof Integer || val instanceof Rational) return "number";
+    if (typeof val === "number" || typeof val === "bigint") return "number";
+    if (typeof val === "string") return "string";
+    if (val && typeof val === "object" && val.type === "string") return "string";
+    return "invalid";
+}
+
+function minMaxImpl(args, mode) {
+    const filtered = args.filter((v) => v !== null && v !== undefined);
+    if (filtered.length === 0) {
+        throw new Error(`${mode} requires at least one non-null comparable argument`);
+    }
+
+    const valueType = classifyMinMaxType(filtered[0]);
+    if (valueType === "invalid") {
+        throw new Error(`${mode} only supports numbers or strings`);
+    }
+    for (let i = 1; i < filtered.length; i++) {
+        const t = classifyMinMaxType(filtered[i]);
+        if (t === "invalid" || t !== valueType) {
+            throw new Error(`${mode} arguments must all be numbers or all be strings`);
+        }
+    }
+
+    let best = filtered[0];
+    for (let i = 1; i < filtered.length; i++) {
+        const c = compare(filtered[i], best);
+        if ((mode === "MIN" && c < 0) || (mode === "MAX" && c > 0)) {
+            best = filtered[i];
+        }
+    }
+    return best;
+}
+
 export const comparisonFunctions = {
     EQ: {
         impl(args) {
@@ -80,5 +116,21 @@ export const comparisonFunctions = {
         },
         pure: true,
         doc: "Greater than or equal — returns 1 or null",
+    },
+
+    MIN: {
+        impl(args) {
+            return minMaxImpl(args, "MIN");
+        },
+        pure: true,
+        doc: "Minimum over n arguments (ignores nulls)",
+    },
+
+    MAX: {
+        impl(args) {
+            return minMaxImpl(args, "MAX");
+        },
+        pure: true,
+        doc: "Maximum over n arguments (ignores nulls)",
     },
 };

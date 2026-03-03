@@ -909,22 +909,35 @@ describe("RiX Evaluator", () => {
             expect(() => evalRix("obj.name = 5;", ctx)).toThrow("frozen");
         });
 
-        test("INDEX_SET requires mutable=true meta flag", () => {
+        test("INDEX_SET works by default for arrays and maps", () => {
             const ctx = new Context();
-            const arr = { type: "sequence", values: [new Integer(1), new Integer(2), new Integer(3)] };
-            ctx.set("arr", arr);
-            expect(() => evalRix("arr[1] = 99;", ctx)).toThrow("mutable");
+            evalRix("arr = [1, 2, 3];", ctx);
+            evalRix("arr[1] = 99;", ctx);
+            expect(evalRix("arr[1];", ctx).value).toBe(99n);
+
+            evalRix("m = {= a=1 };", ctx);
+            evalRix("m[:a] = 2;", ctx);
+            expect(evalRix("m[:a];", ctx).value).toBe(2n);
         });
 
-        test("INDEX_SET works when mutable=true", () => {
+        test("Removing mutable flag locks the object", () => {
             const ctx = new Context();
-            const arr = { type: "sequence", values: [new Integer(1), new Integer(2), new Integer(3)] };
-            arr._ext = new Map([["mutable", new Integer(1)]]);
-            ctx.set("arr", arr);
+            evalRix("arr = [1, 2, 3];", ctx);
+            evalRix("arr.mutable = _;", ctx);
+            expect(() => evalRix("arr[1] = 99;", ctx)).toThrow("mutable");
+
+            evalRix("m = {= a=1 };", ctx);
+            evalRix("m.mutable = _;", ctx);
+            expect(() => evalRix("m[:a] = 2;", ctx)).toThrow("mutable");
+        });
+
+        test("INDEX_SET works when explicitly re-enabled", () => {
+            const ctx = new Context();
+            evalRix("arr = [1, 2, 3];", ctx);
+            evalRix("arr.mutable = _;", ctx);
+            evalRix("arr.mutable = 1;", ctx);
             evalRix("arr[1] = 99;", ctx);
-            const result = evalRix("arr[1];", ctx);
-            expect(result).toBeInstanceOf(Integer);
-            expect(result.value).toBe(99n);
+            expect(evalRix("arr[1];", ctx).value).toBe(99n);
         });
 
         test("compound meta assignment (obj.count += 1)", () => {

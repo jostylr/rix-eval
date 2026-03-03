@@ -239,7 +239,7 @@ RiX separates two distinct access concepts: **meta properties** (external annota
 | `obj .= map` | `META_MERGE` | Bulk merge map into meta properties (null values = delete) |
 | `obj[expr]` | `INDEX_GET` | Index into collection (1-based for sequences/strings; key for maps) |
 | `obj[:name]` | `INDEX_GET` | Map access by string key literal |
-| `obj[i] = val` | `INDEX_SET` | Set collection index (requires `mutable=true` meta flag) |
+| `obj[i] = val` | `INDEX_SET` | Set collection index (allowed by default for arrays and maps; requires `mutable=1`) |
 | `obj.\|` | `KEYS` | Get set of map keys |
 | `obj\|.` | `VALUES` | Get set of map values |
 | `obj.Method(args)` | `CALL_EXPR` | Method call — desugars to `CALL_EXPR(META_GET(obj,"Method"), obj, args...)` |
@@ -407,11 +407,14 @@ RiX separates two distinct access concepts: **meta properties** (external annota
 | `META_ALL(obj)` | Get all meta properties as read-only map | `obj..` |
 | `META_MERGE(obj, map)` | Bulk merge map into meta (null values = delete) | `obj .= map` |
 | `INDEX_GET(obj, key)` | Index into collection (1-based for sequences/strings; string/value keys for maps) | `obj[expr]`, `obj[:name]` |
-| `INDEX_SET(obj, key, val)` | Set index (requires `mutable=true` meta flag) | `obj[i] = val` |
+| `INDEX_SET(obj, key, val)` | Set index (requires `mutable=1` meta flag) | `obj[i] = val` |
 | `KEYS(obj)` | Get keys of map as set | `obj.\|` |
 | `VALUES(obj)` | Get values of map as set | `obj\|.` |
 
-**Meta property flags:** Objects may have `immutable` (blocks all meta changes), `frozen` (blocks meta changes except unsetting `frozen`), and `mutable` (required to allow `INDEX_SET`) flags.
+**Mutability & Locking:**
+- **`mutable`**: By default, **arrays** and **maps** are created with `mutable=1`. This allows modification after creation using `INDEX_SET` (e.g., `arr[1] = 99`). To lock an object against further modification, set `obj.mutable = _`.
+- **`frozen`**: When `frozen=1`, no meta properties can be changed except for `frozen` itself. This provides a "temporary lock" on meta settings.
+- **`immutable`**: When `immutable=1`, the object is permanently locked. No meta properties (including `immutable` or `frozen`) can be changed.
 
 ### Regex
 

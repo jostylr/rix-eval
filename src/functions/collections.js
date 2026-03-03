@@ -128,7 +128,11 @@ export const collectionFunctions = {
                 }
                 i++;
             }
-            return { type: "sequence", values };
+            return {
+                type: "sequence",
+                values,
+                _ext: new Map([["mutable", new Integer(1n)]])
+            };
         },
         pure: true,
         doc: "Create an array/sequence (supports sequence generators)",
@@ -184,7 +188,11 @@ export const collectionFunctions = {
                     entries.set(val?.toString?.() ?? String(args.indexOf(arg)), val);
                 }
             }
-            return { type: "map", entries };
+            return {
+                type: "map",
+                entries,
+                _ext: new Map([["mutable", new Integer(1n)]])
+            };
         },
         pure: true, // It might not be pure if evaluate calls non-pure functions, but usually for literals it's okay.
         doc: "Create a map/object",

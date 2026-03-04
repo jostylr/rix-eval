@@ -18,6 +18,14 @@ function toInteger(key) {
     throw new Error(`Index must be numeric, got ${typeof key}`);
 }
 
+function normalizeMapKey(key) {
+    if (typeof key === "string") return key;
+    if (key && key.type === "string") return key.value;
+    if (key instanceof Integer) return key.value.toString();
+    if (typeof key === "number" || typeof key === "bigint") return String(key);
+    return null;
+}
+
 /**
  * Get a non-string key entry from _refEntries.
  */
@@ -209,10 +217,7 @@ export const propertyFunctions = {
 
             // Maps — string or value keys
             if (obj && obj.type === "map" && obj.entries instanceof Map) {
-                // Normalize RiX string objects to JS strings for map lookup
-                const mapKey = (typeof key === "string") ? key
-                    : (key && key.type === "string") ? key.value
-                    : null;
+                const mapKey = normalizeMapKey(key);
                 if (mapKey !== null) {
                     return obj.entries.has(mapKey) ? obj.entries.get(mapKey) : null;
                 }
@@ -250,8 +255,9 @@ export const propertyFunctions = {
             }
 
             if (obj && obj.type === "map" && obj.entries instanceof Map) {
-                if (typeof key === "string") {
-                    obj.entries.set(key, value);
+                const mapKey = normalizeMapKey(key);
+                if (mapKey !== null) {
+                    obj.entries.set(mapKey, value);
                 } else {
                     setRefEntry(obj, key, value);
                 }

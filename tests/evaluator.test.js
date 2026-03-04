@@ -776,6 +776,30 @@ describe("RiX Evaluator", () => {
             expect(result.value).toBe(1n);
         });
 
+        test("map numeric and string key forms are equivalent", () => {
+            const ctx = new Context();
+            evalRix("a = {= 1=2 };", ctx);
+
+            expect(evalRix("a[1];", ctx).value).toBe(2n);
+            expect(evalRix("a[:1];", ctx).value).toBe(2n);
+            expect(evalRix('a["1"];', ctx).value).toBe(2n);
+
+            evalRix('a["1"] = 5;', ctx);
+            expect(evalRix("a[1];", ctx).value).toBe(5n);
+
+            evalRix("a[1] = 7;", ctx);
+            expect(evalRix('a["1"];', ctx).value).toBe(7n);
+            expect(evalRix("a[:1];", ctx).value).toBe(7n);
+        });
+
+        test("map string numeric key literal in container normalizes", () => {
+            const ctx = new Context();
+            evalRix('a = {= "1"=3 };', ctx);
+            expect(evalRix("a[1];", ctx).value).toBe(3n);
+            expect(evalRix("a[:1];", ctx).value).toBe(3n);
+            expect(evalRix('a["1"];', ctx).value).toBe(3n);
+        });
+
         test("array INDEX_GET access (1-based)", () => {
             const ctx = new Context();
             const arr = { type: "sequence", values: [new Integer(10), new Integer(20), new Integer(30)] };

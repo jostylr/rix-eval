@@ -43,7 +43,7 @@
 | `{? c1 ? v1; c2 ? v2; default }` | `CASE` | Conditional branching (if/elseif/else) |
 | `{@ init; cond; body; update }` | `LOOP` | Loop with init, condition, body, update |
 | `{$ eq1; eq2 }` | `SYSTEM` | Mathematical system (equations/assertions) |
-| `{= k1=v1, k2=v2 }` | `MAP` | Map/object literal |
+| `{= k1=v1, k2=v2 }` | `MAP` | Map/object literal (key can be an expression: `{= 1=2, (x+1)=3 }`) |
 | `{\| a, b, c }` | `SET` | Set literal |
 | `{: a, b, c }` | `TUPLE` | Tuple literal |
 | `{+ a, b, c }` | `ADD` | N-ary addition or concatenation |
@@ -238,13 +238,16 @@ RiX separates two distinct access concepts: **meta properties** (external annota
 | `obj..` | `META_ALL` | Get all meta properties as read-only map |
 | `obj .= map` | `META_MERGE` | Bulk merge map into meta properties (null values = delete) |
 | `obj[expr]` | `INDEX_GET` | Index into collection (1-based for sequences/strings; key for maps) |
-| `obj[:name]` | `INDEX_GET` | Map access by string key literal |
+| `obj[:name]` | `INDEX_GET` | Map access by key literal (`:name`, `:1`, `:"1"`) |
 | `obj[i] = val` | `INDEX_SET` | Set collection index (allowed by default for arrays and maps; requires `mutable=1`) |
 | `obj.\|` | `KEYS` | Get set of map keys |
 | `obj\|.` | `VALUES` | Get set of map values |
 | `obj.Method(args)` | `CALL_EXPR` | Method call — desugars to `CALL_EXPR(META_GET(obj,"Method"), obj, args...)` |
 
 **Note:** `obj..name` is a **parse error** — use `obj.name` for meta access.
+
+**Map Key Normalization:** For map keys, numeric and string numeric forms are equivalent.  
+`a = {= 1=2 }` means `a[1]`, `a[:1]`, and `a["1"]` all return `2` (and setting through any of them updates the same entry).
 
 ### Assertions
 
@@ -406,7 +409,7 @@ RiX separates two distinct access concepts: **meta properties** (external annota
 | `META_SET(obj, name, val)` | Set meta property (null = delete; respects immutable/frozen) | `obj.name = val` |
 | `META_ALL(obj)` | Get all meta properties as read-only map | `obj..` |
 | `META_MERGE(obj, map)` | Bulk merge map into meta (null values = delete) | `obj .= map` |
-| `INDEX_GET(obj, key)` | Index into collection (1-based for sequences/strings; string/value keys for maps) | `obj[expr]`, `obj[:name]` |
+| `INDEX_GET(obj, key)` | Index into collection (1-based for sequences/strings; normalized keys for maps) | `obj[expr]`, `obj[:name]`, `obj[:1]` |
 | `INDEX_SET(obj, key, val)` | Set index (requires `mutable=1` meta flag) | `obj[i] = val` |
 | `KEYS(obj)` | Get keys of map as set | `obj.\|` |
 | `VALUES(obj)` | Get values of map as set | `obj\|.` |

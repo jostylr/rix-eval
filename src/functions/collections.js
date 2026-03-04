@@ -8,6 +8,14 @@ function isTruthy(val) {
     return val !== null && val !== undefined;
 }
 
+function normalizeMapKey(key) {
+    if (typeof key === "string") return key;
+    if (key && key.type === "string") return key.value;
+    if (key instanceof Integer) return key.value.toString();
+    if (typeof key === "number" || typeof key === "bigint") return String(key);
+    return null;
+}
+
 function valueKey(val) {
     if (val === null || val === undefined) return "null";
     if (typeof val === "object") {
@@ -177,6 +185,16 @@ export const collectionFunctions = {
                     const name = arg.args[0];
                     const val = evaluate(arg.args[1]);
                     entries.set(name, val);
+                } else if (arg && arg.fn === "ASSIGN_EXPR") {
+                    // Expression-key map entries, e.g. {= 1=2 }, {= "k"=2 }, {= (x+1)=2 }
+                    const keyVal = evaluate(arg.args[0]);
+                    const val = evaluate(arg.args[1]);
+                    const normalizedKey = normalizeMapKey(keyVal);
+                    if (normalizedKey !== null) {
+                        entries.set(normalizedKey, val);
+                    } else {
+                        entries.set(keyVal?.toString?.() ?? String(keyVal), val);
+                    }
                 } else if (arg && arg.fn === "KWARG") {
                     // Keyword args also used in MAP literals sometimes
                     const name = arg.args[0];

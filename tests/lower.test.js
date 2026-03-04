@@ -437,6 +437,12 @@ describe("Lowering Pass", () => {
       expect(ir.args[1]).toBe("foo");
     });
 
+    test("obj[:1] → INDEX_GET with numeric key literal normalized to string", () => {
+      const ir = L("obj[:1];");
+      expect(ir.fn).toBe("INDEX_GET");
+      expect(ir.args[1]).toBe("1");
+    });
+
     test("obj.. → META_ALL", () => {
       const ir = L("obj..;");
       expect(ir.fn).toBe("META_ALL");

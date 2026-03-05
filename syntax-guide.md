@@ -43,7 +43,7 @@
 | `{? c1 ? v1; c2 ? v2; default }` | `CASE` | Conditional branching (if/elseif/else) |
 | `{@ init; cond; body; update }` | `LOOP` | Loop with init, condition, body, update |
 | `{$ eq1; eq2 }` | `SYSTEM` | Mathematical system (equations/assertions) |
-| `{= k1=v1, k2=v2 }` | `MAP` | Map/object literal (key can be an expression: `{= 1=2, (x+1)=3 }`) |
+| `{= k1=v1, (expr)=v2 }` | `MAP` | Map/object literal (`k1` identifier sugar or parenthesized key expression) |
 | `{\| a, b, c }` | `SET` | Set literal |
 | `{: a, b, c }` | `TUPLE` | Tuple literal |
 | `{+ a, b, c }` | `ADD` | N-ary addition or concatenation |
@@ -73,8 +73,8 @@
 | `A /\ B` | `INTERSECT` | `S1 /\ S2` | Set intersection or interval overlap |
 | `A \ B` | `SET_DIFF` | `S1 \ S2` | Set/Map difference |
 | `A <> B` | `SET_SYMDIFF` | `S1 <> S2` | Symmetric difference |
-| `x ? S` | `MEMBER` | `5 ? 1:10` | Membership test (returns 1/null) |
-| `x !? S` | `NOT_MEMBER` | `x !? S` | Non-membership test |
+| `x ? S` | `MEMBER` | `5 ? 1:10`, `"a" ? m` | Membership test (sets/intervals) or map key existence test |
+| `x !? S` | `NOT_MEMBER` | `x !? S` | Non-membership / key absence test |
 | `A ?& B` | `INTERSECTS` | `A ?& B` | Intersects predicate |
 | `A ** B` | `SET_PROD` | `S1 ** S2` | Cartesian product |
 | `A ++ B` | `CONCAT` | `[1,2] ++ [3,4]` | Concatenation (ordered collections/strings) |
@@ -246,8 +246,18 @@ RiX separates two distinct access concepts: **meta properties** (external annota
 
 **Note:** `obj..name` is a **parse error** — use `obj.name` for meta access.
 
-**Map Key Normalization:** For map keys, numeric and string numeric forms are equivalent.  
-`a = {= 1=2 }` means `a[1]`, `a[:1]`, and `a["1"]` all return `2` (and setting through any of them updates the same entry).
+**Map Key Resolution (`KEYOF`):**
+- string -> same key
+- integer -> canonical integer string
+- otherwise -> use `.key` meta property (must be string/integer)
+
+Expression map keys must be parenthesized in literals:
+- `a = {= id=5, (expr)=9 }`
+- `{= 1=2 }` is invalid; use `{= (1)=2 }`
+
+Map literals reject duplicate keys after canonicalization:
+- `{= a=1, ("a")=2 }` -> error
+- `{= (1)=1, ("1")=2 }` -> error
 
 ### Assertions
 
@@ -373,6 +383,7 @@ RiX separates two distinct access concepts: **meta properties** (external annota
 | `LAST(coll)` | Last element | — |
 | `GETEL(coll, i)` | Get element at 1-based index | — |
 | `IRANGE(start, end)` | Integer range `[start, end]` | — |
+| `RAND_NAME(len?, alphabet?)` | Random string generator | `RAND_NAME()`, `RAND_NAME(8, "abc")` |
 
 ### Functional / Pipes
 
@@ -411,6 +422,7 @@ RiX separates two distinct access concepts: **meta properties** (external annota
 | `META_MERGE(obj, map)` | Bulk merge map into meta (null values = delete) | `obj .= map` |
 | `INDEX_GET(obj, key)` | Index into collection (1-based for sequences/strings; normalized keys for maps) | `obj[expr]`, `obj[:name]`, `obj[:1]` |
 | `INDEX_SET(obj, key, val)` | Set index (requires `mutable=1` meta flag) | `obj[i] = val` |
+| `KEYOF(x)` | Resolve canonical map key string | `KEYOF(x)` |
 | `KEYS(obj)` | Get keys of map as set | `obj.\|` |
 | `VALUES(obj)` | Get values of map as set | `obj\|.` |
 
@@ -418,6 +430,7 @@ RiX separates two distinct access concepts: **meta properties** (external annota
 - **`mutable`**: By default, **arrays** and **maps** are created with `mutable=1`. This allows modification after creation using `INDEX_SET` (e.g., `arr[1] = 99`). To lock an object against further modification, set `obj.mutable = _`.
 - **`frozen`**: When `frozen=1`, no meta properties can be changed except for `frozen` itself. This provides a "temporary lock" on meta settings.
 - **`immutable`**: When `immutable=1`, the object is permanently locked. No meta properties (including `immutable` or `frozen`) can be changed.
+- **`.key` identity**: `.key` must be string/integer and is effectively write-once (idempotent same-value writes allowed; changing value is an error). Used by `KEYOF` for map keys.
 
 ### Regex
 

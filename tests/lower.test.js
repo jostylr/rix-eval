@@ -373,6 +373,27 @@ describe("Lowering Pass", () => {
       const ir = L("{= a, b, c };");
       expect(ir.fn).toBe("MAP_OBJ");
     });
+
+    test("{= a=1 } lowers identifier key sugar to MAP_PAIR(identifier,...)", () => {
+      const ir = L("{= a=1 };");
+      expect(ir.fn).toBe("MAP_OBJ");
+      expect(ir.args[0].fn).toBe("MAP_PAIR");
+      expect(ir.args[0].args[0]).toBe("identifier");
+      expect(ir.args[0].args[1]).toBe("a");
+    });
+
+    test("{= (k)=1 } lowers expression key to MAP_PAIR(expression,...)", () => {
+      const ir = L("{= (k)=1 };");
+      expect(ir.fn).toBe("MAP_OBJ");
+      expect(ir.args[0].fn).toBe("MAP_PAIR");
+      expect(ir.args[0].args[0]).toBe("expression");
+      expect(ir.args[0].args[1].fn).toBe("RETRIEVE");
+      expect(ir.args[0].args[1].args).toEqual(["k"]);
+    });
+
+    test("{= 1=2 } is rejected (expression keys must be parenthesized)", () => {
+      expect(() => L("{= 1=2 };")).toThrow("Map key expressions must be parenthesized");
+    });
   });
 
   describe("Control Flow", () => {

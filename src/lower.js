@@ -410,7 +410,23 @@ const LOWERERS = {
   // === Brace Sigil Containers ===
 
   MapContainer(node) {
-    return ir("MAP_OBJ", ...node.elements.map(lowerNode));
+    const loweredElements = node.elements.map((el) => {
+      if (
+        el &&
+        el.type === "BinaryOperation" &&
+        (el.operator === "=" || el.operator === ":=")
+      ) {
+        if (el.left?.type === "UserIdentifier" || el.left?.type === "SystemIdentifier") {
+          return ir("MAP_PAIR", "identifier", el.left.name, lowerNode(el.right));
+        }
+        if (el.left?.type === "Grouping") {
+          return ir("MAP_PAIR", "expression", lowerNode(el.left.expression), lowerNode(el.right));
+        }
+        throw new Error("Map key expressions must be parenthesized in literals: use {= (expr)=value }");
+      }
+      return lowerNode(el);
+    });
+    return ir("MAP_OBJ", ...loweredElements);
   },
 
   CaseContainer(node) {

@@ -776,9 +776,9 @@ describe("RiX Evaluator", () => {
             expect(result.value).toBe(1n);
         });
 
-        test("map numeric and string key forms are equivalent", () => {
+        test("map numeric and string key forms are equivalent (parenthesized expression key)", () => {
             const ctx = new Context();
-            evalRix("a = {= 1=2 };", ctx);
+            evalRix("a = {= (1)=2 };", ctx);
 
             expect(evalRix("a[1];", ctx).value).toBe(2n);
             expect(evalRix("a[:1];", ctx).value).toBe(2n);
@@ -794,10 +794,78 @@ describe("RiX Evaluator", () => {
 
         test("map string numeric key literal in container normalizes", () => {
             const ctx = new Context();
-            evalRix('a = {= "1"=3 };', ctx);
+            evalRix('a = {= ("1")=3 };', ctx);
             expect(evalRix("a[1];", ctx).value).toBe(3n);
             expect(evalRix("a[:1];", ctx).value).toBe(3n);
             expect(evalRix('a["1"];', ctx).value).toBe(3n);
+        });
+
+        test("map key expression must be parenthesized in literals", () => {
+            expect(() => evalRix("a = {= 1=2 };")).toThrow("Map key expressions must be parenthesized");
+        });
+
+        test("object key resolution uses .key meta property", () => {
+            const ctx = new Context();
+            evalRix("m = {= a=5 };", ctx);
+            evalRix('obj = [1]; obj.key = "a";', ctx);
+            expect(evalRix("m[obj];", ctx).value).toBe(5n);
+        });
+
+        test("KEYOF system function", () => {
+            const ctx = new Context();
+            const k1 = evalRix('KEYOF("a");', ctx);
+            expect(k1.type).toBe("string");
+            expect(k1.value).toBe("a");
+
+            const k2 = evalRix("KEYOF(1);", ctx);
+            expect(k2.type).toBe("string");
+            expect(k2.value).toBe("1");
+
+            evalRix("obj = [1]; obj.key = 7;", ctx);
+            const k3 = evalRix("KEYOF(obj);", ctx);
+            expect(k3.type).toBe("string");
+            expect(k3.value).toBe("7");
+        });
+
+        test("KEYOF errors for unsupported keys without .key", () => {
+            expect(() => evalRix("KEYOF(3/2);")).toThrow("Value cannot be used as a map key");
+            expect(() => evalRix("KEYOF({: 1, 2 });")).toThrow("Value cannot be used as a map key");
+        });
+
+        test(".key identity assignment is immutable except idempotent writes", () => {
+            const ctx = new Context();
+            evalRix("v = [1];", ctx);
+            const first = evalRix('v.key = "x";', ctx);
+            expect(first.type).toBe("string");
+            expect(first.value).toBe("x");
+
+            const same = evalRix('v.key = "x";', ctx);
+            expect(same.type).toBe("string");
+            expect(same.value).toBe("x");
+
+            const sameCanonical = evalRix("v2 = [1]; v2.key = 1; v2.key = \"1\";", ctx);
+            expect(sameCanonical.type).toBe("string");
+            expect(sameCanonical.value).toBe("1");
+
+            expect(() => evalRix('v.key = "y";', ctx)).toThrow("Cannot change .key once set");
+        });
+
+        test("map literal duplicate keys throw", () => {
+            expect(() => evalRix("{= a=1, a=2 };")).toThrow('Duplicate key in map literal: "a"');
+            expect(() => evalRix('{= a=1, ("a")=2 };')).toThrow('Duplicate key in map literal: "a"');
+            expect(() => evalRix('{= (1)=1, ("1")=2 };')).toThrow('Duplicate key in map literal: "1"');
+        });
+
+        test("map existence operator ? uses KEYOF for maps", () => {
+            const ctx = new Context();
+            evalRix("m = {= a=5, (1)=9 };", ctx);
+            expect(evalRix('"a" ? m;', ctx)).toBeInstanceOf(Integer);
+            expect(evalRix('"b" ? m;', ctx)).toBeNull();
+            expect(evalRix("1 ? m;", ctx)).toBeInstanceOf(Integer);
+
+            evalRix('obj = [1]; obj.key = "a";', ctx);
+            expect(evalRix("obj ? m;", ctx)).toBeInstanceOf(Integer);
+            expect(evalRix("obj !? m;", ctx)).toBeNull();
         });
 
         test("array INDEX_GET access (1-based)", () => {
@@ -1201,6 +1269,33 @@ describe("RiX Evaluator", () => {
             expect(result).toBeInstanceOf(Rational);
             expect(result.numerator).toBe(1n);
             expect(result.denominator).toBe(2n);
+        });
+    });
+
+    describe("RAND_NAME", () => {
+        test("default length is 10", () => {
+            const result = evalRix("RAND_NAME();");
+            expect(result.type).toBe("string");
+            expect(result.value.length).toBe(10);
+        });
+
+        test("custom length works", () => {
+            const result = evalRix("RAND_NAME(3);");
+            expect(result.type).toBe("string");
+            expect(result.value.length).toBe(3);
+        });
+
+        test("alphabet restriction works", () => {
+            const result = evalRix('RAND_NAME(50, "ab");');
+            expect(result.type).toBe("string");
+            for (const ch of result.value) {
+                expect(ch === "a" || ch === "b").toBe(true);
+            }
+        });
+
+        test("validation errors", () => {
+            expect(() => evalRix("RAND_NAME(0);")).toThrow("RAND_NAME len must be a positive integer");
+            expect(() => evalRix("RAND_NAME(3, 5);")).toThrow("RAND_NAME alphabet must be a non-empty string");
         });
     });
 

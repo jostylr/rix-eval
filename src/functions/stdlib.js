@@ -162,6 +162,41 @@ export const stdlibFunctions = {
         doc: "Get substring",
     },
 
+    RAND_NAME: {
+        impl(args) {
+            const lenArg = args[0];
+            const alphabetArg = args[1];
+
+            let len = 10;
+            if (lenArg !== undefined && lenArg !== null) {
+                if (lenArg instanceof Integer) len = Number(lenArg.value);
+                else if (typeof lenArg === "number" || typeof lenArg === "bigint") len = Number(lenArg);
+                else throw new Error("RAND_NAME len must be a positive integer");
+            }
+            if (!Number.isInteger(len) || len <= 0) {
+                throw new Error("RAND_NAME len must be a positive integer");
+            }
+
+            let alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            if (alphabetArg !== undefined && alphabetArg !== null) {
+                if (typeof alphabetArg === "string") alphabet = alphabetArg;
+                else if (alphabetArg?.type === "string") alphabet = alphabetArg.value;
+                else throw new Error("RAND_NAME alphabet must be a non-empty string");
+            }
+            if (typeof alphabet !== "string" || alphabet.length === 0) {
+                throw new Error("RAND_NAME alphabet must be a non-empty string");
+            }
+
+            let out = "";
+            for (let i = 0; i < len; i++) {
+                const idx = Math.floor(Math.random() * alphabet.length);
+                out += alphabet[idx];
+            }
+            return { type: "string", value: out };
+        },
+        doc: "Generate a random name string RAND_NAME(len=10, alphabet=a-zA-Z)",
+    },
+
     // --- I/O ---
     PRINT: {
         impl(args) {

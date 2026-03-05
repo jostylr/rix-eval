@@ -3,17 +3,10 @@
  */
 
 import { Integer, Rational, RationalInterval } from "@ratmath/core";
+import { keyOf } from "./keyof.js";
 
 function isTruthy(val) {
     return val !== null && val !== undefined;
-}
-
-function normalizeMapKey(key) {
-    if (typeof key === "string") return key;
-    if (key && key.type === "string") return key.value;
-    if (key instanceof Integer) return key.value.toString();
-    if (typeof key === "number" || typeof key === "bigint") return String(key);
-    return null;
 }
 
 function valueKey(val) {
@@ -179,31 +172,54 @@ export const collectionFunctions = {
             // For {= a=3, b=6 }, the lowered form has assignment IR nodes
             // We store as key-value pairs
             const entries = new Map();
+            const seenKeys = new Set();
             for (const arg of args) {
                 if (arg && arg.fn === "ASSIGN") {
                     // Extract name and evaluate the value
                     const name = arg.args[0];
                     const val = evaluate(arg.args[1]);
+                    if (seenKeys.has(name)) {
+                        throw new Error(`Duplicate key in map literal: "${name}"`);
+                    }
+                    seenKeys.add(name);
                     entries.set(name, val);
+                } else if (arg && arg.fn === "MAP_PAIR") {
+                    const [kind, keyExpr, valueExpr] = arg.args;
+                    const keyStr = kind === "identifier" ? keyExpr : keyOf(evaluate(keyExpr));
+                    const val = evaluate(valueExpr);
+                    if (seenKeys.has(keyStr)) {
+                        throw new Error(`Duplicate key in map literal: "${keyStr}"`);
+                    }
+                    seenKeys.add(keyStr);
+                    entries.set(keyStr, val);
                 } else if (arg && arg.fn === "ASSIGN_EXPR") {
-                    // Expression-key map entries, e.g. {= 1=2 }, {= "k"=2 }, {= (x+1)=2 }
+                    // Backward compatibility path: expression-key map entries
                     const keyVal = evaluate(arg.args[0]);
                     const val = evaluate(arg.args[1]);
-                    const normalizedKey = normalizeMapKey(keyVal);
-                    if (normalizedKey !== null) {
-                        entries.set(normalizedKey, val);
-                    } else {
-                        entries.set(keyVal?.toString?.() ?? String(keyVal), val);
+                    const keyStr = keyOf(keyVal);
+                    if (seenKeys.has(keyStr)) {
+                        throw new Error(`Duplicate key in map literal: "${keyStr}"`);
                     }
+                    seenKeys.add(keyStr);
+                    entries.set(keyStr, val);
                 } else if (arg && arg.fn === "KWARG") {
                     // Keyword args also used in MAP literals sometimes
                     const name = arg.args[0];
                     const val = evaluate(arg.args[1]);
+                    if (seenKeys.has(name)) {
+                        throw new Error(`Duplicate key in map literal: "${name}"`);
+                    }
+                    seenKeys.add(name);
                     entries.set(name, val);
                 } else {
                     // Single-value entry: evaluate and use index/value as key
                     const val = evaluate(arg);
-                    entries.set(val?.toString?.() ?? String(args.indexOf(arg)), val);
+                    const keyStr = keyOf(val);
+                    if (seenKeys.has(keyStr)) {
+                        throw new Error(`Duplicate key in map literal: "${keyStr}"`);
+                    }
+                    seenKeys.add(keyStr);
+                    entries.set(keyStr, val);
                 }
             }
             return {
@@ -312,7 +328,8 @@ export const collectionFunctions = {
                 if (cmpLo <= 0 && cmpHi <= 0) return new Integer(1);
             } else if (coll.type === "map") {
                 const entries = coll.entries || coll.elements || new Map();
-                if (entries.has(x) || entries.has(valueKey(x))) return new Integer(1);
+                const k = keyOf(x);
+                if (entries.has(k)) return new Integer(1);
             }
             return null;
         },
@@ -472,10 +489,9 @@ export const collectionFunctions = {
                 // If b is set of keys or single key, remove them
                 const newEntries = new Map(a.entries);
                 if (b.type === "set") {
-                    for (const k of b.values) newEntries.delete(valueKey(k));
+                    for (const k of b.values) newEntries.delete(keyOf(k));
                 } else {
-                    newEntries.delete(valueKey(b));
-                    newEntries.delete(b);
+                    newEntries.delete(keyOf(b));
                 }
                 return { type: "map", entries: newEntries };
             }

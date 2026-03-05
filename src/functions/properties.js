@@ -8,6 +8,7 @@
  */
 
 import { Integer } from "@ratmath/core";
+import { keyOf, canonicalizeMetaKey } from "./keyof.js";
 
 /**
  * Convert a key value to a numeric index.
@@ -16,33 +17,6 @@ function toInteger(key) {
     if (key instanceof Integer) return Number(key.value);
     if (typeof key === "number" || typeof key === "bigint") return Number(key);
     throw new Error(`Index must be numeric, got ${typeof key}`);
-}
-
-function normalizeMapKey(key) {
-    if (typeof key === "string") return key;
-    if (key && key.type === "string") return key.value;
-    if (key instanceof Integer) return key.value.toString();
-    if (typeof key === "number" || typeof key === "bigint") return String(key);
-    return null;
-}
-
-/**
- * Get a non-string key entry from _refEntries.
- */
-function getRefEntry(obj, key) {
-    if (!obj._refEntries) return undefined;
-    const entry = obj._refEntries.find(e => e.key === key);
-    return entry ? entry.value : undefined;
-}
-
-/**
- * Set a non-string key entry in _refEntries.
- */
-function setRefEntry(obj, key, value) {
-    if (!obj._refEntries) obj._refEntries = [];
-    const existing = obj._refEntries.find(e => e.key === key);
-    if (existing) existing.value = value;
-    else obj._refEntries.push({ key, value });
 }
 
 /**
@@ -142,6 +116,23 @@ export const propertyFunctions = {
             }
 
             const metaMap = ensureMeta(obj);
+            if (prop === "key") {
+                if (value === null) {
+                    throw new Error("Cannot delete .key once set");
+                }
+                const canonical = canonicalizeMetaKey(value);
+                const existing = metaMap.get("key");
+                if (existing !== undefined) {
+                    const existingCanonical = canonicalizeMetaKey(existing);
+                    if (existingCanonical !== canonical) {
+                        throw new Error(`Cannot change .key once set (existing: "${existingCanonical}", new: "${canonical}")`);
+                    }
+                }
+                const canonicalString = { type: "string", value: canonical };
+                metaMap.set("key", canonicalString);
+                return canonicalString;
+            }
+
             if (value === null) {
                 metaMap.delete(prop);  // null = delete
             } else {
@@ -217,13 +208,8 @@ export const propertyFunctions = {
 
             // Maps — string or value keys
             if (obj && obj.type === "map" && obj.entries instanceof Map) {
-                const mapKey = normalizeMapKey(key);
-                if (mapKey !== null) {
-                    return obj.entries.has(mapKey) ? obj.entries.get(mapKey) : null;
-                }
-                // Non-string keys: use _refEntries
-                const refVal = getRefEntry(obj, key);
-                return refVal !== undefined ? refVal : null;
+                const mapKey = keyOf(key);
+                return obj.entries.has(mapKey) ? obj.entries.get(mapKey) : null;
             }
 
             // Not indexable
@@ -255,18 +241,22 @@ export const propertyFunctions = {
             }
 
             if (obj && obj.type === "map" && obj.entries instanceof Map) {
-                const mapKey = normalizeMapKey(key);
-                if (mapKey !== null) {
-                    obj.entries.set(mapKey, value);
-                } else {
-                    setRefEntry(obj, key, value);
-                }
+                const mapKey = keyOf(key);
+                obj.entries.set(mapKey, value);
                 return value;
             }
 
             throw new Error(`Cannot set index on "${obj?.type || typeof obj}"`);
         },
         doc: "Set index in collection (requires mutable=true meta flag) — obj[i] = val",
+    },
+
+    KEYOF: {
+        impl(args) {
+            return { type: "string", value: keyOf(args[0]) };
+        },
+        pure: true,
+        doc: "Resolve canonical map key string for a value",
     },
 
     KEYS: {

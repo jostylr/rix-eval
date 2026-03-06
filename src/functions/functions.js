@@ -56,7 +56,7 @@ function callWithConcreteArgs(fn, callArgs, context, evaluate) {
         context.push(scope);
         if (fn.name) context.pushCall(fn.name);
         try {
-            return evaluate(fn.body);
+            return context.withSharedBody(fn.body, () => evaluate(fn.body));
         } finally {
             if (fn.name) context.popCall();
             context.pop();
@@ -133,7 +133,7 @@ export const functionFunctions = {
                 context.push(scope);
                 context.pushCall(name);
                 try {
-                    const result = evaluate(body);
+                    const result = context.withSharedBody(body, () => evaluate(body));
                     return result;
                 } finally {
                     context.popCall();
@@ -202,7 +202,7 @@ export const functionFunctions = {
 
                 context.push(scope);
                 try {
-                    return evaluate(body);
+                    return context.withSharedBody(body, () => evaluate(body));
                 } finally {
                     context.pop();
                 }

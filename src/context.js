@@ -11,6 +11,8 @@ export class Context {
         // Global scope is always the bottom of the chain
         this.globalScope = new Map();
         // Stack of local scopes (innermost = last element)
+        // Each entry is { bindings: Map, isolated: boolean }.
+        // Isolated scopes act as lookup barriers for plain identifiers.
         this.localScopes = [];
         // User-defined functions: name → { params, body, closure }
         this.functions = new Map();
@@ -18,6 +20,9 @@ export class Context {
         this.env = new Map();
         // Call stack for debugging
         this.callStack = [];
+        // One-shot overrides for top-level function/lambda bodies that should
+        // reuse the current local scope instead of creating a nested block scope.
+        this.sharedBodyOverrides = [];
     }
 
     // --- Scope management ---
@@ -27,13 +32,17 @@ export class Context {
      * @param {Map|Object} [initial] - Optional initial bindings
      * @returns {Map} The new scope
      */
-    push(initial) {
-        const scope =
+    push(initial, options = {}) {
+        const bindings =
             initial instanceof Map
                 ? initial
                 : new Map(initial ? Object.entries(initial) : []);
+        const scope = {
+            bindings,
+            isolated: options.isolated === true,
+        };
         this.localScopes.push(scope);
-        return scope;
+        return bindings;
     }
 
     /**
@@ -50,12 +59,19 @@ export class Context {
      * @returns {*} The value, or undefined if not found
      */
     get(name) {
+        let blockedByIsolation = false;
         // Search local scopes from innermost to outermost
         for (let i = this.localScopes.length - 1; i >= 0; i--) {
-            if (this.localScopes[i].has(name)) {
-                return this.localScopes[i].get(name);
+            const scope = this.localScopes[i];
+            if (scope.bindings.has(name)) {
+                return scope.bindings.get(name);
+            }
+            if (scope.isolated) {
+                blockedByIsolation = true;
+                break;
             }
         }
+        if (blockedByIsolation) return undefined;
         // Fall back to global
         if (this.globalScope.has(name)) {
             return this.globalScope.get(name);
@@ -75,7 +91,7 @@ export class Context {
      */
     set(name, value) {
         if (this.localScopes.length > 0) {
-            this.localScopes[this.localScopes.length - 1].set(name, value);
+            this.localScopes[this.localScopes.length - 1].bindings.set(name, value);
         } else {
             this.globalScope.set(name, value);
         }
@@ -95,8 +111,9 @@ export class Context {
     getOuter(name) {
         // Search local scopes from second-innermost to outermost
         for (let i = this.localScopes.length - 2; i >= 0; i--) {
-            if (this.localScopes[i].has(name)) {
-                return this.localScopes[i].get(name);
+            const scope = this.localScopes[i];
+            if (scope.bindings.has(name)) {
+                return scope.bindings.get(name);
             }
         }
         // Fall back to global
@@ -116,8 +133,9 @@ export class Context {
      */
     setOuter(name, value) {
         for (let i = this.localScopes.length - 2; i >= 0; i--) {
-            if (this.localScopes[i].has(name)) {
-                this.localScopes[i].set(name, value);
+            const scope = this.localScopes[i];
+            if (scope.bindings.has(name)) {
+                scope.bindings.set(name, value);
                 return;
             }
         }
@@ -132,9 +150,16 @@ export class Context {
      * Check if a variable exists in any scope.
      */
     has(name) {
+        let blockedByIsolation = false;
         for (let i = this.localScopes.length - 1; i >= 0; i--) {
-            if (this.localScopes[i].has(name)) return true;
+            const scope = this.localScopes[i];
+            if (scope.bindings.has(name)) return true;
+            if (scope.isolated) {
+                blockedByIsolation = true;
+                break;
+            }
         }
+        if (blockedByIsolation) return false;
         return this.globalScope.has(name) || this.functions.has(name);
     }
 
@@ -186,7 +211,38 @@ export class Context {
         child.functions = this.functions;
         child.env = this.env;
         child.callStack = [...this.callStack];
+        child.sharedBodyOverrides = [...this.sharedBodyOverrides];
         return child;
+    }
+
+    /**
+     * Allow the immediate evaluation of a top-level block-like function body
+     * to share the current scope once. Nested blocks are unaffected.
+     */
+    withSharedBody(bodyNode, callback) {
+        const sharedFns = new Set(["BLOCK", "LOOP", "SYSTEM"]);
+        if (!bodyNode || !sharedFns.has(bodyNode.fn)) {
+            return callback();
+        }
+        const token = { fn: bodyNode.fn, consumed: false };
+        this.sharedBodyOverrides.push(token);
+        try {
+            return callback();
+        } finally {
+            if (!token.consumed) {
+                this.sharedBodyOverrides.pop();
+            }
+        }
+    }
+
+    consumeSharedBody(fnName) {
+        const token = this.sharedBodyOverrides[this.sharedBodyOverrides.length - 1];
+        if (!token || token.consumed || token.fn !== fnName) {
+            return false;
+        }
+        token.consumed = true;
+        this.sharedBodyOverrides.pop();
+        return true;
     }
     /**
      * Clear all non-environment state.

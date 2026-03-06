@@ -396,7 +396,7 @@ describe("RiX Evaluator", () => {
                 times = 0;
                 [1, 2, 3] |>> (x) -> {;
                     @times += 1;
-                    x * 2;
+                    @x * 2;
                 };
             `;
             const ctx = new Context();
@@ -414,6 +414,39 @@ describe("RiX Evaluator", () => {
 
         test("@ outer scope assignment fails if not exist", () => {
             expect(() => evalRix("@nope = 5;")).toThrow("Cannot assign to outer variable '@nope'");
+        });
+
+        test("block scope hides outer variables unless @ is used", () => {
+            expect(() => evalRix("x = 5; {; x };")).toThrow("Undefined variable: x");
+            expect(evalRix("x = 5; {; @x };").value).toBe(5n);
+        });
+
+        test("block assignments do not escape by default", () => {
+            expect(() => evalRix("{; x = 5 }; x;")).toThrow("Undefined variable: x");
+        });
+
+        test("loop scope hides outer variables and loop locals do not escape", () => {
+            const code = `
+                x = 7;
+                total = 0;
+                {@ i = 0; i < 1; @total = @x; i += 1 };
+                total;
+            `;
+            expect(evalRix(code).value).toBe(7n);
+            expect(() => evalRix("x = 7; {@ i = 0; i < 1; x; i += 1 };")).toThrow("Undefined variable: x");
+            expect(() => evalRix("{@ i = 0; i < 1; _; i += 1 }; i;")).toThrow("Undefined variable: i");
+        });
+
+        test("case branches are not block scoped", () => {
+            expect(evalRix("x = 5; {? x }").value).toBe(5n);
+            const ctx = new Context();
+            evalRix("{? y = 3 }; y = y + 1;", ctx);
+            expect(evalRix("y;", ctx).value).toBe(4n);
+        });
+
+        test("system blocks are isolated for now", () => {
+            expect(() => evalRix("x = 5; {$ x }")).toThrow("Undefined variable: x");
+            expect(evalRix("x = 5; {$ @x }").value).toBe(5n);
         });
 
         test("undefined variable throws", () => {
@@ -621,6 +654,17 @@ describe("RiX Evaluator", () => {
                 result = evaluate(ir, ctx, registry);
             }
             expect(result.type).toBe("lambda");
+        });
+
+        test("top-level lambda block shares the lambda scope", () => {
+            const result = evalRix("F = (x) -> {; x * 2 }; F(3);");
+            expect(result.value).toBe(6n);
+        });
+
+        test("nested blocks inside a lambda stay isolated", () => {
+            const result = evalRix("F = (x) -> {; x += 1; {; 2 * @x } }; F(3);");
+            expect(result.value).toBe(8n);
+            expect(() => evalRix("F = (x) -> {; x += 1; {; 2 * x } }; F(3);")).toThrow("Undefined variable: x");
         });
 
         test("@+ system function retrieval", () => {

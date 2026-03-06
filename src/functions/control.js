@@ -28,11 +28,17 @@ export const controlFunctions = {
     BLOCK: {
         lazy: true,
         impl(args, context, evaluate) {
-            let result = null;
-            for (const stmt of args) {
-                result = evaluate(stmt);
+            const shareCurrentScope = context.consumeSharedBody("BLOCK");
+            if (!shareCurrentScope) context.push(undefined, { isolated: true });
+            try {
+                let result = null;
+                for (const stmt of args) {
+                    result = evaluate(stmt);
+                }
+                return result;
+            } finally {
+                if (!shareCurrentScope) context.pop();
             }
-            return result;
         },
         doc: "Sequential block execution, returns last value",
     },
@@ -72,38 +78,44 @@ export const controlFunctions = {
             // All args are DEFER nodes
             const [initNode, condNode, bodyNode, updateNode] = args.map(unwrapDefer);
 
-            // Init
-            if (initNode) evaluate(initNode);
+            const shareCurrentScope = context.consumeSharedBody("LOOP");
+            if (!shareCurrentScope) context.push(undefined, { isolated: true });
+            try {
+                // Init
+                if (initNode) evaluate(initNode);
 
-            let result = null;
-            let iterations = 0;
-            const maxIterations = 10000; // safety limit
+                let result = null;
+                let iterations = 0;
+                const maxIterations = 10000; // safety limit
 
-            while (iterations < maxIterations) {
-                // Check condition
-                if (condNode) {
-                    const condResult = evaluate(condNode);
-                    if (!isTruthy(condResult)) break;
+                while (iterations < maxIterations) {
+                    // Check condition
+                    if (condNode) {
+                        const condResult = evaluate(condNode);
+                        if (!isTruthy(condResult)) break;
+                    }
+
+                    // Execute body
+                    if (bodyNode) {
+                        result = evaluate(bodyNode);
+                    }
+
+                    // Update
+                    if (updateNode) {
+                        evaluate(updateNode);
+                    }
+
+                    iterations++;
                 }
 
-                // Execute body
-                if (bodyNode) {
-                    result = evaluate(bodyNode);
+                if (iterations >= maxIterations) {
+                    throw new Error("Loop exceeded maximum iterations (10000)");
                 }
 
-                // Update
-                if (updateNode) {
-                    evaluate(updateNode);
-                }
-
-                iterations++;
+                return result;
+            } finally {
+                if (!shareCurrentScope) context.pop();
             }
-
-            if (iterations >= maxIterations) {
-                throw new Error("Loop exceeded maximum iterations (10000)");
-            }
-
-            return result;
         },
         doc: "Loop construct with init, condition, body, update",
     },
@@ -127,11 +139,17 @@ export const controlFunctions = {
     SYSTEM: {
         lazy: true,
         impl(args, context, evaluate) {
-            let result = null;
-            for (const stmt of args) {
-                result = evaluate(stmt);
+            const shareCurrentScope = context.consumeSharedBody("SYSTEM");
+            if (!shareCurrentScope) context.push(undefined, { isolated: true });
+            try {
+                let result = null;
+                for (const stmt of args) {
+                    result = evaluate(stmt);
+                }
+                return result;
+            } finally {
+                if (!shareCurrentScope) context.pop();
             }
-            return result;
         },
         doc: "Mathematical system container, currently evaluates as a block",
     },

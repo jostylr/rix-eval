@@ -185,16 +185,15 @@ test("N-ary brace arity/type errors", () => {
 });
 
 test("Word Operators as Identifiers", () => {
-    // AND, OR, NOT should now be identifiers/functions
-    const r1 = evalRiX("AND(1, 0)");
+    // AND, OR, NOT are now only accessible via dot syntax (system context)
+    const r1 = evalRiX(".AND(1, 0)");
     expect(r1.toString()).toBe("0");
 
-    const r2 = evalRiX("NOT(_)");
+    const r2 = evalRiX(".NOT(_)");
     expect(r2).not.toBe(null);
 
-    // Since AND is an identifier, `1 AND 0` parses as `1 * AND(0)`.
-    // It shouldn't work as infix. We check its actual output to reflect this behaviour.
-    expect(evalRiX("1 AND 0").toString()).toBe("0");
+    // Bare AND(1, 0) should now throw — system capabilities require dot syntax
+    expect(() => evalRiX("AND(1, 0)")).toThrow();
 });
 
 test("Logic symbolic operators", () => {

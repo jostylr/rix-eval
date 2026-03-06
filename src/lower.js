@@ -312,7 +312,7 @@ const LOWERERS = {
 
     if (fn.type === "SystemIdentifier" || fn.type === "UserIdentifier") {
       const name = fn.name;
-      // Handle operators parsed as function calls due to parser ambiguity/overloading rules
+      // Operators that may be parsed as function calls (unary/binary shorthand)
       if (args.length === 1) {
         if (name === "-") return ir("NEG", args[0]);
         if (name === "+") return args[0]; // unary + is identity
@@ -323,6 +323,12 @@ const LOWERERS = {
         if (name === "*") return ir("MUL", args[0], args[1]);
         if (name === "/") return ir("DIV", args[0], args[1]);
       }
+      // Brace-syntax calls ({+ 1,2,3}, {* a,b,c}, etc.) go directly to the
+      // internal Registry — these are language syntax, not user-typed names.
+      if (node.fromBrace) {
+        return ir(name, ...args);
+      }
+      // All other calls go through CALL (user scope lookup, no Registry fallback)
       return ir("CALL", name, ...args);
     }
     // Expression call: (expr)(args)
@@ -331,7 +337,19 @@ const LOWERERS = {
 
   SystemCall(node) {
     const args = lowerCallArgs(node.arguments);
-    return ir(node.name, ...args);
+    // All system calls — .Name(), @_Name(), @+(args) — go through SYS_CALL
+    // so they require the capability to be in the system context.
+    return ir("SYS_CALL", node.name, ...args);
+  },
+
+  // SystemObject: bare . → SYS_OBJ (returns a copy of the system context)
+  SystemObject(_node) {
+    return ir("SYS_OBJ");
+  },
+
+  // SystemAccess: .Name in non-call position → SYS_GET
+  SystemAccess(node) {
+    return ir("SYS_GET", node.property);
   },
 
   Call(node) {
@@ -704,6 +722,11 @@ function lowerAssignment(node) {
   // Simple variable assignment: x = 5
   if (left.type === "UserIdentifier" || left.type === "SystemIdentifier") {
     return ir("ASSIGN", left.name, lowerNode(node.right));
+  }
+
+  // System context meta assignment: .freeze = true, .immutable = false
+  if (left.type === "SystemAccess") {
+    return ir("SYS_SET", left.property, lowerNode(node.right));
   }
 
   // Meta assignment: obj.name = val

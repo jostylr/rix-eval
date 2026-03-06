@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { tokenize } from "../../parser/src/tokenizer.js";
 import { parse } from "../../parser/src/parser.js";
 import { lower } from "../src/lower.js";
-import { evaluate, createDefaultRegistry } from "../src/evaluator.js";
+import { evaluate, createDefaultRegistry, createDefaultSystemContext } from "../src/evaluator.js";
 import { Context } from "../src/context.js";
 import { Integer } from "@ratmath/core";
 
@@ -19,6 +19,8 @@ function systemLookup(name) {
     return symbols[name] || { type: "identifier" };
 }
 
+const defaultSystemContext = createDefaultSystemContext();
+
 function evalRix(code, context) {
     const ctx = context || new Context();
     const registry = createDefaultRegistry();
@@ -28,7 +30,7 @@ function evalRix(code, context) {
 
     let result = null;
     for (const irNode of irNodes) {
-        result = evaluate(irNode, ctx, registry);
+        result = evaluate(irNode, ctx, registry, defaultSystemContext);
     }
     return result;
 }

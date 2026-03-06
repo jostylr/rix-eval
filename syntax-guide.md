@@ -57,13 +57,50 @@
 | `{>> a, b, c }` | `MAX` | N-ary maximum (`null` args ignored) |
 | `{/pattern/flags?mode}` | `REGEX` | Regular expression literal |
 
-### Deferred Syntax & System Aliases
+### System Context (`.` Dot Syntax)
+
+The leading `.` refers to the **system capability object** — a frozen, sandboxable map of all built-in functions. System functions may only be called through this object.
+
+| Syntax | IR Node | Description | Example |
+|--------|---------|-------------|---------|
+| `.` | `SYS_OBJ` | The system context as a RiX value (copy) | `sys := .` |
+| `.Name` | `SYS_GET` | Get a system capability reference | `fn := .ADD` |
+| `.Name(args)` | `SYS_CALL` | Call a system capability | `.ADD(3, 4)` → `7` |
+| `.FREEZE = 1` | `SYS_SET` | Freeze the system context | `.FREEZE = 1` |
+| `@_Name(args)` | `SYS_CALL` | Alternative call syntax (identical to `.Name(args)`) | `@_ADD(3, 4)` → `7` |
+
+System context meta-methods (called via dot syntax):
+- `.Withhold("NAME")` — return a copy with a capability removed (for sandboxing loaded scripts)
+- `.With("NAME", fn)` — return a copy with an added or replaced capability
+
+### Deferred Syntax & Operator Aliases
 
 | Syntax | Description | Example |
 |--------|-------------|---------|
 | `@{; ... }` | Deferred block (returns AST tree, does not evaluate) | `f = @{; x + 1 }` |
 | `@{= ... }` | Deferred map | `lazyMap = @{= a=1 }` |
-| `@+, @*, @<`, etc | System function retrieval | `f = @+; f(10, 20)` evaluates to `30` |
+| `@+, @*, @<`, etc | Retrieve operator's system capability (alias for `.ADD`, `.MUL`, etc.) | `f = @+; f(10, 20)` → `30` |
+
+Operator alias mapping:
+
+| Operator Alias | System Capability |
+|----------------|------------------|
+| `@+` | `.ADD` |
+| `@-` | `.SUB` |
+| `@*` | `.MUL` |
+| `@/` | `.DIV` |
+| `@//` | `.INTDIV` |
+| `@%` | `.MOD` |
+| `@^` | `.POW` |
+| `@==` | `.EQ` |
+| `@!=` | `.NEQ` |
+| `@<` | `.LT` |
+| `@>` | `.GT` |
+| `@<=` | `.LTE` |
+| `@>=` | `.GTE` |
+| `@&&` | `.AND` |
+| `@\|\|` | `.OR` |
+| `@!` | `.NOT` |
 
 ### Set & Interval Algebra
 
@@ -246,7 +283,7 @@ RiX separates two distinct access concepts: **meta properties** (external annota
 
 **Note:** `obj..name` is a **parse error** — use `obj.name` for meta access.
 
-**Map Key Resolution (`KEYOF`):**
+**Map Key Resolution (`.KEYOF`):**
 - string -> same key
 - integer -> canonical integer string
 - otherwise -> use `.key` meta property (must be string/integer)
@@ -295,6 +332,8 @@ Map literals reject duplicate keys after canonicalization:
 
 ## Part 2: System Function Reference
 
+> **Note:** Functions in this reference that are marked with a leading `.` (e.g., `.ADD`, `.RAND_NAME`) are **system capabilities** accessible only via the dot syntax or `@_` prefix. Functions without a leading `.` are **internal IR operations** dispatched automatically by operator syntax — they are not directly callable by name.
+
 ### Core
 
 | Function | Description | Syntax Aliases |
@@ -337,9 +376,9 @@ Map literals reject duplicate keys after canonicalization:
 
 | Function | Description | Syntax Aliases |
 |----------|-------------|----------------|
-| `AND(a, b)` | Logical AND | `&&` |
-| `OR(a, b)` | Logical OR | `||` |
-| `NOT(a)` | Logical NOT | `!` |
+| `AND(a, b)` | Logical AND (internal) | `a && b`, `.AND(a,b)`, `@&&` |
+| `OR(a, b)` | Logical OR (internal) | `a \|\| b`, `.OR(a,b)`, `@\|\|` |
+| `NOT(a)` | Logical NOT (internal) | `!a`, `.NOT(a)`, `@!` |
 
 ### Assertions & Constraints
 
@@ -383,7 +422,7 @@ Map literals reject duplicate keys after canonicalization:
 | `LAST(coll)` | Last element | — |
 | `GETEL(coll, i)` | Get element at 1-based index | — |
 | `IRANGE(start, end)` | Integer range `[start, end]` | — |
-| `RAND_NAME(len?, alphabet?)` | Random string generator | `RAND_NAME()`, `RAND_NAME(8, "abc")` |
+| `.RAND_NAME(len?, alphabet?)` | Random string generator | `.RAND_NAME()`, `.RAND_NAME(8, "abc")` |
 
 ### Functional / Pipes
 
@@ -407,7 +446,7 @@ Map literals reject duplicate keys after canonicalization:
 |----------|-------------|----------------|
 | `FUNCDEF(name, params, body)` | Define named function | `Name(params) -> body` |
 | `LAMBDA(params, body)` | Anonymous function | `(params) -> body` |
-| `CALL(name, args...)` | Call a function | `Name(args)` |
+| `CALL(name, args...)` | Call a user-defined function | `Name(args)` |
 
 | `UPPER(str)` | Convert to uppercase |
 | `SUBSTR(str, start, len)` | Get substring |
@@ -422,9 +461,9 @@ Map literals reject duplicate keys after canonicalization:
 | `META_MERGE(obj, map)` | Bulk merge map into meta (null values = delete) | `obj .= map` |
 | `INDEX_GET(obj, key)` | Index into collection (1-based for sequences/strings; normalized keys for maps) | `obj[expr]`, `obj[:name]`, `obj[:1]` |
 | `INDEX_SET(obj, key, val)` | Set index (requires `mutable=1` meta flag) | `obj[i] = val` |
-| `KEYOF(x)` | Resolve canonical map key string | `KEYOF(x)` |
-| `KEYS(obj)` | Get keys of map as set | `obj.\|` |
-| `VALUES(obj)` | Get values of map as set | `obj\|.` |
+| `.KEYOF(x)` | Resolve canonical map key string | `.KEYOF(x)` |
+| `.KEYS(obj)` | Get keys of map as set | `obj.\|`, `.KEYS(obj)` |
+| `.VALUES(obj)` | Get values of map as set | `obj\|.`, `.VALUES(obj)` |
 
 **Mutability & Locking:**
 - **`mutable`**: By default, **arrays** and **maps** are created with `mutable=1`. This allows modification after creation using `INDEX_SET` (e.g., `arr[1] = 99`). To lock an object against further modification, set `obj.mutable = _`.
@@ -473,7 +512,7 @@ Map literals reject duplicate keys after canonicalization:
 
 ## Part 3: REPL Dot-Commands
 
-REPL-specific commands start with a dot. They are not part of the RiX language itself but provide tooling and reflection.
+REPL-specific commands use all-lowercase dot notation. They are not part of the RiX language itself but provide tooling and reflection.
 
 | Command | Description | Example |
 |---------|-------------|---------|
@@ -485,7 +524,8 @@ REPL-specific commands start with a dot. They are not part of the RiX language i
 | `.reset` | Clear the current context | `.reset` |
 | `.ast[expr]` | Show AST for an expression | `.ast[1 + 2]` |
 | `.tokens[expr]`| Show tokens for an expression | `.tokens[x = 5]` |
-| `.Name(args)` | Call a capitalized command (function-style) | `.Print(1, 2, 3)` |
+
+> **Disambiguation:** `.help`, `.vars`, etc. are REPL shell commands (all lowercase). Any dot expression that starts with an **uppercase** letter (e.g., `.ADD(3,4)`, `.RAND_NAME()`) is a **system capability call** and is evaluated as RiX code, not a REPL command.
 
 **Ctrl-C Behavior:**
 - If the current line is non-empty, Ctrl-C clears the line.

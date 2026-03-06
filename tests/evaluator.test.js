@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach } from "bun:test";
 import { tokenize } from "../../parser/src/tokenizer.js";
 import { parse } from "../../parser/src/parser.js";
 import { lower } from "../src/lower.js";
-import { evaluate, createDefaultRegistry } from "../src/evaluator.js";
+import { evaluate, createDefaultRegistry, createDefaultSystemContext } from "../src/evaluator.js";
 import { Context } from "../src/context.js";
 import { Integer, Rational, BaseSystem } from "@ratmath/core";
 
@@ -38,6 +38,8 @@ function systemLookup(name) {
     return symbols[name] || { type: "identifier" };
 }
 
+const defaultSystemContext = createDefaultSystemContext();
+
 function evalRix(code, context) {
     const ctx = context || new Context();
     const registry = createDefaultRegistry();
@@ -47,7 +49,7 @@ function evalRix(code, context) {
 
     let result = null;
     for (const irNode of irNodes) {
-        result = evaluate(irNode, ctx, registry);
+        result = evaluate(irNode, ctx, registry, defaultSystemContext);
     }
     return result;
 }
@@ -61,7 +63,7 @@ function evalRixWithContext(code) {
 
     let result = null;
     for (const irNode of irNodes) {
-        result = evaluate(irNode, ctx, registry);
+        result = evaluate(irNode, ctx, registry, defaultSystemContext);
     }
     return { result, context: ctx };
 }
@@ -349,7 +351,7 @@ describe("RiX Evaluator", () => {
             const irNodes = lower(ast);
             let result;
             for (const ir of irNodes) {
-                result = evaluate(ir, ctx, registry);
+                result = evaluate(ir, ctx, registry, defaultSystemContext);
             }
             expect(result).toBeInstanceOf(Integer);
             expect(result.value).toBe(10n);
@@ -813,23 +815,23 @@ describe("RiX Evaluator", () => {
 
         test("KEYOF system function", () => {
             const ctx = new Context();
-            const k1 = evalRix('KEYOF("a");', ctx);
+            const k1 = evalRix('.KEYOF("a");', ctx);
             expect(k1.type).toBe("string");
             expect(k1.value).toBe("a");
 
-            const k2 = evalRix("KEYOF(1);", ctx);
+            const k2 = evalRix(".KEYOF(1);", ctx);
             expect(k2.type).toBe("string");
             expect(k2.value).toBe("1");
 
             evalRix("obj = [1]; obj.key = 7;", ctx);
-            const k3 = evalRix("KEYOF(obj);", ctx);
+            const k3 = evalRix(".KEYOF(obj);", ctx);
             expect(k3.type).toBe("string");
             expect(k3.value).toBe("7");
         });
 
         test("KEYOF errors for unsupported keys without .key", () => {
-            expect(() => evalRix("KEYOF(3/2);")).toThrow("Value cannot be used as a map key");
-            expect(() => evalRix("KEYOF({: 1, 2 });")).toThrow("Value cannot be used as a map key");
+            expect(() => evalRix(".KEYOF(3/2);")).toThrow("Value cannot be used as a map key");
+            expect(() => evalRix(".KEYOF({: 1, 2 });")).toThrow("Value cannot be used as a map key");
         });
 
         test(".key identity assignment is immutable except idempotent writes", () => {
@@ -1274,19 +1276,19 @@ describe("RiX Evaluator", () => {
 
     describe("RAND_NAME", () => {
         test("default length is 10", () => {
-            const result = evalRix("RAND_NAME();");
+            const result = evalRix(".RAND_NAME();");
             expect(result.type).toBe("string");
             expect(result.value.length).toBe(10);
         });
 
         test("custom length works", () => {
-            const result = evalRix("RAND_NAME(3);");
+            const result = evalRix(".RAND_NAME(3);");
             expect(result.type).toBe("string");
             expect(result.value.length).toBe(3);
         });
 
         test("alphabet restriction works", () => {
-            const result = evalRix('RAND_NAME(50, "ab");');
+            const result = evalRix('.RAND_NAME(50, "ab");');
             expect(result.type).toBe("string");
             for (const ch of result.value) {
                 expect(ch === "a" || ch === "b").toBe(true);
@@ -1294,8 +1296,12 @@ describe("RiX Evaluator", () => {
         });
 
         test("validation errors", () => {
-            expect(() => evalRix("RAND_NAME(0);")).toThrow("RAND_NAME len must be a positive integer");
-            expect(() => evalRix("RAND_NAME(3, 5);")).toThrow("RAND_NAME alphabet must be a non-empty string");
+            expect(() => evalRix(".RAND_NAME(0);")).toThrow("RAND_NAME len must be a positive integer");
+            expect(() => evalRix('.RAND_NAME(3, 5);')).toThrow("RAND_NAME alphabet must be a non-empty string");
+        });
+
+        test("bare RAND_NAME() is now an undefined function error", () => {
+            expect(() => evalRix("RAND_NAME();")).toThrow();
         });
     });
 

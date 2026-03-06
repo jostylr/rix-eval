@@ -97,15 +97,7 @@ export const functionFunctions = {
             const funcDef = context.get(name);
 
             if (!funcDef) {
-                // FALLBACK: Try evaluating as a system function call (could be lazy)
-                try {
-                    return evaluate({ fn: name, args: argNodes });
-                } catch (e) {
-                    if (e.message.startsWith("Unknown system function")) {
-                        throw new Error(`Undefined function: ${name}`);
-                    }
-                    throw e;
-                }
+                throw new Error(`Undefined identifier: ${name}. System capabilities must be called via dot syntax: .${name}(args)`);
             }
 
             // If it's a partial, apply it with the concrete call args.

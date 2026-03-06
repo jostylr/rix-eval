@@ -292,16 +292,18 @@ describe("Lowering Pass", () => {
       expect(kwarg.args[0]).toBe("a");
     });
 
-    test("@_ADD(a, b) → ADD(a, b) directly", () => {
+    test("@_ADD(a, b) → SYS_CALL(ADD, ...) via system context", () => {
       const ir = L("@_ADD(a, b);");
-      expect(ir.fn).toBe("ADD");
-      expect(ir.args[0]).toEqual({ fn: "RETRIEVE", args: ["a"] });
-      expect(ir.args[1]).toEqual({ fn: "RETRIEVE", args: ["b"] });
+      expect(ir.fn).toBe("SYS_CALL");
+      expect(ir.args[0]).toBe("ADD");
+      expect(ir.args[1]).toEqual({ fn: "RETRIEVE", args: ["a"] });
+      expect(ir.args[2]).toEqual({ fn: "RETRIEVE", args: ["b"] });
     });
 
-    test("@_ASSIGN(x, 5) → ASSIGN(x, 5) directly", () => {
+    test("@_ASSIGN(x, 5) → SYS_CALL(ASSIGN, ...) via system context", () => {
       const ir = L("@_ASSIGN(x, 5);");
-      expect(ir.fn).toBe("ASSIGN");
+      expect(ir.fn).toBe("SYS_CALL");
+      expect(ir.args[0]).toBe("ASSIGN");
     });
 
   });
@@ -551,9 +553,11 @@ describe("Lowering Pass", () => {
 
     test("nested: @_ASSIGN(i, @_ADD(i, 1))", () => {
       const ir = L("@_ASSIGN(i, @_ADD(i, 1));");
-      expect(ir.fn).toBe("ASSIGN");
-      expect(ir.args[0]).toEqual({ fn: "RETRIEVE", args: ["i"] });
-      expect(ir.args[1].fn).toBe("ADD");
+      expect(ir.fn).toBe("SYS_CALL");
+      expect(ir.args[0]).toBe("ASSIGN");
+      expect(ir.args[1]).toEqual({ fn: "RETRIEVE", args: ["i"] });
+      expect(ir.args[2].fn).toBe("SYS_CALL");
+      expect(ir.args[2].args[0]).toBe("ADD");
     });
   });
 

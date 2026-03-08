@@ -1236,6 +1236,26 @@ describe("RiX Evaluator", () => {
             expect(result.value).toBe(321n);
         });
 
+        // _0 = the whole left-hand value (tuple or scalar) passed as a single argument
+        test("(1, 2, 3) ||> F(_0) passes whole tuple as single arg", () => {
+            // FIRST(t) :-> t; (1,2,3) ||> FIRST(_0) => the tuple itself
+            const result = evalRix("FIRST(t) :-> t; (1, 2, 3) ||> FIRST(_0);");
+            expect(result.type).toBe("tuple");
+            expect(result.values.length).toBe(3);
+        });
+
+        test("scalar ||> F(_0) passes scalar as single arg via _0", () => {
+            const result = evalRix("DOUBLE(x) :-> x * 2; 5 ||> DOUBLE(_0);");
+            expect(result.value).toBe(10n);
+        });
+
+        test("(1, 2, 3) ||> [_0] wraps whole tuple into array element via _0", () => {
+            const result = evalRix("(1, 2, 3) ||> [_0];");
+            expect(result.type).toBe("sequence");
+            expect(result.values.length).toBe(1);
+            expect(result.values[0].type).toBe("tuple");
+        });
+
         // ||> as a general IR-template operator: placeholders work in any right-side expression
         test("(1, 2, 3) ||> (_2, _1, _3) reorders into a new tuple", () => {
             const result = evalRix("(1, 2, 3) ||> (_2, _1, _3);");

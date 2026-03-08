@@ -540,10 +540,12 @@ export const functionFunctions = {
 
             // Walk a raw IR node, replacing PLACEHOLDER nodes with the corresponding
             // tuple element value (already evaluated), leaving everything else intact.
+            // _0 refers to the whole tuple as a single value; _1, _2, … are 1-based elements.
             function resolvePlaceholders(node) {
                 if (!node || typeof node !== "object") return node;
                 if (node.fn === "PLACEHOLDER") {
-                    const idx = node.args[0]; // 1-based index
+                    const idx = node.args[0];
+                    if (idx === 0) return value; // _0 = the whole left-hand value
                     if (idx < 1 || idx > tupleVals.length) {
                         throw new Error(`Placeholder _${idx} out of range (tuple has ${tupleVals.length} element${tupleVals.length === 1 ? "" : "s"})`);
                     }

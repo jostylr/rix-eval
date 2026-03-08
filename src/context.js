@@ -39,6 +39,7 @@ export class Context {
                 : new Map(initial ? Object.entries(initial) : []);
         const scope = {
             bindings,
+            aliases: new Map(),
             isolated: options.isolated === true,
         };
         this.localScopes.push(scope);
@@ -59,22 +60,9 @@ export class Context {
      * @returns {*} The value, or undefined if not found
      */
     get(name) {
-        let blockedByIsolation = false;
-        // Search local scopes from innermost to outermost
-        for (let i = this.localScopes.length - 1; i >= 0; i--) {
-            const scope = this.localScopes[i];
-            if (scope.bindings.has(name)) {
-                return scope.bindings.get(name);
-            }
-            if (scope.isolated) {
-                blockedByIsolation = true;
-                break;
-            }
-        }
-        if (blockedByIsolation) return undefined;
-        // Fall back to global
-        if (this.globalScope.has(name)) {
-            return this.globalScope.get(name);
+        const ref = this.resolveBinding(name);
+        if (ref) {
+            return ref.map.get(ref.name);
         }
         // Check functions (uppercase names)
         if (this.functions.has(name)) {
@@ -91,7 +79,13 @@ export class Context {
      */
     set(name, value) {
         if (this.localScopes.length > 0) {
-            this.localScopes[this.localScopes.length - 1].bindings.set(name, value);
+            const scope = this.localScopes[this.localScopes.length - 1];
+            const aliasRef = scope.aliases.get(name);
+            if (aliasRef) {
+                aliasRef.map.set(aliasRef.name, value);
+                return;
+            }
+            scope.bindings.set(name, value);
         } else {
             this.globalScope.set(name, value);
         }
@@ -109,16 +103,9 @@ export class Context {
      * @param {string} name 
      */
     getOuter(name) {
-        // Search local scopes from second-innermost to outermost
-        for (let i = this.localScopes.length - 2; i >= 0; i--) {
-            const scope = this.localScopes[i];
-            if (scope.bindings.has(name)) {
-                return scope.bindings.get(name);
-            }
-        }
-        // Fall back to global
-        if (this.globalScope.has(name)) {
-            return this.globalScope.get(name);
+        const ref = this.resolveBinding(name, { skipInnermost: true, respectIsolation: false });
+        if (ref) {
+            return ref.map.get(ref.name);
         }
         // Check functions
         if (this.functions.has(name)) {
@@ -132,15 +119,9 @@ export class Context {
      * If the variable doesn't exist anywhere in the outer scopes (or global), an error is thrown.
      */
     setOuter(name, value) {
-        for (let i = this.localScopes.length - 2; i >= 0; i--) {
-            const scope = this.localScopes[i];
-            if (scope.bindings.has(name)) {
-                scope.bindings.set(name, value);
-                return;
-            }
-        }
-        if (this.globalScope.has(name)) {
-            this.globalScope.set(name, value);
+        const ref = this.resolveBinding(name, { skipInnermost: true, respectIsolation: false });
+        if (ref) {
+            ref.map.set(ref.name, value);
             return;
         }
         throw new Error(`Cannot assign to outer variable '@${name}' because it does not exist in any outer scope.`);
@@ -150,17 +131,64 @@ export class Context {
      * Check if a variable exists in any scope.
      */
     has(name) {
-        let blockedByIsolation = false;
-        for (let i = this.localScopes.length - 1; i >= 0; i--) {
+        return Boolean(this.resolveBinding(name)) || this.functions.has(name);
+    }
+
+    resolveBinding(name, options = {}) {
+        const skipInnermost = options.skipInnermost === true;
+        const respectIsolation = options.respectIsolation !== false;
+        const startIndex = this.localScopes.length - 1 - (skipInnermost ? 1 : 0);
+
+        for (let i = startIndex; i >= 0; i--) {
             const scope = this.localScopes[i];
-            if (scope.bindings.has(name)) return true;
-            if (scope.isolated) {
-                blockedByIsolation = true;
-                break;
+            const ref = this.resolveBindingInScope(scope, name);
+            if (ref) {
+                return ref;
+            }
+            if (respectIsolation && scope.isolated) {
+                return null;
             }
         }
-        if (blockedByIsolation) return false;
-        return this.globalScope.has(name) || this.functions.has(name);
+
+        if (this.globalScope.has(name)) {
+            return { map: this.globalScope, name };
+        }
+
+        return null;
+    }
+
+    resolveBindingInScope(scope, name) {
+        if (scope.bindings.has(name)) {
+            return { map: scope.bindings, name };
+        }
+        if (scope.aliases.has(name)) {
+            return scope.aliases.get(name);
+        }
+        return null;
+    }
+
+    importCopy(localName, sourceName) {
+        if (this.localScopes.length === 0) {
+            throw new Error("Import headers require an active local scope");
+        }
+        const ref = this.resolveBinding(sourceName, { skipInnermost: true, respectIsolation: false });
+        if (!ref) {
+            throw new Error(`Undefined outer variable for import: ${sourceName}`);
+        }
+        const scope = this.localScopes[this.localScopes.length - 1];
+        scope.bindings.set(localName, ref.map.get(ref.name));
+    }
+
+    importAlias(localName, sourceName) {
+        if (this.localScopes.length === 0) {
+            throw new Error("Import headers require an active local scope");
+        }
+        const ref = this.resolveBinding(sourceName, { skipInnermost: true, respectIsolation: false });
+        if (!ref) {
+            throw new Error(`Undefined outer variable for import alias: ${sourceName}`);
+        }
+        const scope = this.localScopes[this.localScopes.length - 1];
+        scope.aliases.set(localName, ref);
     }
 
     /**

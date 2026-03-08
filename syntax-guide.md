@@ -38,11 +38,11 @@
 
 | Syntax | System Function | Description |
 |--------|----------------|-------------|
-| `{ a; b; c }` | `BLOCK` | Sequential execution, returns last value |
-| `{; a; b; c }` | `BLOCK` | Sequential execution (explicit block) |
+| `{ a; b; c }` | `BLOCK` | Sequential execution, returns last value. Optional top-of-block import header: `{ <...> ... }` |
+| `{; a; b; c }` | `BLOCK` | Sequential execution (explicit block). Optional top-of-block import header: `{; <...> ... }` |
 | `{? c1 ? v1; c2 ? v2; default }` | `CASE` | Conditional branching (if/elseif/else) |
-| `{@ init; cond; body; update }` | `LOOP` | Loop with init, condition, body, update |
-| `{$ eq1; eq2 }` | `SYSTEM` | Mathematical system (equations/assertions) |
+| `{@ init; cond; body; update }` | `LOOP` | Loop with init, condition, body, update. Optional top-of-block import header: `{@ <...> ... }` |
+| `{$ eq1; eq2 }` | `SYSTEM` | Mathematical system (equations/assertions). Optional top-of-block import header: `{$ <...> ... }` |
 | `{= k1=v1, (expr)=v2 }` | `MAP` | Map/object literal (`k1` identifier sugar or parenthesized key expression) |
 | `{\| a, b, c }` | `SET` | Set literal |
 | `{: a, b, c }` | `TUPLE` | Tuple literal |
@@ -101,6 +101,66 @@ Operator alias mapping:
 | `@&&` | `.AND` |
 | `@\|\|` | `.OR` |
 | `@!` | `.NOT` |
+
+### Scoped Block Import Headers
+
+Scoped execution blocks may begin with one optional import header immediately after the opening brace form:
+
+```rix
+{;
+    < a~x, b=y, z=, r >
+    ...body...
+}
+```
+
+Supported only for scoped execution blocks:
+- `{ ... }`
+- `{; ... }`
+- `{@ ... }`
+- `{$ ... }`
+
+Not supported for:
+- `{? ... }`
+- `{= ... }`
+- `{| ... }`
+- `{: ... }`
+
+Grammar:
+
+```text
+importHeader := "<" importSpec ("," importSpec)* ">"
+importSpec :=
+    IDENT
+  | IDENT "~"
+  | IDENT "~" IDENT
+  | IDENT "="
+  | IDENT "=" IDENT
+```
+
+Semantics:
+- `name` means `name~name`: create a new local `name` with a copy of outer `name`
+- `name~` also means `name~name`
+- `local~outer` creates a new local `local` initialized from the current outer value of `outer`
+- `name=` means `name=name`: local `name` aliases the outer binding `name`
+- `local=outer` creates a local alias `local` to the same outer binding as `outer`
+
+Resolution rules:
+- The left side is always the local name introduced in the block.
+- The right side is always resolved against the enclosing scope chain.
+- Sources do not resolve progressively within the same header.
+- Example: `< a~x, b~a >` makes `b` read the enclosing `a`, not the newly introduced local `a`.
+
+Assignment behavior:
+- Copy imports remain ordinary locals after initialization.
+- Alias imports write through to the referenced outer binding.
+- `@name` still explicitly reads or writes the outer scope chain and is not changed by imports.
+
+Errors:
+- Empty headers are invalid: `<>`
+- Duplicate local targets in one header are invalid: `< x, x= >`
+- Missing outer sources are errors
+- Malformed specs such as `< a~~x >`, `< a==x >`, or `< a~x, >` are errors
+- A header only has meaning in the top-of-block position for supported scoped blocks
 
 ### Set & Interval Algebra
 

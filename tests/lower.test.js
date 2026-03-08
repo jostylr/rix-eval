@@ -584,6 +584,19 @@ describe("Lowering Pass", () => {
       expect(ir.fn).toBe("BLOCK");
       expect(ir.args.length).toBe(2);
     });
+
+    test("block import header lowers to BLOCK metadata", () => {
+      const ir = L("{; <a~x, b=y> a; b };");
+      expect(ir.fn).toBe("BLOCK");
+      expect(ir.args[0]).toEqual({
+        imports: [
+          { local: "a", source: "x", mode: "copy" },
+          { local: "b", source: "y", mode: "alias" },
+        ],
+      });
+      expect(ir.args[1].fn).toBe("RETRIEVE");
+      expect(ir.args[2].fn).toBe("RETRIEVE");
+    });
   });
 
   describe("Integration: complex expressions", () => {

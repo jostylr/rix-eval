@@ -449,6 +449,59 @@ describe("RiX Evaluator", () => {
             expect(evalRix("x = 5; {$ @x }").value).toBe(5n);
         });
 
+        test("copy import same-name does not write back on plain assignment", () => {
+            const { result, context } = evalRixWithContext("x = 10; {; <x> x = x + 5; x };");
+            expect(result.value).toBe(15n);
+            expect(evalRix("x;", context).value).toBe(10n);
+        });
+
+        test("copy import renamed local works", () => {
+            const { result, context } = evalRixWithContext("x = 10; {; <a~x> a = a + 5; a };");
+            expect(result.value).toBe(15n);
+            expect(evalRix("x;", context).value).toBe(10n);
+        });
+
+        test("alias import same-name writes through", () => {
+            const { result, context } = evalRixWithContext("y = 10; {; <y= > y = y + 5; y };");
+            expect(result.value).toBe(15n);
+            expect(evalRix("y;", context).value).toBe(15n);
+        });
+
+        test("alias import renamed local writes through", () => {
+            const { result, context } = evalRixWithContext("y = 10; {; <b=y> b = b + 5; b };");
+            expect(result.value).toBe(15n);
+            expect(evalRix("y;", context).value).toBe(15n);
+        });
+
+        test("mixed copy and alias imports behave independently", () => {
+            const { result, context } = evalRixWithContext("x = 3; y = 4; {; <x, y= > x = x + 10; y = y + 10; [x, y] };");
+            expect(result.values[0].value).toBe(13n);
+            expect(result.values[1].value).toBe(14n);
+            expect(evalRix("x;", context).value).toBe(3n);
+            expect(evalRix("y;", context).value).toBe(14n);
+        });
+
+        test("@ still reaches outer when same-name copy import exists", () => {
+            const { result, context } = evalRixWithContext("x = 3; {; <x> x = 7; @x = 9; [x, @x] };");
+            expect(result.values[0].value).toBe(7n);
+            expect(result.values[1].value).toBe(9n);
+            expect(evalRix("x;", context).value).toBe(9n);
+        });
+
+        test("duplicate import targets error", () => {
+            expect(() => evalRix("x = 1; {; <x, x= > x };")).toThrow("Duplicate import target 'x'");
+        });
+
+        test("import sources resolve from outer scope, not earlier imports in the same header", () => {
+            const result = evalRix("x = 1; a = 100; {; <a~x, b~a> [a, b] };");
+            expect(result.values[0].value).toBe(1n);
+            expect(result.values[1].value).toBe(100n);
+        });
+
+        test("missing import source errors clearly", () => {
+            expect(() => evalRix("{; <a~missing> a };")).toThrow("Undefined outer variable for import: missing");
+        });
+
         test("undefined variable throws", () => {
             expect(() => evalRix("undeclared;")).toThrow("Undefined variable");
         });

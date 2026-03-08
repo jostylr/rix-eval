@@ -24,15 +24,41 @@ function unwrapDefer(node) {
     return node;
 }
 
+function splitScopedBlockArgs(args) {
+    const first = args[0];
+    if (first && !first.fn && Array.isArray(first.imports)) {
+        return {
+            imports: first.imports,
+            bodyArgs: args.slice(1),
+        };
+    }
+    return {
+        imports: [],
+        bodyArgs: args,
+    };
+}
+
+function applyImports(imports, context) {
+    for (const spec of imports) {
+        if (spec.mode === "alias") {
+            context.importAlias(spec.local, spec.source);
+        } else {
+            context.importCopy(spec.local, spec.source);
+        }
+    }
+}
+
 export const controlFunctions = {
     BLOCK: {
         lazy: true,
         impl(args, context, evaluate) {
+            const { imports, bodyArgs } = splitScopedBlockArgs(args);
             const shareCurrentScope = context.consumeSharedBody("BLOCK");
             if (!shareCurrentScope) context.push(undefined, { isolated: true });
             try {
+                applyImports(imports, context);
                 let result = null;
-                for (const stmt of args) {
+                for (const stmt of bodyArgs) {
                     result = evaluate(stmt);
                 }
                 return result;
@@ -76,11 +102,13 @@ export const controlFunctions = {
         impl(args, context, evaluate) {
             // LOOP(init, condition, body, update)
             // All args are DEFER nodes
-            const [initNode, condNode, bodyNode, updateNode] = args.map(unwrapDefer);
+            const { imports, bodyArgs } = splitScopedBlockArgs(args);
+            const [initNode, condNode, bodyNode, updateNode] = bodyArgs.map(unwrapDefer);
 
             const shareCurrentScope = context.consumeSharedBody("LOOP");
             if (!shareCurrentScope) context.push(undefined, { isolated: true });
             try {
+                applyImports(imports, context);
                 // Init
                 if (initNode) evaluate(initNode);
 
@@ -139,11 +167,13 @@ export const controlFunctions = {
     SYSTEM: {
         lazy: true,
         impl(args, context, evaluate) {
+            const { imports, bodyArgs } = splitScopedBlockArgs(args);
             const shareCurrentScope = context.consumeSharedBody("SYSTEM");
             if (!shareCurrentScope) context.push(undefined, { isolated: true });
             try {
+                applyImports(imports, context);
                 let result = null;
-                for (const stmt of args) {
+                for (const stmt of bodyArgs) {
                     result = evaluate(stmt);
                 }
                 return result;

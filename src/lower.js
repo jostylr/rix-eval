@@ -452,6 +452,9 @@ const LOWERERS = {
   },
 
   BlockContainer(node) {
+    if (node.imports && node.imports.length > 0) {
+      return ir("BLOCK", { imports: lowerImports(node.imports) }, ...node.elements.map(lowerNode));
+    }
     return ir("BLOCK", ...node.elements.map(lowerNode));
   },
 
@@ -464,10 +467,16 @@ const LOWERERS = {
   },
 
   LoopContainer(node) {
+    if (node.imports && node.imports.length > 0) {
+      return ir("LOOP", { imports: lowerImports(node.imports) }, ...node.elements.map((el) => ir("DEFER", lowerNode(el))));
+    }
     return ir("LOOP", ...node.elements.map((el) => ir("DEFER", lowerNode(el))));
   },
 
   SystemContainer(node) {
+    if (node.imports && node.imports.length > 0) {
+      return ir("SYSTEM", { imports: lowerImports(node.imports) }, ...node.elements.map(lowerNode));
+    }
     return ir("SYSTEM", ...node.elements.map(lowerNode));
   },
 
@@ -697,6 +706,14 @@ const LOWERERS = {
     return ir("EMBEDDED", node.language, node.code);
   },
 };
+
+function lowerImports(imports) {
+  return imports.map((spec) => ({
+    local: spec.local,
+    source: spec.source,
+    mode: spec.mode,
+  }));
+}
 
 // === Helper Functions ===
 

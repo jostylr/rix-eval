@@ -188,7 +188,7 @@ N-ary brace notes:
 
 Note that in the text version below there is a leading escape slash in front of the pipes for markdown table compatibility. In actual use, do not use the escape slash.
 
-Collections in pipes are arrays, tuples (become arrays), and strings. 
+Collection-traversing pipes support arrays, tuples (become arrays), strings, and maps (for the traversal/fold operators only — see below). All pipe operators return **new** collections; they never mutate the original.
 
 | Syntax | System Function | Description |
 |--------|----------------|-------------|
@@ -196,18 +196,71 @@ Collections in pipes are arrays, tuples (become arrays), and strings.
 | `x \|\|> F(_1)` | `PIPE_EXPLICIT` | Alias for `PIPE`; used with placeholders for clarity |
 | `coll \|>/ i:j` | `PSLICE_STRICT` | Strict slice a collection based on interval; `null` if bounds are non-integers or invalid |
 | `coll \|>// i:j` | `PSLICE_CLAMP` | Clamped slice a collection based on interval; clamps exactly without failing |
-| `coll \|>\| sep` | `PSPLIT` | Split string or collection by delimiter string, regex or predicate |
-| `coll \|>#\| nOrFn`| `PCHUNK` | Chunk string or collection by integer size or predicate boundary |
-| `coll \|>> fn` | `PMAP` | Map `fn` over collection |
+| `coll \|>\| sep` | `PSPLIT` | Split string or collection by delimiter string, regex or predicate (sequences/strings only) |
+| `coll \|>#\| nOrFn`| `PCHUNK` | Chunk string or collection by integer size or predicate boundary (sequences/strings only) |
+| `coll \|>> fn` | `PMAP` | Map `fn` over collection; for maps: preserves keys, transforms values |
 | `coll \|>? pred` | `PFILTER` | Filter collection by predicate |
-| `coll \|>: fn` | `PREDUCE` | Reduce (first element as init) |
+| `coll \|>: fn` | `PREDUCE` | Reduce (first element/value as init) |
 | `coll \|:> init >: fn` | `PREDUCE` | Reduce with explicit initial value |
-| `coll \|><` | `PREVERSE` | Reverse collection (new copy) |
-| `coll \|<> fn` | `PSORT` | Sort with comparator (new copy) |
-| `coll \|>&& pred` | `PALL` | Every: last item if all pass, `null` on first failure or empty (short-circuits) |
-| `coll \|>\|\| pred` | `PANY` | Any/Some: first passing item, `null` if none pass or empty (short-circuits) |
+| `coll \|><` | `PREVERSE` | Reverse collection (new copy; sequences/strings only) |
+| `coll \|<> fn` | `PSORT` | Sort with comparator (new copy; sequences/strings only) |
+| `coll \|>&& pred` | `PALL` | Every: last item/value if all pass, `null` on first failure or empty (short-circuits) |
+| `coll \|>\|\| pred` | `PANY` | Any/Some: first passing item/value, `null` if none pass or empty (short-circuits) |
 
-All pipe operators return **new** collections; they never mutate the original.
+#### Callback contract for collection-traversing pipes
+
+For traversal pipes (`|>>`, `|>?`, `|>&&`, `|>||`, predicate forms of `|>/|` and `|>#|`), the callback receives:
+
+```
+(val, locator, src)
+```
+
+For reduce (`|>:` and `|:> init >: fn`), the callback receives:
+
+```
+(acc, val, locator, src)
+```
+
+For sort (`|<>`), the comparator receives only:
+
+```
+(a, b)
+```
+
+The **locator** is the native indexing/key form for the source collection kind:
+- **sequences and strings**: 1-based integer position
+- **maps**: the map key (as a canonical string, consistent with `KEYOF` and `INDEX_GET`)
+- **tensors** (future): index tuple
+
+Callbacks that declare fewer parameters simply ignore the extra arguments — existing one-arg and two-arg callbacks continue to work without modification.
+
+#### Map-specific behavior
+
+Maps support the traversal/fold pipe operators `|>>`, `|>?`, `|>&&`, `|>||`, `|>:`, and `|:> init >: fn`. Maps are **unordered** — no iteration-order guarantee is made.
+
+For map traversal, callbacks receive `(value, key, sourceMap)`. The key is the canonical map key string.
+
+- **`map |>>`** — transforms values only, preserves original keys. For reshaping map structure, use reduce.
+- **`map |>?`** — keeps entries whose predicate passes; returns a new map.
+- **`map |>&&`** — returns last value if all pass; `null` on first failure or empty.
+- **`map |>||`** — returns first passing value; `null` if none pass or empty.
+- **`map |>:`** — implicit-init: first traversed value as accumulator; order is unspecified.
+- **`map |:> init >: fn`** — explicit init; order is unspecified.
+
+Maps do **not** support `|>/|` (split), `|>#|` (chunk), or `|<>` (sort) — these require ordered sequences.
+
+Examples:
+
+```rix
+m = {= a=2, b=3 }
+m |>> (v, k) -> v * 10        ## {= a=20, b=30 }
+m |>? (v, k) -> v > 1         ## {= a=2, b=3 }
+m |>? (v, k) -> k == "a"      ## {= a=2 }
+m |:> 0 >: (acc, v) -> acc+v  ## 5
+
+[10,20,30] |>> (v, k) -> k    ## [1, 2, 3]  (1-based locators)
+[10,20,30] |:> 0 >: (acc, v, k) -> acc+k   ## 6  (sum of locators 1+2+3)
+```
 
 ### Partial Functions & Placeholders
 
@@ -494,9 +547,9 @@ Map literals reject duplicate keys after canonicalization:
 | `PSLICE_CLAMP(coll, i:j)` | Clamped slice collection | `coll \|>// i:j` |
 | `PSPLIT(coll, sep)` | Split collection by delimiter | `coll \|>/\| sep` |
 | `PCHUNK(coll, n)` | Chunk collection by size or predicate | `coll \|>#\| nOrFn` |
-| `PMAP(coll, fn)` | Map function over collection | `coll \|>> fn`, `MAP(coll, fn)` |
-| `PFILTER(coll, pred)` | Filter by predicate | `coll \|>? pred`, `FILTER(coll, pred)` |
-| `PREDUCE(coll, fn, init)` | Reduce/fold | `coll \|>: fn`, `coll \|:> init >: fn`, `REDUCE(coll, fn, init)` |
+| `PMAP(coll, fn)` | Map function over collection (arrays/strings/maps); for maps preserves keys | `coll \|>> fn`, `MAP(coll, fn)` |
+| `PFILTER(coll, pred)` | Filter by predicate (arrays/strings/maps) | `coll \|>? pred`, `FILTER(coll, pred)` |
+| `PREDUCE(coll, fn, init)` | Reduce/fold (arrays/strings/maps) | `coll \|>: fn`, `coll \|:> init >: fn`, `REDUCE(coll, fn, init)` |
 | `PREVERSE(coll)` | Reverse collection (new copy) | `coll \|><` |
 | `PSORT(coll, fn)` | Sort with comparator (new copy) | `coll \|<> fn` |
 

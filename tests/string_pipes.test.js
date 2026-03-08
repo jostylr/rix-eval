@@ -123,12 +123,14 @@ describe("Pipe CHUNK Operator |>#|", () => {
     });
 
     test("String chunking by predicate", () => {
-        expect(evalRiX(`"abcdef" |>#| (i) -> i % 3 == 0`)).toEqual(["abc", "def"]);
-        expect(evalRiX(`"abcd" |>#| (i) -> i % 3 == 0`)).toEqual(["abc", "d"]);
+        // Predicate now receives (val, locator, src); use locator (2nd param) for position-based chunking.
+        expect(evalRiX(`"abcdef" |>#| (v, i) -> i % 3 == 0`)).toEqual(["abc", "def"]);
+        expect(evalRiX(`"abcd" |>#| (v, i) -> i % 3 == 0`)).toEqual(["abc", "d"]);
     });
 
     test("Array chunking by predicate", () => {
-        expect(evalRiX(`[1, 2, 3, 4] |>#| (i) -> i % 3 == 0`)).toEqual([[1, 2, 3], [4]]);
-        expect(evalRiX(`[1, 2, 3, 4] |>#| (i) -> i == 1`)).toEqual([[1], [2, 3, 4]]); // True at i=1 means first chunk closed at len 1
+        // Predicate now receives (val, locator, src); use locator (2nd param) for position-based chunking.
+        expect(evalRiX(`[1, 2, 3, 4] |>#| (v, i) -> i % 3 == 0`)).toEqual([[1, 2, 3], [4]]);
+        expect(evalRiX(`[1, 2, 3, 4] |>#| (v, i) -> i == 1`)).toEqual([[1], [2, 3, 4]]); // True at locator=1 means first chunk closed at len 1
     });
 });

@@ -3,6 +3,7 @@
  */
 
 import { Integer, Rational } from "@ratmath/core";
+import { keyOf } from "./keyof.js";
 
 const isTruthy = (val) => val !== null && val !== undefined;
 
@@ -74,6 +75,60 @@ function callWithConcreteArgs(fn, callArgs, context, evaluate) {
     }
 
     throw new Error("Value is not callable");
+}
+
+/**
+ * Invoke a traversal or reduce callback with a locator-aware argument list.
+ *
+ * For traversal pipes (map/filter/all/any/split-pred/chunk-pred):
+ *   callArgs = [val, locator, src]
+ *
+ * For reduce:
+ *   callArgs = [acc, val, locator, src]
+ *
+ * Locator is the native indexing/key form for the source collection:
+ *   - sequences/strings: 1-based Integer position
+ *   - maps: { type: "string", value: canonicalKey }
+ *   - tensors (future): index tuple
+ *
+ * Backward compatibility: functions/lambdas bind only declared parameters,
+ * so extra args (locator, src) are silently ignored by callbacks that do not
+ * declare them.  Partials append extra args beyond placeholders, and the
+ * underlying operator simply ignores them.
+ */
+function invokeTraversalCallback(func, callArgs, context, evaluate) {
+    if (func && func.type === "partial") {
+        // For partials, pass only as many args as needed to fill the placeholder slots.
+        // This prevents locator/src from leaking into N-ary system functions (ADD, MUL, etc.)
+        // that iterate over all received arguments and would fail on non-numeric values.
+        // User-accessible locator/src in a partial: use _2/_3 placeholders explicitly.
+        const maxIdx = func.template.reduce(
+            (max, t) => (t && t.type === "placeholder") ? Math.max(max, t.index) : max, 0
+        );
+        return callWithConcreteArgs(func, callArgs.slice(0, maxIdx), context, evaluate);
+    }
+    if (func && func.type === "sysref") {
+        return evaluate({ fn: func.name, args: callArgs });
+    }
+    if (func && (func.type === "function" || func.type === "lambda")) {
+        const scope = new Map();
+        if (func.params?.positional) {
+            for (let i = 0; i < func.params.positional.length; i++) {
+                scope.set(func.params.positional[i].name,
+                    i < callArgs.length ? callArgs[i] : null);
+            }
+        }
+        context.push(scope);
+        try {
+            return evaluate(func.body);
+        } finally {
+            context.pop();
+        }
+    }
+    if (typeof func === "function") {
+        return func(...callArgs);
+    }
+    throw new Error("Callback is not callable");
 }
 
 export const functionFunctions = {
@@ -573,6 +628,11 @@ export const functionFunctions = {
                 return null;
             }
 
+            // Maps have no defined order and are not supported by split.
+            if (collection.type === "map") {
+                throw new Error("PSPLIT does not support maps — maps have no defined order");
+            }
+
             const isStringObj = collection && collection.type === "string";
             const isString = typeof collection === "string" || isStringObj;
             let items = null;
@@ -623,25 +683,11 @@ export const functionFunctions = {
                 let currentPiece = [];
                 let inSeparator = false;
 
+                // Predicate receives (val, locator, src) where locator is 1-based Integer position.
                 for (let i = 0; i < items.length; i++) {
                     const item = items[i];
-                    let isSep = false;
-                    if (sepVal && (sepVal.type === "function" || sepVal.type === "lambda")) {
-                        const scope = new Map();
-                        if (sepVal.params?.positional?.length > 0) {
-                            scope.set(sepVal.params.positional[0].name, item);
-                        }
-                        context.push(scope);
-                        try {
-                            const res = evaluate(sepVal.body);
-                            isSep = res !== null && res !== undefined;
-                        } finally {
-                            context.pop();
-                        }
-                    } else {
-                        const res = sepVal(item);
-                        isSep = res !== null && res !== undefined;
-                    }
+                    const loc = new Integer(BigInt(i + 1));
+                    const isSep = isTruthy(invokeTraversalCallback(sepVal, [item, loc, collection], context, evaluate));
 
                     if (isSep) {
                         if (!inSeparator) {
@@ -749,6 +795,11 @@ export const functionFunctions = {
                 return null;
             }
 
+            // Maps have no defined order and are not supported by chunk.
+            if (collection.type === "map") {
+                throw new Error("PCHUNK does not support maps — maps have no defined order");
+            }
+
             const isStringObj = collection && collection.type === "string";
             const isString = typeof collection === "string" || isStringObj;
             let items = null;
@@ -768,25 +819,10 @@ export const functionFunctions = {
 
             if (isFunc) {
                 let currentChunk = [];
+                // Predicate receives (val, locator, src) where locator is 1-based Integer position.
                 for (let i = 0; i < items.length; i++) {
-                    const idx = i + 1; // 1-based index
-                    let isBound = false;
-                    if (boundVal && (boundVal.type === "function" || boundVal.type === "lambda")) {
-                        const scope = new Map();
-                        if (boundVal.params?.positional?.length > 0) {
-                            scope.set(boundVal.params.positional[0].name, new Integer(BigInt(idx)));
-                        }
-                        context.push(scope);
-                        try {
-                            const res = evaluate(boundVal.body);
-                            isBound = res !== null && res !== undefined;
-                        } finally {
-                            context.pop();
-                        }
-                    } else {
-                        const res = boundVal(new Integer(BigInt(idx)));
-                        isBound = res !== null && res !== undefined;
-                    }
+                    const loc = new Integer(BigInt(i + 1));
+                    const isBound = isTruthy(invokeTraversalCallback(boundVal, [items[i], loc, collection], context, evaluate));
 
                     currentChunk.push(items[i]);
                     if (isBound) {
@@ -846,6 +882,22 @@ export const functionFunctions = {
 
             if (collection === null || collection === undefined) return null;
 
+            const func = evaluate(funcNode);
+
+            // Map support: transform values, preserve original keys.
+            // Callback receives (val, key, src) where key is the canonical map key.
+            if (collection.type === "map") {
+                const entries = collection.entries;
+                if (!(entries instanceof Map)) throw new Error("PMAP: invalid map");
+                const newEntries = new Map();
+                for (const [k, v] of entries) {
+                    const loc = { type: "string", value: k };
+                    const result = invokeTraversalCallback(func, [v, loc, collection], context, evaluate);
+                    newEntries.set(k, result);
+                }
+                return { type: "map", entries: newEntries };
+            }
+
             const isStringObj = (collection && collection.type === "string");
             const isString = typeof collection === "string" || isStringObj;
             let items = null;
@@ -858,28 +910,10 @@ export const functionFunctions = {
                 throw new Error("PMAP requires a collection");
             }
 
-            const func = evaluate(funcNode);
-            const results = items.map((item) => {
-                if (func && func.type === "partial") {
-                    return callWithConcreteArgs(func, [item], context, evaluate);
-                }
-                if (func && func.type === "sysref") {
-                    return evaluate({ fn: func.name, args: [item] });
-                }
-                if (func && (func.type === "function" || func.type === "lambda")) {
-                    const scope = new Map();
-                    if (func.params?.positional?.length > 0) {
-                        scope.set(func.params.positional[0].name, item);
-                    }
-                    context.push(scope);
-                    try {
-                        return evaluate(func.body);
-                    } finally {
-                        context.pop();
-                    }
-                }
-                if (typeof func === "function") return func(item);
-                throw new Error("PMAP function is not callable");
+            // Callback receives (val, locator, src) where locator is 1-based Integer position.
+            const results = items.map((item, i) => {
+                const loc = new Integer(BigInt(i + 1));
+                return invokeTraversalCallback(func, [item, loc, collection], context, evaluate);
             });
 
             if (isString) {
@@ -887,7 +921,6 @@ export const functionFunctions = {
                 for (let r of results) {
                     const rv = (r && r.type === "string") ? r.value : r;
                     if (rv === null) {
-                        // Include null in the array-result case, treat as "not single code point"
                         allSingleCharStr = false;
                         break;
                     }
@@ -904,7 +937,7 @@ export const functionFunctions = {
 
             return { type: (collection.type && !isString) ? collection.type : "sequence", values: results };
         },
-        doc: "Map a function over a collection",
+        doc: "Map a function over a collection — callback receives (val, locator, src)",
     },
 
     PFILTER: {
@@ -914,6 +947,23 @@ export const functionFunctions = {
             const funcNode = args[1];
 
             if (collection === null || collection === undefined) return null;
+
+            const func = evaluate(funcNode);
+
+            // Map support: keep entries whose predicate passes.
+            // Callback receives (val, key, src).
+            if (collection.type === "map") {
+                const entries = collection.entries;
+                if (!(entries instanceof Map)) throw new Error("PFILTER: invalid map");
+                const newEntries = new Map();
+                for (const [k, v] of entries) {
+                    const loc = { type: "string", value: k };
+                    if (isTruthy(invokeTraversalCallback(func, [v, loc, collection], context, evaluate))) {
+                        newEntries.set(k, v);
+                    }
+                }
+                return { type: "map", entries: newEntries };
+            }
 
             const isStringObj = (collection && collection.type === "string");
             const isString = typeof collection === "string" || isStringObj;
@@ -927,29 +977,10 @@ export const functionFunctions = {
                 throw new Error("PFILTER requires a collection");
             }
 
-
-            const func = evaluate(funcNode);
-            const results = items.filter((item) => {
-                if (func && func.type === "partial") {
-                    return isTruthy(callWithConcreteArgs(func, [item], context, evaluate));
-                }
-                if (func && func.type === "sysref") {
-                    return isTruthy(evaluate({ fn: func.name, args: [item] }));
-                }
-                if (func && (func.type === "function" || func.type === "lambda")) {
-                    const scope = new Map();
-                    if (func.params?.positional?.length > 0) {
-                        scope.set(func.params.positional[0].name, item);
-                    }
-                    context.push(scope);
-                    try {
-                        return isTruthy(evaluate(func.body));
-                    } finally {
-                        context.pop();
-                    }
-                }
-                if (typeof func === "function") return isTruthy(func(item));
-                throw new Error("PFILTER function is not callable");
+            // Callback receives (val, locator, src) where locator is 1-based Integer position.
+            const results = items.filter((item, i) => {
+                const loc = new Integer(BigInt(i + 1));
+                return isTruthy(invokeTraversalCallback(func, [item, loc, collection], context, evaluate));
             });
 
             if (isString) {
@@ -959,7 +990,7 @@ export const functionFunctions = {
 
             return { type: collection.type || "sequence", values: results };
         },
-        doc: "Filter a collection with a predicate",
+        doc: "Filter a collection with a predicate — callback receives (val, locator, src)",
     },
 
     PREDUCE: {
@@ -967,9 +998,38 @@ export const functionFunctions = {
         impl(args, context, evaluate) {
             const collection = evaluate(args[0]);
             const funcNode = args[1];
-            const init = args.length > 2 ? evaluate(args[2]) : null;
+            const initProvided = args.length > 2;
+            const explicitInit = initProvided ? evaluate(args[2]) : null;
 
             if (collection === null || collection === undefined) return null;
+
+            const func = evaluate(funcNode);
+
+            // Map support: reduce over map entries.
+            // Callback receives (acc, val, key, src).
+            // Implicit-init mode uses the first encountered value as accumulator.
+            // Maps are unordered; no iteration-order guarantee is made to users.
+            if (collection.type === "map") {
+                const entries = collection.entries;
+                if (!(entries instanceof Map)) throw new Error("PREDUCE: invalid map");
+                const mapEntries = Array.from(entries.entries());
+                let acc;
+                let startIdx;
+                if (!initProvided) {
+                    if (mapEntries.length === 0) return null;
+                    acc = mapEntries[0][1];
+                    startIdx = 1;
+                } else {
+                    acc = explicitInit;
+                    startIdx = 0;
+                }
+                for (let i = startIdx; i < mapEntries.length; i++) {
+                    const [k, v] = mapEntries[i];
+                    const loc = { type: "string", value: k };
+                    acc = invokeTraversalCallback(func, [acc, v, loc, collection], context, evaluate);
+                }
+                return acc;
+            }
 
             const isStringObj = (collection && collection.type === "string");
             const isString = typeof collection === "string" || isStringObj;
@@ -983,37 +1043,18 @@ export const functionFunctions = {
                 throw new Error("PREDUCE requires a collection");
             }
 
-            const func = evaluate(funcNode);
-            let acc = init ?? items[0];
-            const startIdx = init !== null ? 0 : 1;
+            // Callback receives (acc, val, locator, src) where locator is 1-based Integer position.
+            let acc = initProvided ? explicitInit : items[0];
+            const startIdx = initProvided ? 0 : 1;
 
             for (let i = startIdx; i < items.length; i++) {
-                if (func && func.type === "partial") {
-                    acc = callWithConcreteArgs(func, [acc, items[i]], context, evaluate);
-                } else if (func && func.type === "sysref") {
-                    acc = evaluate({ fn: func.name, args: [acc, items[i]] });
-                } else if (func && (func.type === "function" || func.type === "lambda")) {
-                    const scope = new Map();
-                    if (func.params?.positional?.length >= 2) {
-                        scope.set(func.params.positional[0].name, acc);
-                        scope.set(func.params.positional[1].name, items[i]);
-                    }
-                    context.push(scope);
-                    try {
-                        acc = evaluate(func.body);
-                    } finally {
-                        context.pop();
-                    }
-                } else if (typeof func === "function") {
-                    acc = func(acc, items[i]);
-                } else {
-                    throw new Error("PREDUCE function is not callable");
-                }
+                const loc = new Integer(BigInt(i + 1));
+                acc = invokeTraversalCallback(func, [acc, items[i], loc, collection], context, evaluate);
             }
 
             return acc;
         },
-        doc: "Reduce a collection with an accumulator function",
+        doc: "Reduce a collection with an accumulator function — callback receives (acc, val, locator, src)",
     },
 
     PREVERSE: {
@@ -1046,6 +1087,11 @@ export const functionFunctions = {
             const funcNode = args[1];
 
             if (collection === null || collection === undefined) return null;
+
+            // Maps have no defined order and are not supported by sort.
+            if (collection.type === "map") {
+                throw new Error("PSORT does not support maps — maps have no defined order");
+            }
 
             const isStringObj = (collection && collection.type === "string");
             const isString = typeof collection === "string" || isStringObj;
@@ -1125,6 +1171,25 @@ export const functionFunctions = {
 
             if (collection === null || collection === undefined) return null;
 
+            const func = evaluate(funcNode);
+
+            // Map support: test all entries with (val, key, src).
+            // Returns last value if all pass; null on first failure or empty map.
+            if (collection.type === "map") {
+                const entries = collection.entries;
+                if (!(entries instanceof Map)) throw new Error("PALL: invalid map");
+                if (entries.size === 0) return null;
+                let lastVal = null;
+                for (const [k, v] of entries) {
+                    const loc = { type: "string", value: k };
+                    if (!isTruthy(invokeTraversalCallback(func, [v, loc, collection], context, evaluate))) {
+                        return null;
+                    }
+                    lastVal = v;
+                }
+                return lastVal;
+            }
+
             const isStringObj = (collection && collection.type === "string");
             const isString = typeof collection === "string" || isStringObj;
             let items = null;
@@ -1141,36 +1206,19 @@ export const functionFunctions = {
                 return null;
             }
 
+            // Callback receives (val, locator, src) where locator is 1-based Integer position.
             let lastItem = null;
-            const func = evaluate(funcNode);
-            for (const item of items) {
-                let passed = false;
-                if (func && func.type === "partial") {
-                    passed = isTruthy(callWithConcreteArgs(func, [item], context, evaluate));
-                } else if (func && func.type === "sysref") {
-                    passed = isTruthy(evaluate({ fn: func.name, args: [item] }));
-                } else if (func && (func.type === "function" || func.type === "lambda")) {
-                    const scope = new Map();
-                    if (func.params?.positional?.length > 0) {
-                        scope.set(func.params.positional[0].name, item);
-                    }
-                    context.push(scope);
-                    try {
-                        passed = isTruthy(evaluate(func.body));
-                    } finally {
-                        context.pop();
-                    }
-                } else if (typeof func === "function") {
-                    passed = isTruthy(func(item));
-                } else {
-                    throw new Error("PALL function is not callable");
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                const loc = new Integer(BigInt(i + 1));
+                if (!isTruthy(invokeTraversalCallback(func, [item, loc, collection], context, evaluate))) {
+                    return null;
                 }
-                if (!passed) return null; // Changed from `result === null || result === undefined` to `!passed`
                 lastItem = item;
             }
             return lastItem;
         },
-        doc: "Every: returns the last element if predicate is truthy for ALL elements, null on first failure",
+        doc: "Every: returns last element if predicate is truthy for ALL elements, null on first failure — callback receives (val, locator, src)",
     },
 
     PANY: {
@@ -1180,6 +1228,22 @@ export const functionFunctions = {
             const funcNode = args[1];
 
             if (collection === null || collection === undefined) return null;
+
+            const func = evaluate(funcNode);
+
+            // Map support: test entries with (val, key, src).
+            // Returns first passing value; null if none pass or empty.
+            if (collection.type === "map") {
+                const entries = collection.entries;
+                if (!(entries instanceof Map)) throw new Error("PANY: invalid map");
+                for (const [k, v] of entries) {
+                    const loc = { type: "string", value: k };
+                    if (isTruthy(invokeTraversalCallback(func, [v, loc, collection], context, evaluate))) {
+                        return v;
+                    }
+                }
+                return null;
+            }
 
             const isStringObj = (collection && collection.type === "string");
             const isString = typeof collection === "string" || isStringObj;
@@ -1193,34 +1257,17 @@ export const functionFunctions = {
                 throw new Error("PANY requires a collection");
             }
 
-            const func = evaluate(funcNode);
-            for (const item of items) {
-                let passed = false;
-                if (func && func.type === "partial") {
-                    passed = isTruthy(callWithConcreteArgs(func, [item], context, evaluate));
-                } else if (func && func.type === "sysref") {
-                    passed = isTruthy(evaluate({ fn: func.name, args: [item] }));
-                } else if (func && (func.type === "function" || func.type === "lambda")) {
-                    const scope = new Map();
-                    if (func.params?.positional?.length > 0) {
-                        scope.set(func.params.positional[0].name, item);
-                    }
-                    context.push(scope);
-                    try {
-                        passed = isTruthy(evaluate(func.body));
-                    } finally {
-                        context.pop();
-                    }
-                } else if (typeof func === "function") {
-                    passed = isTruthy(func(item));
-                } else {
-                    throw new Error("PANY function is not callable");
+            // Callback receives (val, locator, src) where locator is 1-based Integer position.
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                const loc = new Integer(BigInt(i + 1));
+                if (isTruthy(invokeTraversalCallback(func, [item, loc, collection], context, evaluate))) {
+                    return item;
                 }
-                if (passed) return item; // Changed from `result !== null && result !== undefined` to `passed`
             }
             return null;
         },
-        doc: "Any: returns first item that passed predicate, null if none pass",
+        doc: "Any: returns first item that passed predicate, null if none pass — callback receives (val, locator, src)",
     },
 
     KWARG: {

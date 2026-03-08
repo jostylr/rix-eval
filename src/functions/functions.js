@@ -88,13 +88,13 @@ export const functionFunctions = {
             // If any arg is a placeholder, build a partial application instead.
             if (argNodes.some(isPlaceholderNode)) {
                 const template = argNodes.map(a => evaluate(a));
-                const funcDef = context.get(name);
+                const funcDef = context.getCallable(name);
                 const fn = funcDef || { type: "sysref", name };
                 return { type: "partial", fn, template };
             }
 
             // Look up the function
-            const funcDef = context.get(name);
+            const funcDef = context.getCallable(name);
 
             if (!funcDef) {
                 throw new Error(`Undefined identifier: ${name}. System capabilities must be called via dot syntax: .${name}(args)`);
@@ -289,7 +289,7 @@ export const functionFunctions = {
             // If the function is a RETRIEVE or CALL, apply value as first arg
             if (funcNode.fn === "RETRIEVE") {
                 const funcName = funcNode.args[0];
-                const funcDef = context.get(funcName);
+                const funcDef = context.getCallable(funcName);
 
                 if (funcDef && (funcDef.type === "function" || funcDef.type === "lambda")) {
                     const scope = new Map();
@@ -308,7 +308,7 @@ export const functionFunctions = {
             // If it's a CALL node, prepend value to args
             if (funcNode.fn === "CALL") {
                 const name = funcNode.args[0];
-                const funcDef = context.get(name);
+                const funcDef = context.getCallable(name);
                 const extraArgs = funcNode.args.slice(1).map((a) => evaluate(a));
 
                 if (funcDef && (funcDef.type === "function" || funcDef.type === "lambda")) {

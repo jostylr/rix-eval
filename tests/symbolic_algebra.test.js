@@ -8,23 +8,23 @@ function evalRiX(code) {
 
 test("Symbolic Algebra: Set Operations", () => {
     // Union (\\/ in JS string for \/ in RiX)
-    const u = evalRiX("{|1, 2|} \\/ {|2, 3|}");
+    const u = evalRiX("{| 1, 2 |} \\/ {| 2, 3 |}");
     expect(u.type).toBe("set");
     expect(u.values.length).toBe(3);
 
     // Intersection (/\\ in RiX, so /\\\\ in JS string)
-    const i = evalRiX("{|1, 2|} /\\ {|2, 3|}");
+    const i = evalRiX("{| 1, 2 |} /\\ {| 2, 3 |}");
     expect(i.type).toBe("set");
     expect(i.values.length).toBe(1);
     expect(i.values[0].toString()).toBe("2");
 
     // Difference (\ in RiX, so \\ in JS string)
-    const d = evalRiX("{|1, 2, 3|} \\ {|2|}");
+    const d = evalRiX("{| 1, 2, 3 |} \\ {| 2 |}");
     expect(d.type).toBe("set");
     expect(d.values.length).toBe(2);
 
     // Symmetric Difference
-    const sd = evalRiX("{|1, 2|} <> {|2, 3|}");
+    const sd = evalRiX("{| 1, 2 |} <> {| 2, 3 |}");
     expect(sd.type).toBe("set");
     expect(sd.values.length).toBe(2);
 });
@@ -51,8 +51,8 @@ test("Symbolic Algebra: Membership", () => {
     expect(evalRiX("5 ? 1:10")).not.toBe(null);
     expect(evalRiX("15 ? 1:10")).toBe(null);
 
-    expect(evalRiX("5 ? {|1, 5, 10|}")).not.toBe(null);
-    expect(evalRiX("7 ? {|1, 5, 10|}")).toBe(null);
+    expect(evalRiX("5 ? {| 1, 5, 10 |}")).not.toBe(null);
+    expect(evalRiX("7 ? {| 1, 5, 10 |}")).toBe(null);
 
     expect(evalRiX("5 !? 1:10")).toBe(null);
     expect(evalRiX("15 !? 1:10")).not.toBe(null);
@@ -64,7 +64,7 @@ test("Symbolic Algebra: Intersects", () => {
 });
 
 test("Symbolic Algebra: Cartesian Product", () => {
-    const p = evalRiX("{|1, 2|} ** {| \"a\", \"b\" |}");
+    const p = evalRiX("{| 1, 2 |} ** {| \"a\", \"b\" |}");
     expect(p.type).toBe("set");
     expect(p.values.length).toBe(4);
 });
@@ -84,7 +84,7 @@ test("Symbolic Algebra: Concatenation", () => {
 });
 
 test("N-ary brace union/intersection", () => {
-    const idU = evalRiX("{\\/ {|1,2|} }");
+    const idU = evalRiX("{\\/ {| 1,2 |} }");
     expect(idU.type).toBe("set");
     expect(idU.values.map((v) => v.toString())).toEqual(["1", "2"]);
 
@@ -101,11 +101,11 @@ test("N-ary brace union/intersection", () => {
     expect(eI.type).toBe("set");
     expect(eI.values).toEqual([]);
 
-    const su = evalRiX("{\\/ {|1|}, {|1,2|}, {|3|} }");
+    const su = evalRiX("{\\/ {| 1 |}, {| 1,2 |}, {| 3 |} }");
     expect(su.type).toBe("set");
     expect(su.values.map((v) => v.toString())).toEqual(["1", "2", "3"]);
 
-    const si = evalRiX("{/\\ {|1,2,3|}, {|2,3,4|}, {|3,5|} }");
+    const si = evalRiX("{/\\ {| 1,2,3 |}, {| 2,3,4 |}, {| 3,5 |} }");
     expect(si.type).toBe("set");
     expect(si.values.map((v) => v.toString())).toEqual(["3"]);
 
@@ -136,7 +136,7 @@ test("N-ary brace concat", () => {
     expect(c2.type).toBe("string");
     expect(c2.value).toBe("abcdef");
 
-    const c3 = evalRiX("{++ {:1,2}, {:3} }");
+    const c3 = evalRiX("{++ {: 1,2}, {: 3} }");
     expect(c3.type).toBe("tuple");
     expect(c3.values.map((v) => v.toString())).toEqual(["1", "2", "3"]);
 
@@ -180,8 +180,8 @@ test("N-ary brace arity/type errors", () => {
     expect(() => evalRiX("{>> }")).toThrow(/MAX requires at least one non-null comparable argument/);
     expect(() => evalRiX("{<< _, _ }")).toThrow(/MIN requires at least one non-null comparable argument/);
     expect(() => evalRiX("{>> _, _ }")).toThrow(/MAX requires at least one non-null comparable argument/);
-    expect(() => evalRiX("{\\/ {|1|}, 2:3 }")).toThrow(/NARY_UNION operands must all be sets or all be intervals/);
-    expect(() => evalRiX("{/\\ {|1|}, 2:3 }")).toThrow(/NARY_INTERSECT operands must all be sets or all be intervals/);
+    expect(() => evalRiX("{\\/ {| 1 |}, 2:3 }")).toThrow(/NARY_UNION operands must all be sets or all be intervals/);
+    expect(() => evalRiX("{/\\ {| 1 |}, 2:3 }")).toThrow(/NARY_INTERSECT operands must all be sets or all be intervals/);
 });
 
 test("Word Operators as Identifiers", () => {

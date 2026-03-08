@@ -462,7 +462,7 @@ describe("RiX Evaluator", () => {
         });
 
         test("alias import same-name writes through", () => {
-            const { result, context } = evalRixWithContext("y = 10; {; <y= > y = y + 5; y };");
+            const { result, context } = evalRixWithContext("y = 10; {; <y=> y = y + 5; y };");
             expect(result.value).toBe(15n);
             expect(evalRix("y;", context).value).toBe(15n);
         });
@@ -474,7 +474,7 @@ describe("RiX Evaluator", () => {
         });
 
         test("mixed copy and alias imports behave independently", () => {
-            const { result, context } = evalRixWithContext("x = 3; y = 4; {; <x, y= > x = x + 10; y = y + 10; [x, y] };");
+            const { result, context } = evalRixWithContext("x = 3; y = 4; {; <x, y=> x = x + 10; y = y + 10; [x, y] };");
             expect(result.values[0].value).toBe(13n);
             expect(result.values[1].value).toBe(14n);
             expect(evalRix("x;", context).value).toBe(3n);
@@ -489,7 +489,7 @@ describe("RiX Evaluator", () => {
         });
 
         test("duplicate import targets error", () => {
-            expect(() => evalRix("x = 1; {; <x, x= > x };")).toThrow("Duplicate import target 'x'");
+            expect(() => evalRix("x = 1; {; <x, x=> x };")).toThrow("Duplicate import target 'x'");
         });
 
         test("import sources resolve from outer scope, not earlier imports in the same header", () => {
@@ -500,6 +500,21 @@ describe("RiX Evaluator", () => {
 
         test("missing import source errors clearly", () => {
             expect(() => evalRix("{; <a~missing> a };")).toThrow("Undefined outer variable for import: missing");
+        });
+
+        test("direct function calls search outer scopes without imports", () => {
+            expect(evalRix("F(x) -> x + 1; {; F(2) };").value).toBe(3n);
+            expect(evalRix("F(x) -> x + 1; {; @F(2) };").value).toBe(3n);
+        });
+
+        test("bare function retrieval in a block still requires @ for outer scope", () => {
+            expect(() => evalRix("F(x) -> x + 1; {; G = F };")).toThrow("Undefined variable: F");
+            expect(evalRix("F(x) -> x + 1; {; G = @F; G(2) };").value).toBe(3n);
+        });
+
+        test("function definitions inside a block stay local", () => {
+            expect(evalRix("{; F(x) -> x + 1; F(2) };").value).toBe(3n);
+            expect(() => evalRix("{; F(x) -> x + 1; F(2) }; F(2);")).toThrow("Undefined identifier: F");
         });
 
         test("undefined variable throws", () => {
@@ -776,12 +791,12 @@ describe("RiX Evaluator", () => {
         });
 
         test("betweenness with sets: 2:{|3, 4|}:5 = 1", () => {
-            const result = evalRix("2:{|3, 4|}:5;");
+            const result = evalRix("2:{| 3, 4 |}:5;");
             expect(result.value).toBe(1n);
         });
 
         test("betweenness with sets failure: 2:{|3, 6|}:5 = null", () => {
-            const result = evalRix("2:{|3, 6|}:5;");
+            const result = evalRix("2:{| 3, 6 |}:5;");
             expect(result).toBeNull();
         });
 
@@ -811,7 +826,7 @@ describe("RiX Evaluator", () => {
         });
 
         test("betweenness with set of intervals: 2:{|3:4, 4.1:4.5|}:5 = 1", () => {
-            const result = evalRix("2:{|3:4, 4.1:4.5|}:5;");
+            const result = evalRix("2:{| 3:4, 4.1:4.5 |}:5;");
             expect(result.value).toBe(1n);
         });
     });

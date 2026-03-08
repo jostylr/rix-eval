@@ -64,10 +64,6 @@ export class Context {
         if (ref) {
             return ref.map.get(ref.name);
         }
-        // Check functions (uppercase names)
-        if (this.functions.has(name)) {
-            return this.functions.get(name);
-        }
         return undefined;
     }
 
@@ -107,10 +103,6 @@ export class Context {
         if (ref) {
             return ref.map.get(ref.name);
         }
-        // Check functions
-        if (this.functions.has(name)) {
-            return this.functions.get(name);
-        }
         return undefined;
     }
 
@@ -131,7 +123,18 @@ export class Context {
      * Check if a variable exists in any scope.
      */
     has(name) {
-        return Boolean(this.resolveBinding(name)) || this.functions.has(name);
+        return Boolean(this.resolveBinding(name));
+    }
+
+    getCallable(name) {
+        const ref = this.resolveBinding(name, { respectIsolation: false });
+        if (ref) {
+            return ref.map.get(ref.name);
+        }
+        if (this.functions.has(name)) {
+            return this.functions.get(name);
+        }
+        return undefined;
     }
 
     resolveBinding(name, options = {}) {
@@ -197,16 +200,17 @@ export class Context {
      * @param {Object} funcDef - { params, body, closure? }
      */
     defineFunction(name, funcDef) {
-        this.functions.set(name, funcDef);
-        // Also set in current scope so it can be retrieved
         this.set(name, funcDef);
+        if (this.localScopes.length === 0) {
+            this.functions.set(name, funcDef);
+        }
     }
 
     /**
      * Get a user function definition.
      */
     getFunction(name) {
-        return this.functions.get(name);
+        return this.getCallable(name);
     }
 
     // --- Call stack ---

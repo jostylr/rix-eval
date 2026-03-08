@@ -26,14 +26,16 @@ function unwrapDefer(node) {
 
 function splitScopedBlockArgs(args) {
     const first = args[0];
-    if (first && !first.fn && Array.isArray(first.imports)) {
+    if (first && !first.fn && (Array.isArray(first.imports) || first.name !== undefined)) {
         return {
-            imports: first.imports,
+            imports: first.imports ?? [],
+            containerName: first.name ?? null,
             bodyArgs: args.slice(1),
         };
     }
     return {
         imports: [],
+        containerName: null,
         bodyArgs: args,
     };
 }
@@ -52,7 +54,7 @@ export const controlFunctions = {
     BLOCK: {
         lazy: true,
         impl(args, context, evaluate) {
-            const { imports, bodyArgs } = splitScopedBlockArgs(args);
+            const { imports, containerName, bodyArgs } = splitScopedBlockArgs(args);
             const shareCurrentScope = context.consumeSharedBody("BLOCK");
             if (!shareCurrentScope) context.push(undefined, { isolated: true });
             try {
@@ -102,7 +104,7 @@ export const controlFunctions = {
         impl(args, context, evaluate) {
             // LOOP(init, condition, body, update)
             // All args are DEFER nodes
-            const { imports, bodyArgs } = splitScopedBlockArgs(args);
+            const { imports, containerName, bodyArgs } = splitScopedBlockArgs(args);
             const [initNode, condNode, bodyNode, updateNode] = bodyArgs.map(unwrapDefer);
 
             const shareCurrentScope = context.consumeSharedBody("LOOP");
@@ -167,7 +169,7 @@ export const controlFunctions = {
     SYSTEM: {
         lazy: true,
         impl(args, context, evaluate) {
-            const { imports, bodyArgs } = splitScopedBlockArgs(args);
+            const { imports, containerName, bodyArgs } = splitScopedBlockArgs(args);
             const shareCurrentScope = context.consumeSharedBody("SYSTEM");
             if (!shareCurrentScope) context.push(undefined, { isolated: true });
             try {

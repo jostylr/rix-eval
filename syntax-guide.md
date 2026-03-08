@@ -508,6 +508,11 @@ Map literals reject duplicate keys after canonicalization:
 | `LAMBDA(params, body)` | Anonymous function | `(params) -> body` |
 | `CALL(name, args...)` | Call a user-defined function | `Name(args)` |
 
+Function-call lookup note:
+- `Name(args)` searches outward for a callable binding even across scoped block boundaries.
+- Bare retrieval `Name` still follows normal lexical variable lookup rules.
+- This means `{; F(2) }` can call an outer `F`, while `{; G = F }` requires `{; G = @F }` if `F` is outside the block.
+
 | `UPPER(str)` | Convert to uppercase |
 | `SUBSTR(str, start, len)` | Get substring |
 
@@ -552,6 +557,10 @@ Map literals reject duplicate keys after canonicalization:
 | `RETRIEVE(name)` | Look up variable | `name` |
 | `OUTER_ASSIGN(name, val)` | Set an existing outer scope variable | `@name = val`, `@name += val`, etc. |
 | `OUTER_RETRIEVE(name)` | Look up an outer scope variable | `@name` |
+
+Scope note:
+- `RETRIEVE(Name)` remains lexical even for capitalized names.
+- Only direct call syntax `Name(...)` uses outward callable lookup.
 
 ### Future Extensions (Stubs)
 

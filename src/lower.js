@@ -452,8 +452,12 @@ const LOWERERS = {
   },
 
   BlockContainer(node) {
-    if (node.imports && node.imports.length > 0) {
-      return ir("BLOCK", { imports: lowerImports(node.imports) }, ...node.elements.map(lowerNode));
+    const hasMeta = (node.imports && node.imports.length > 0) || node.name;
+    if (hasMeta) {
+      const meta = {};
+      if (node.imports && node.imports.length > 0) meta.imports = lowerImports(node.imports);
+      if (node.name) meta.name = node.name;
+      return ir("BLOCK", meta, ...node.elements.map(lowerNode));
     }
     return ir("BLOCK", ...node.elements.map(lowerNode));
   },
@@ -467,15 +471,23 @@ const LOWERERS = {
   },
 
   LoopContainer(node) {
-    if (node.imports && node.imports.length > 0) {
-      return ir("LOOP", { imports: lowerImports(node.imports) }, ...node.elements.map((el) => ir("DEFER", lowerNode(el))));
+    const hasMeta = (node.imports && node.imports.length > 0) || node.name;
+    if (hasMeta) {
+      const meta = {};
+      if (node.imports && node.imports.length > 0) meta.imports = lowerImports(node.imports);
+      if (node.name) meta.name = node.name;
+      return ir("LOOP", meta, ...node.elements.map((el) => ir("DEFER", lowerNode(el))));
     }
     return ir("LOOP", ...node.elements.map((el) => ir("DEFER", lowerNode(el))));
   },
 
   SystemContainer(node) {
-    if (node.imports && node.imports.length > 0) {
-      return ir("SYSTEM", { imports: lowerImports(node.imports) }, ...node.elements.map(lowerNode));
+    const hasMeta = (node.imports && node.imports.length > 0) || node.name;
+    if (hasMeta) {
+      const meta = {};
+      if (node.imports && node.imports.length > 0) meta.imports = lowerImports(node.imports);
+      if (node.name) meta.name = node.name;
+      return ir("SYSTEM", meta, ...node.elements.map(lowerNode));
     }
     return ir("SYSTEM", ...node.elements.map(lowerNode));
   },

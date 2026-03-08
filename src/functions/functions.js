@@ -286,45 +286,29 @@ export const functionFunctions = {
             const value = evaluate(args[0]);
             const funcNode = args[1];
 
-            // If the function is a RETRIEVE or CALL, apply value as first arg
+            // Tuples are unpacked as positional args; all other values are a single arg
+            const callArgs = (value && value.type === "tuple")
+                ? value.values
+                : [value];
+
+            // If the function is a RETRIEVE or CALL, apply unpacked args
             if (funcNode.fn === "RETRIEVE") {
                 const funcName = funcNode.args[0];
                 const funcDef = context.getCallable(funcName);
 
                 if (funcDef && (funcDef.type === "function" || funcDef.type === "lambda")) {
-                    const scope = new Map();
-                    if (funcDef.params?.positional?.length > 0) {
-                        scope.set(funcDef.params.positional[0].name, value);
-                    }
-                    context.push(scope);
-                    try {
-                        return evaluate(funcDef.body);
-                    } finally {
-                        context.pop();
-                    }
+                    return callWithConcreteArgs(funcDef, callArgs, context, evaluate);
                 }
             }
 
-            // If it's a CALL node, prepend value to args
+            // If it's a CALL node, prepend unpacked args before extra args
             if (funcNode.fn === "CALL") {
                 const name = funcNode.args[0];
                 const funcDef = context.getCallable(name);
                 const extraArgs = funcNode.args.slice(1).map((a) => evaluate(a));
 
                 if (funcDef && (funcDef.type === "function" || funcDef.type === "lambda")) {
-                    const scope = new Map();
-                    const allArgs = [value, ...extraArgs];
-                    if (funcDef.params?.positional) {
-                        for (let i = 0; i < funcDef.params.positional.length; i++) {
-                            scope.set(funcDef.params.positional[i].name, allArgs[i] ?? null);
-                        }
-                    }
-                    context.push(scope);
-                    try {
-                        return evaluate(funcDef.body);
-                    } finally {
-                        context.pop();
-                    }
+                    return callWithConcreteArgs(funcDef, [...callArgs, ...extraArgs], context, evaluate);
                 }
             }
 
@@ -332,28 +316,19 @@ export const functionFunctions = {
             const func = evaluate(funcNode);
 
             if (func && func.type === "partial") {
-                return callWithConcreteArgs(func, [value], context, evaluate);
+                return callWithConcreteArgs(func, callArgs, context, evaluate);
             }
 
             if (func && func.type === "sysref") {
-                return evaluate({ fn: func.name, args: [value] });
+                return evaluate({ fn: func.name, args: callArgs });
             }
 
             if (func && (func.type === "function" || func.type === "lambda")) {
-                const scope = new Map();
-                if (func.params?.positional?.length > 0) {
-                    scope.set(func.params.positional[0].name, value);
-                }
-                context.push(scope);
-                try {
-                    return evaluate(func.body);
-                } finally {
-                    context.pop();
-                }
+                return callWithConcreteArgs(func, callArgs, context, evaluate);
             }
 
             if (typeof func === "function") {
-                return func(value);
+                return func(...callArgs);
             }
 
             throw new Error("Pipe target is not a function");
@@ -556,10 +531,34 @@ export const functionFunctions = {
     PIPE_EXPLICIT: {
         lazy: true,
         impl(args, context, evaluate) {
-            // Same as PIPE for now
-            return functionFunctions.PIPE.impl(args, context, evaluate);
+            // args[0] = left value expression (typically a tuple)
+            // args[1] = right expression: a function call containing PLACEHOLDER nodes
+            //           e.g. F(_2, _1) — placeholders refer to tuple elements by 1-based index
+            const value = evaluate(args[0]);
+            const tupleVals = (value && value.type === "tuple") ? value.values : [value];
+            const funcNode = args[1];
+
+            // Walk a raw IR node, replacing PLACEHOLDER nodes with the corresponding
+            // tuple element value (already evaluated), leaving everything else intact.
+            function resolvePlaceholders(node) {
+                if (!node || typeof node !== "object") return node;
+                if (node.fn === "PLACEHOLDER") {
+                    const idx = node.args[0]; // 1-based index
+                    if (idx < 1 || idx > tupleVals.length) {
+                        throw new Error(`Placeholder _${idx} out of range (tuple has ${tupleVals.length} element${tupleVals.length === 1 ? "" : "s"})`);
+                    }
+                    return tupleVals[idx - 1];
+                }
+                if (node.fn && Array.isArray(node.args)) {
+                    return { fn: node.fn, args: node.args.map(resolvePlaceholders) };
+                }
+                return node;
+            }
+
+            const resolvedFuncNode = resolvePlaceholders(funcNode);
+            return evaluate(resolvedFuncNode);
         },
-        doc: "Explicit pipe operator",
+        doc: "Explicit pipe operator — placeholders _1, _2, … map tuple elements to specific argument positions",
     },
 
     PSPLIT: {

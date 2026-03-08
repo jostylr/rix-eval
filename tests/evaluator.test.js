@@ -1179,7 +1179,7 @@ describe("RiX Evaluator", () => {
     });
 
     describe("Pipes", () => {
-        test("x |> F pipes value into function", () => {
+        test("x |> F pipes scalar value into function", () => {
             const ctx = new Context();
             const registry = createDefaultRegistry();
             const code = "DOUBLE(x) :-> x * 2; 5 |> DOUBLE;";
@@ -1191,6 +1191,74 @@ describe("RiX Evaluator", () => {
                 result = evaluate(ir, ctx, registry);
             }
             expect(result.value).toBe(10n);
+        });
+
+        test("(1, 2) |> F unpacks tuple into positional args", () => {
+            // SUB(x, y) :-> x - y; (1, 2) |> SUB  =>  1 - 2 = -1
+            const result = evalRix("SUB(x, y) :-> x - y; (1, 2) |> SUB;");
+            expect(result.value).toBe(-1n);
+        });
+
+        test("(3, 4) |> F unpacks tuple, second arg used", () => {
+            // SECOND(x, y) :-> y; (3, 4) |> SECOND  =>  4
+            const result = evalRix("SECOND(x, y) :-> y; (3, 4) |> SECOND;");
+            expect(result.value).toBe(4n);
+        });
+
+        test("[1, 2] |> F passes array as single arg, no unpack", () => {
+            // IDENTITY(x) :-> x; [1, 2] |> IDENTITY  =>  the array itself
+            const result = evalRix("IDENTITY(x) :-> x; [1, 2] |> IDENTITY;");
+            expect(result.type).toBe("sequence");
+            expect(result.values.length).toBe(2);
+        });
+
+        test("(1, 2) ||> F(_2, _1) reverses tuple args", () => {
+            // SUB(x, y) :-> x - y; (1, 2) ||> SUB(_2, _1)  =>  2 - 1 = 1
+            const result = evalRix("SUB(x, y) :-> x - y; (1, 2) ||> SUB(_2, _1);");
+            expect(result.value).toBe(1n);
+        });
+
+        test("(3, 4) ||> F(_1, _2) passes args in original order", () => {
+            // SUB(x, y) :-> x - y; (3, 4) ||> SUB(_1, _2)  =>  3 - 4 = -1
+            const result = evalRix("SUB(x, y) :-> x - y; (3, 4) ||> SUB(_1, _2);");
+            expect(result.value).toBe(-1n);
+        });
+
+        test("(5, 2) ||> F(_1, _1) duplicates first tuple element", () => {
+            // SUB(x, y) :-> x - y; (5, 2) ||> SUB(_1, _1)  =>  5 - 5 = 0
+            const result = evalRix("SUB(x, y) :-> x - y; (5, 2) ||> SUB(_1, _1);");
+            expect(result.value).toBe(0n);
+        });
+
+        test("(1, 2, 3) ||> F(_3, _2, _1) reverses three args", () => {
+            // TRIO(a, b, c) :-> a * 100 + b * 10 + c; (1,2,3)||>TRIO(_3,_2,_1) => 321
+            const result = evalRix("TRIO(a, b, c) :-> a * 100 + b * 10 + c; (1, 2, 3) ||> TRIO(_3, _2, _1);");
+            expect(result.value).toBe(321n);
+        });
+
+        // ||> as a general IR-template operator: placeholders work in any right-side expression
+        test("(1, 2, 3) ||> (_2, _1, _3) reorders into a new tuple", () => {
+            const result = evalRix("(1, 2, 3) ||> (_2, _1, _3);");
+            expect(result.type).toBe("tuple");
+            expect(result.values[0].value).toBe(2n);
+            expect(result.values[1].value).toBe(1n);
+            expect(result.values[2].value).toBe(3n);
+        });
+
+        test("(1, 2, 3) ||> [_2, _1, _3] reorders into a new array", () => {
+            const result = evalRix("(1, 2, 3) ||> [_2, _1, _3];");
+            expect(result.type).toBe("sequence");
+            expect(result.values[0].value).toBe(2n);
+            expect(result.values[1].value).toBe(1n);
+            expect(result.values[2].value).toBe(3n);
+        });
+
+        test("(1, 2, 3) ||> {= a=_2, b=_1, c=_3} reorders into a map/record", () => {
+            const result = evalRix("(1, 2, 3) ||> {= a=_2, b=_1, c=_3};");
+            expect(result.type).toBe("map");
+            expect(result.entries.get("a").value).toBe(2n);
+            expect(result.entries.get("b").value).toBe(1n);
+            expect(result.entries.get("c").value).toBe(3n);
         });
 
         test("[1,2,3] |>> DOUBLE pmap", () => {

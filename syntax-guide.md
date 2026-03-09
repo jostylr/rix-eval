@@ -276,6 +276,60 @@ Partial application occurs when a function is called with one or more placeholde
 - **Integration**: Works seamlessly with pipes: `[1, 2, 3] |>> @*(_1, 10)` → `[10, 20, 30]`.
 - **Automatic Appending**: Any arguments passed to a partial that aren't consumed by placeholders are appended. For example, if `F(a, b, c)` is called via `G = F(_1, _2)`, then `G(1, 2, 3)` becomes `F(1, 2, 3)`.
 
+### Arity-Capped Callable Views
+
+`fn[n]` produces a **callable wrapper** that forwards only the first `n` arguments to `fn`, silently discarding any extras.
+
+```
+fn[n]
+```
+
+**This is not partial application.** It does not bind, reorder, or select arguments — it simply truncates the incoming argument list to the first `n`.
+
+| Syntax | Semantics |
+|--------|-----------|
+| `fn[0]` | Call `fn()` regardless of how many args are provided |
+| `fn[1]` | Call `fn(a1)` — discard everything after first arg |
+| `fn[2]` | Call `fn(a1, a2)` — discard everything after second arg |
+| `fn[n][m]` | Equivalent to `fn[min(n,m)]` — caps compose |
+
+**Primary use case**: Collection-pipe callbacks receive enriched argument lists `(val, locator, src)` or `(acc, val, locator, src)`. Bare system functions like `@+` are N-ary and would fail if they receive non-numeric locator/src values. Arity capping avoids this cleanly:
+
+```rix
+## Without cap, @+ in reduce receives (acc, val, locator, src) and fails on the sequence object
+[1, 2, 3] |>: @+[2]           ## 6  — only acc and val forwarded
+[1, 2, 3] |:> 0 >: @+[2]      ## 6
+
+## Map and filter
+double := (x) -> x * 2
+[1, 2, 3] |>> double[1]        ## [2, 4, 6]   — locator dropped
+
+isEven := (x) -> x % 2 == 0
+[1, 2, 3, 4] |>? isEven[1]    ## [2, 4]
+
+## Map values in a map
+{= a=2, b=3 } |>> double[1]   ## {= a=4, b=6 }
+
+## General call context
+G := @+[2]
+G(10, 20, 99, 99)              ## 30  (only 10 and 20 forwarded)
+```
+
+**Comparison with placeholders**:
+
+| Approach | Example | When to use |
+|---|---|---|
+| Arity cap | `fn[n]` | Forward first `n` args |
+| Placeholder | `@+(_1, _2)` | Explicit selection / reordering |
+
+Arity cap is simpler when you just want to drop trailing context args. Placeholders are more powerful when you need specific positions or reordering.
+
+**Rules**:
+- `n` must be a non-negative integer. Non-integer or negative values error.
+- If fewer than `n` arguments are available, all are forwarded (no padding or defaults).
+- Works on any callable: lambdas, named functions, system references (`@+`, `.LEN`, etc.), partials, or nested arity-capped callables.
+- Ordinary collection indexing `collection[i]` is unaffected.
+
 | Syntax | Description | Example |
 |--------|-------------|---------|
 | `\|+n` | Add `n` to previous (arithmetic) | `[2, \|+2, \|; 5]` → `[2,4,6,8,10]` |

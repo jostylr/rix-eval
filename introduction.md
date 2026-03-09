@@ -172,6 +172,64 @@ To access the locator or source in a partial, use explicit placeholder positions
 [10, 20, 30] |>> @+(_1, _2)   ## [11, 22, 33]  (value + 1-based position)
 ```
 
+## Arity-Capped Callable Views
+
+The syntax `fn[n]` produces a **callable wrapper** that forwards only the first `n` arguments to `fn` and silently discards any extras.
+
+```rix
+fn[n]
+```
+
+This is useful when a pipe callback supplies extra context arguments (locator, source) that a bare system function would misinterpret.
+
+**This is not partial application.** It does not bind arguments, reorder them, or select arbitrary positions — it simply truncates the incoming argument list to the first `n`.
+
+### Examples
+
+```rix
+## Reduce with bare @+ — without arity cap, @+ would receive (acc, val, locator, src)
+## and MUL would try to use the sequence object in arithmetic.
+[1, 2, 3] |>: @+[2]        ## 6   (only acc and val forwarded to @+)
+[1, 2, 3] |:> 0 >: @+[2]   ## 6
+
+## Map and filter with a user function
+double := (x) -> x * 2
+[1, 2, 3] |>> double[1]     ## [2, 4, 6]   (locator dropped)
+
+isEven := (x) -> x % 2 == 0
+[1, 2, 3, 4] |>? isEven[1]  ## [2, 4]
+
+## Works on maps too
+{= a=2, b=3 } |>> double[1]   ## {= a=4, b=6 }
+
+## General call context (not pipe-specific)
+G := @+[2]
+G(10, 20, 99, 99)   ## 30  (only 10 and 20 forwarded)
+
+## Zero-arity cap
+C := () -> 42
+C[0](1, 2, 3)       ## 42  (no args forwarded)
+
+## Nested caps — outer cap wins
+@+[3][2](1, 2, 3, 4)   ## 3  (at most 2 args reach @+)
+```
+
+### Relationship to placeholders
+
+| Approach | Syntax | Purpose |
+|---|---|---|
+| Arity cap | `fn[n]` | Forward only first `n` args |
+| Placeholder | `@+(_1, _2)` | Explicit selection / reordering |
+
+Use `fn[n]` when you want "first N args only"; use placeholders when you need anything more specific.
+
+### Rules
+
+- `n` must be a non-negative integer literal. Negative or non-integer values error.
+- If fewer than `n` arguments are supplied at call time, all are forwarded (no padding).
+- Works on any callable value: lambdas, named functions (uppercase), system references, partials, or already-capped callables.
+- Does not affect ordinary collection indexing — `collection[i]` continues to index as before.
+
 ## Map Keys
 
 Map keys are canonicalized strings:

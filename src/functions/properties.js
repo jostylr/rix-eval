@@ -212,6 +212,19 @@ export const propertyFunctions = {
                 return obj.entries.has(mapKey) ? obj.entries.get(mapKey) : null;
             }
 
+            // Callable types — arity-cap syntax: fn[n]
+            if (obj && (obj.type === "function" || obj.type === "lambda" ||
+                        obj.type === "sysref" || obj.type === "partial" || obj.type === "arityCap")) {
+                let n;
+                try { n = toInteger(key); } catch (_) {
+                    throw new Error("Arity cap must be a non-negative integer");
+                }
+                if (!Number.isInteger(n) || n < 0) {
+                    throw new Error(`Arity cap must be a non-negative integer, got ${n}`);
+                }
+                return { type: "arityCap", fn: obj, cap: n };
+            }
+
             // Not indexable
             throw new Error(`Type "${obj?.type || typeof obj}" is not indexable`);
         },

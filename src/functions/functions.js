@@ -39,6 +39,10 @@ function resolvePartial(partial, callArgs) {
 function callWithConcreteArgs(fn, callArgs, context, evaluate) {
     if (!fn) throw new Error("Cannot call null/undefined");
 
+    if (fn.type === "arityCap") {
+        return callWithConcreteArgs(fn.fn, callArgs.slice(0, fn.cap), context, evaluate);
+    }
+
     if (fn.type === "partial") {
         const { fn: innerFn, args } = resolvePartial(fn, callArgs);
         return callWithConcreteArgs(innerFn, args, context, evaluate);
@@ -97,6 +101,9 @@ function callWithConcreteArgs(fn, callArgs, context, evaluate) {
  * underlying operator simply ignores them.
  */
 function invokeTraversalCallback(func, callArgs, context, evaluate) {
+    if (func && func.type === "arityCap") {
+        return invokeTraversalCallback(func.fn, callArgs.slice(0, func.cap), context, evaluate);
+    }
     if (func && func.type === "partial") {
         // For partials, pass only as many args as needed to fill the placeholder slots.
         // This prevents locator/src from leaking into N-ary system functions (ADD, MUL, etc.)
@@ -155,8 +162,8 @@ export const functionFunctions = {
                 throw new Error(`Undefined identifier: ${name}. System capabilities must be called via dot syntax: .${name}(args)`);
             }
 
-            // If it's a partial, apply it with the concrete call args.
-            if (funcDef.type === "partial") {
+            // If it's a partial or arityCap, apply it with the concrete call args.
+            if (funcDef.type === "partial" || funcDef.type === "arityCap") {
                 const callArgs = argNodes.map(a => evaluate(a));
                 return callWithConcreteArgs(funcDef, callArgs, context, evaluate);
             }
@@ -232,8 +239,8 @@ export const functionFunctions = {
             const funcVal = evaluate(funcNode);
             const callArgs = argNodes.map((a) => evaluate(a));
 
-            // If it's a partial, apply it.
-            if (funcVal && funcVal.type === "partial") {
+            // If it's a partial or arityCap, apply it.
+            if (funcVal && (funcVal.type === "partial" || funcVal.type === "arityCap")) {
                 return callWithConcreteArgs(funcVal, callArgs, context, evaluate);
             }
 
@@ -370,7 +377,7 @@ export const functionFunctions = {
             // Try evaluating the function and applying
             const func = evaluate(funcNode);
 
-            if (func && func.type === "partial") {
+            if (func && (func.type === "partial" || func.type === "arityCap")) {
                 return callWithConcreteArgs(func, callArgs, context, evaluate);
             }
 

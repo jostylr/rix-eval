@@ -21,6 +21,7 @@
 | `>=` or `?>=` | `GTE` | `x >= 0` |
 | `&&` | `AND` | `a > 0 && b > 0` |
 | `||` | `OR` | `x == 0 || y == 0` |
+| `?|` | `HOLE_COALESCE` | `a[2] ?| 9` — returns left if not a hole, else right |
 | `!` | `NOT` | `!(x == 0)` |
 | `:=` or `=` | `ASSIGN` | `x := 5` or `x = 5` |
 | `-` (unary) | `NEG` | `-x` |
@@ -687,6 +688,26 @@ Scope note:
 ---
 
 ## Part 3: REPL Dot-Commands
+
+### Holes and Undefined
+
+| Syntax | Meaning |
+|--------|---------|
+| `[1,,3]` | Array with a hole at position 2 |
+| `[,1]` | Array with leading hole |
+| `[1,]` | Array with trailing hole |
+| `[,]` | Two holes |
+| `F(,7)` | Call F with hole as first arg, 7 as second |
+| `F(1,,3)` | Call F with hole as second arg |
+| `a ?| b` | Hole-coalesce: returns `a` if non-hole, else `b` |
+| `(x ?| 2, a) -> ...` | Param `x` defaults to `2` only when caller passes a hole |
+
+**Key rules:**
+- Holes are **not assignable** — they arise from syntax only.
+- Standard arithmetic/comparison operations **error** when given a hole.
+- `?|` is lazy — the right side is not evaluated if left is not a hole.
+- At the REPL, a bare unbound identifier shows `undefined` (not an error). Expressions *using* an unbound identifier still error.
+- `null` (`_`) is a regular value; holes are distinct.
 
 REPL-specific commands use all-lowercase dot notation. They are not part of the RiX language itself but provide tooling and reflection.
 

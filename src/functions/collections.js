@@ -4,6 +4,7 @@
 
 import { Integer, Rational, RationalInterval } from "@ratmath/core";
 import { keyOf } from "./keyof.js";
+import { HOLE } from "../hole.js";
 
 function isTruthy(val) {
     return val !== null && val !== undefined;
@@ -124,6 +125,8 @@ export const collectionFunctions = {
                         values.push(next);
                         current = next;
                     }
+                } else if (arg && arg.fn === "HOLE") {
+                    values.push(HOLE); // explicit omission syntax → store hole
                 } else {
                     values.push(evaluate(arg));
                 }

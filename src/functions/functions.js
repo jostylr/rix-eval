@@ -4,6 +4,7 @@
 
 import { Integer, Rational } from "@ratmath/core";
 import { keyOf } from "./keyof.js";
+import { HOLE, isHole } from "../hole.js";
 
 const isTruthy = (val) => val !== null && val !== undefined;
 
@@ -53,9 +54,21 @@ function callWithConcreteArgs(fn, callArgs, context, evaluate) {
         if (fn.params?.positional) {
             for (let i = 0; i < fn.params.positional.length; i++) {
                 const param = fn.params.positional[i];
-                scope.set(param.name, i < callArgs.length
-                    ? callArgs[i]
-                    : (param.default ? evaluate(param.default) : null));
+                const missing = i >= callArgs.length;
+                const argVal = missing ? null : callArgs[i];
+                let finalVal;
+                if (missing) {
+                    // Arg not passed: ?| default takes priority, then := default, then HOLE
+                    finalVal = param.holeDefault ? evaluate(param.holeDefault)
+                        : param.default ? evaluate(param.default)
+                        : HOLE;
+                } else if (isHole(argVal)) {
+                    // Explicit hole: use ?| default, or propagate HOLE
+                    finalVal = param.holeDefault ? evaluate(param.holeDefault) : HOLE;
+                } else {
+                    finalVal = argVal;
+                }
+                scope.set(param.name, finalVal);
             }
         }
         context.push(scope);
@@ -121,8 +134,20 @@ function invokeTraversalCallback(func, callArgs, context, evaluate) {
         const scope = new Map();
         if (func.params?.positional) {
             for (let i = 0; i < func.params.positional.length; i++) {
-                scope.set(func.params.positional[i].name,
-                    i < callArgs.length ? callArgs[i] : null);
+                const param = func.params.positional[i];
+                const missing = i >= callArgs.length;
+                const argVal = missing ? null : callArgs[i];
+                let value;
+                if (missing) {
+                    value = param.holeDefault ? evaluate(param.holeDefault)
+                        : param.default ? evaluate(param.default)
+                        : HOLE;
+                } else if (isHole(argVal)) {
+                    value = param.holeDefault ? evaluate(param.holeDefault) : HOLE;
+                } else {
+                    value = argVal;
+                }
+                scope.set(param.name, value);
             }
         }
         context.push(scope);
@@ -181,12 +206,18 @@ export const functionFunctions = {
                 if (params && params.positional) {
                     for (let i = 0; i < params.positional.length; i++) {
                         const param = params.positional[i];
-                        const value =
-                            i < callArgs.length
-                                ? callArgs[i]
-                                : param.default
-                                    ? evaluate(param.default)
-                                    : null;
+                        const missing = i >= callArgs.length;
+                        const argVal = missing ? null : callArgs[i];
+                        let value;
+                        if (missing) {
+                            value = param.holeDefault ? evaluate(param.holeDefault)
+                                : param.default ? evaluate(param.default)
+                                : HOLE;
+                        } else if (isHole(argVal)) {
+                            value = param.holeDefault ? evaluate(param.holeDefault) : HOLE;
+                        } else {
+                            value = argVal;
+                        }
                         scope.set(param.name, value);
                     }
                 }
@@ -252,12 +283,18 @@ export const functionFunctions = {
                 if (params && params.positional) {
                     for (let i = 0; i < params.positional.length; i++) {
                         const param = params.positional[i];
-                        const value =
-                            i < callArgs.length
-                                ? callArgs[i]
-                                : param.default
-                                    ? evaluate(param.default)
-                                    : null;
+                        const missing = i >= callArgs.length;
+                        const argVal = missing ? null : callArgs[i];
+                        let value;
+                        if (missing) {
+                            value = param.holeDefault ? evaluate(param.holeDefault)
+                                : param.default ? evaluate(param.default)
+                                : HOLE;
+                        } else if (isHole(argVal)) {
+                            value = param.holeDefault ? evaluate(param.holeDefault) : HOLE;
+                        } else {
+                            value = argVal;
+                        }
                         scope.set(param.name, value);
                     }
                 }

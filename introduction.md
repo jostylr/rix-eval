@@ -254,6 +254,102 @@ The sort comparator receives `(a, b)` only — no locator or source. Sort does n
 [3, 1, 2] |<> (a, b) -> a - b   ## [1, 2, 3]  ascending
 ```
 
+## Holes and Undefined
+
+RiX has an explicit **hole** value distinct from `null`. Holes arise from two sources:
+1. **Omitted syntax** — explicit gaps in array or function-call argument lists.
+2. **Unbound identifiers at the REPL** — typing a bare name that has not been assigned displays `undefined` instead of an error.
+
+### null vs hole
+
+| | `null` (`_`) | hole |
+|---|---|---|
+| Literal syntax | `_` | `[1,,3][2]`, `F(,7)` |
+| Assignable? | yes | no |
+| Falsy? | yes | — |
+| Standard ops | accepted | **error** |
+| `?|` coalescing | left side kept | right side used |
+
+### Array hole syntax
+
+Consecutive or trailing commas produce holes:
+
+```rix
+[1,,3]      ## sequence with hole at position 2
+[,1]        ## hole then 1
+[1,]        ## 1 then hole
+[,]         ## two holes
+[,,]        ## three holes
+[1,,3][2]   ## → hole
+```
+
+### Hole-coalescing operator `?|`
+
+`left ?| right` — returns `left` if it is not a hole, otherwise evaluates and returns `right`.
+
+```rix
+a := [1,,3]
+a[2] ?| 9      ## → 9  (position 2 is a hole)
+a[1] ?| 9      ## → 1  (position 1 is not a hole)
+a[2] ?| a[3]   ## → 3  (chains naturally: left-associative)
+```
+
+`?|` is lazy — the right side is not evaluated when the left side is not a hole.
+
+### Omitted call arguments
+
+Pass a hole explicitly by omitting a positional argument:
+
+```rix
+F(,7)      ## first arg is a hole
+F(1,,3)    ## second arg is a hole
+F(,)       ## both args are holes
+```
+
+### Parameter defaults with `?|`
+
+Parameters can declare a **hole default** using `?|`. The default is only used when the caller explicitly passes a hole (or omits the argument):
+
+```rix
+F := (x ?| 2, a) -> a ^ x
+F(, 7)     ## → 49   (hole for x → x defaults to 2, 7^2)
+F(3, 7)    ## → 343  (explicit 3, 7^3)
+F(0, 7)    ## → 1    (explicit 0, 7^0; holeDefault not triggered)
+```
+
+Compare with `:=` defaults, which only apply when the *argument is absent entirely* (argument list too short):
+
+```rix
+G := (x := 2, a) -> a ^ x
+G(7)       ## → 49   (x defaults to 2, a = 7)
+G(3, 7)    ## → 343
+```
+
+### Holes in pipes
+
+Holes in sequences are passed through to callbacks. Use `?|` inside the callback to handle them:
+
+```rix
+[1,,3] |>> (x -> (x ?| 0) + 1)   ## → [2, 1, 4]
+```
+
+Standard reduction/arithmetic pipes will **throw** if they encounter a hole:
+
+```rix
+[1,,3] |>: @+[2]   ## error: Cannot use undefined/hole value in computation
+```
+
+### REPL unbound identifiers
+
+In the interactive REPL, entering a bare unbound identifier displays `undefined` (rather than raising an error). Expressions that *use* an unbound identifier still throw:
+
+```
+rix> x
+undefined
+rix> x + 1
+Error: Undefined variable: x
+```
+
 ## Future: Tensor Locators
 
 The callback contract `(val, locator, src)` is designed to accommodate tensor index tuples as locators in a future revision, without requiring API changes to user callbacks.

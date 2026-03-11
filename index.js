@@ -7,3 +7,4 @@ export { SystemContext } from "./src/system-context.js";
 export { Context } from "./src/context.js";
 export { evaluate, createDefaultRegistry, createDefaultSystemContext, parseAndEvaluate } from "./src/evaluator.js";
 export { irToText, irListToText } from "./src/ir-to-text.js";
+export { HOLE, isHole } from "./src/hole.js";

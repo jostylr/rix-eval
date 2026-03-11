@@ -3,6 +3,7 @@
  */
 
 import { Integer, Rational, RationalInterval, BaseSystem } from "@ratmath/core";
+import { HOLE, isHole } from "../hole.js";
 
 const BASE_RESERVED_CHARS = new Set([".", "/", "#", "~", "_", "^", "+", "-"]);
 const BASE_MODE_ALIASES = new Map([
@@ -1027,6 +1028,24 @@ export const coreFunctions = {
         },
         pure: true,
         doc: "Null value",
+    },
+
+    HOLE: {
+        impl() { return HOLE; },
+        holeAware: true,
+        pure: true,
+        doc: "Internal hole/undefined sentinel — represents an explicitly omitted value",
+    },
+
+    HOLE_COALESCE: {
+        lazy: true,
+        holeAware: true,
+        impl(args, _ctx, evalFn) {
+            const left = evalFn(args[0]);
+            if (isHole(left)) return evalFn(args[1]);
+            return left;
+        },
+        doc: "Hole-coalescing: x ?| y returns x if x is not a hole, else y",
     },
 
     NOP: {

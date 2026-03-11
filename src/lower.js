@@ -45,6 +45,7 @@ const BINARY_OP_MAP = {
   "/^": "DIVUP",
   "/~": "DIVROUND",
   "/%": "DIVMOD",
+  "?|": "HOLE_COALESCE",
 };
 
 /**
@@ -109,6 +110,10 @@ const LOWERERS = {
 
   NULL() {
     return ir("NULL");
+  },
+
+  Hole() {
+    return ir("HOLE");
   },
 
   UserIdentifier(node) {
@@ -827,6 +832,7 @@ function lowerParams(params) {
     positional: (params.positional || []).map((p) => ({
       name: p.name,
       default: p.defaultValue ? lowerNode(p.defaultValue) : null,
+      holeDefault: p.holeDefault ? lowerNode(p.holeDefault) : null,
     })),
     keyword: (params.keyword || []).map((p) => ({
       name: p.name,

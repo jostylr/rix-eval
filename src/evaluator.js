@@ -10,6 +10,7 @@
 import { Registry } from "./registry.js";
 import { SystemContext } from "./system-context.js";
 import { Context } from "./context.js";
+import { isHole } from "./hole.js";
 import { coreFunctions } from "./functions/core.js";
 import { arithmeticFunctions } from "./functions/arithmetic.js";
 import { comparisonFunctions } from "./functions/comparison.js";
@@ -196,6 +197,15 @@ export function evaluate(irNode, context, registry, systemContext) {
         if (!arg.fn) return arg; // not an IR node
         return evalFn(arg);
     });
+
+    // Hole check: standard (non-hole-aware) operations cannot consume holes
+    if (!funcDef.holeAware) {
+        for (const arg of evaluatedArgs) {
+            if (isHole(arg)) {
+                throw new Error(`Cannot use undefined/hole value in computation (in ${fn})`);
+            }
+        }
+    }
 
     return funcDef.impl(evaluatedArgs, context, evalFn);
 }

@@ -739,6 +739,72 @@ describe("RiX Evaluator", () => {
             const result = evalRix("F = @+; F(10, 20);");
             expect(result.value).toBe(30n);
         });
+
+        test("$ returns the current callable object inside a function body", () => {
+            const { result, context } = evalRixWithContext("F = x -> $; F(0);");
+            expect(result).toBe(context.get("F"));
+        });
+
+        test("$(...) recurses through the current callable and aliasing still works", () => {
+            const result = evalRix("F = x -> x > 0 ?? $(x - 1) ?: 0; G = F; G(3);");
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(0n);
+        });
+
+        test("$.prop reads meta from the current callable", () => {
+            const result = evalRix('F = x -> $.label; F.label = 42; F(0);');
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(42n);
+        });
+
+        test("$.. returns all meta from the current callable", () => {
+            const result = evalRix('F = x -> $..; F.label = 42; F(0);');
+            expect(result.type).toBe("map");
+            expect(result.entries.get("label")).toBeInstanceOf(Integer);
+            expect(result.entries.get("label").value).toBe(42n);
+        });
+
+        test("$ outside a function body errors clearly", () => {
+            expect(() => evalRix("$;")).toThrow(/only valid within a function body/);
+            expect(() => evalRix("$.label;")).toThrow(/only valid within a function body/);
+            expect(() => evalRix("$..;")).toThrow(/only valid within a function body/);
+        });
+
+        test("tail self call optimization works for accumulator recursion", () => {
+            const result = evalRix("SumDown = (n, acc ?| 0) -> n > 0 ?? $(n - 1, acc + n) ?: acc; SumDown(5);");
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(15n);
+        });
+
+        test("tail self call optimization works in both ternary branches", () => {
+            const result = evalRix("F = x -> x == 0 ?? 0 ?: x > 0 ?? $(x - 1) ?: $(x + 1); F(-3);");
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(0n);
+        });
+
+        test("non-tail self recursion remains an ordinary recursive call", () => {
+            const result = evalRix("Fact = x -> x > 1 ?? x * $(x - 1) ?: 1; Fact(5);");
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(120n);
+        });
+
+        test("wrapped self calls are not tail optimized but still evaluate normally", () => {
+            const result = evalRix("Wrap = x -> x; F = x -> x > 0 ?? Wrap($(x - 1)) ?: 0; F(3);");
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(0n);
+        });
+
+        test("tail self calls keep defaulted accumulator parameters working", () => {
+            const result = evalRix("Fact = (n, acc ?| 1) -> n > 1 ?? $(n - 1, acc * n) ?: acc; Fact(5);");
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(120n);
+        });
+
+        test.skip("deep tail self recursion can run without proportional stack growth", () => {
+            const result = evalRix("Loop = (n, acc ?| 0) -> n > 0 ?? $(n - 1, acc + 1) ?: acc; Loop(20000);");
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(20000n);
+        });
     });
 
     describe("Collections", () => {

@@ -20,6 +20,7 @@ export class Context {
         this.env = new Map();
         // Call stack for debugging
         this.callStack = [];
+        this.currentCallables = [];
         // One-shot overrides for top-level function/lambda bodies that should
         // reuse the current local scope instead of creating a nested block scope.
         this.sharedBodyOverrides = [];
@@ -223,6 +224,21 @@ export class Context {
         return this.callStack.pop();
     }
 
+    pushCurrentCallable(callable) {
+        this.currentCallables.push(callable);
+    }
+
+    popCurrentCallable() {
+        return this.currentCallables.pop();
+    }
+
+    getCurrentCallable() {
+        if (this.currentCallables.length === 0) {
+            return undefined;
+        }
+        return this.currentCallables[this.currentCallables.length - 1];
+    }
+
     // --- Environment ---
 
     getEnv(key, defaultValue) {
@@ -243,6 +259,7 @@ export class Context {
         child.functions = this.functions;
         child.env = this.env;
         child.callStack = [...this.callStack];
+        child.currentCallables = [...this.currentCallables];
         child.sharedBodyOverrides = [...this.sharedBodyOverrides];
         return child;
     }
@@ -284,6 +301,7 @@ export class Context {
         this.localScopes = [];
         this.functions.clear();
         this.callStack = [];
+        this.currentCallables = [];
     }
 
     /**

@@ -1068,6 +1068,17 @@ export const coreFunctions = {
         doc: "Look up a variable in the current scope chain",
     },
 
+    SELF: {
+        impl(_args, context) {
+            const callable = context.getCurrentCallable();
+            if (callable === undefined) {
+                throw new Error("Self reference '$' is only valid within a function body");
+            }
+            return callable;
+        },
+        doc: "Resolve the current callable object inside a function body",
+    },
+
     OUTER_RETRIEVE: {
         impl(args, context) {
             const name = args[0];

@@ -77,6 +77,51 @@ export function lowerNode(node) {
   return result;
 }
 
+function lowerFunctionBody(node) {
+  if (!node || !node.type) {
+    return lowerNode(node);
+  }
+
+  if (node.type === "Grouping") {
+    if (node.expression) {
+      return lowerFunctionBody(node.expression);
+    }
+    return ir("NULL");
+  }
+
+  if (node.type === "TernaryOperation") {
+    return ir(
+      "TERNARY",
+      lowerNode(node.condition),
+      ir("DEFER", lowerFunctionBody(node.trueExpression)),
+      ir("DEFER", lowerFunctionBody(node.falseExpression)),
+    );
+  }
+
+  if (node.type === "Call" && node.target?.type === "SelfRef") {
+    const args = lowerCallArgs(node.arguments);
+    return ir("TAIL_SELF", ...args);
+  }
+
+  if (node.type === "BlockContainer" || node.type === "SystemContainer") {
+    const elements = node.elements || [];
+    const loweredElements = elements.map((element, index) =>
+      index === elements.length - 1 ? lowerFunctionBody(element) : lowerNode(element),
+    );
+    const fn = node.type === "BlockContainer" ? "BLOCK" : "SYSTEM";
+    const hasMeta = (node.imports && node.imports.length > 0) || node.name;
+    if (!hasMeta) {
+      return ir(fn, ...loweredElements);
+    }
+    const meta = {};
+    if (node.imports && node.imports.length > 0) meta.imports = lowerImports(node.imports);
+    if (node.name) meta.name = node.name;
+    return ir(fn, meta, ...loweredElements);
+  }
+
+  return lowerNode(node);
+}
+
 // Per-node-type lowering functions
 const LOWERERS = {
   // === Literals & Identifiers ===
@@ -114,6 +159,10 @@ const LOWERERS = {
 
   Hole() {
     return ir("HOLE");
+  },
+
+  SelfRef() {
+    return ir("SELF");
   },
 
   UserIdentifier(node) {
@@ -280,7 +329,7 @@ const LOWERERS = {
             conditionals: [],
             metadata: {},
           });
-          const body = lowerNode(node.right);
+          const body = lowerFunctionBody(node.right);
           return ir("FUNCDEF", funcName, params, body);
         }
       }
@@ -379,13 +428,13 @@ const LOWERERS = {
   FunctionDefinition(node) {
     const name = node.name.name || node.name.value;
     const params = lowerParams(node.parameters);
-    const body = lowerNode(node.body);
+    const body = lowerFunctionBody(node.body);
     return ir("FUNCDEF", name, params, body);
   },
 
   FunctionLambda(node) {
     const params = lowerParams(node.parameters);
-    const body = lowerNode(node.body);
+    const body = lowerFunctionBody(node.body);
     return ir("LAMBDA", params, body);
   },
 
@@ -393,7 +442,7 @@ const LOWERERS = {
     const name = node.name.name || node.name.value;
     const patterns = node.patterns.map((p) => ({
       params: lowerParams(p.parameters),
-      body: lowerNode(p.body),
+      body: lowerFunctionBody(p.body),
     }));
     return ir("PATTERNDEF", name, patterns);
   },
@@ -756,6 +805,10 @@ function lowerAssignment(node) {
   // Simple variable assignment: x = 5
   if (left.type === "UserIdentifier" || left.type === "SystemIdentifier") {
     return ir("ASSIGN", left.name, lowerNode(node.right));
+  }
+
+  if (left.type === "SelfRef") {
+    throw new Error("Cannot assign to '$'; it is read-only and only valid within a function body");
   }
 
   // System context meta assignment: .freeze = true, .immutable = false

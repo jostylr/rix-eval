@@ -350,6 +350,53 @@ describe("Lowering Pass", () => {
       expect(params.positional[1].default.fn).toBe("LITERAL");
       expect(params.positional[1].default.args[0]).toBe("5");
     });
+
+    test("self reference lowers to SELF inside function bodies", () => {
+      const ir = L("(x) -> $;");
+      expect(ir.fn).toBe("LAMBDA");
+      expect(ir.args[1]).toEqual({ fn: "SELF", args: [] });
+    });
+
+    test("tail self call lowers to TAIL_SELF in direct tail position", () => {
+      const ir = L("(x) -> $(x - 1);");
+      expect(ir.fn).toBe("LAMBDA");
+      expect(ir.args[1].fn).toBe("TAIL_SELF");
+      expect(ir.args[1].args[0].fn).toBe("SUB");
+    });
+
+    test("ternary branches preserve tail position for self calls", () => {
+      const ir = L("(x) -> x == 0 ?? $(1) ?: $(x - 1);");
+      expect(ir.fn).toBe("LAMBDA");
+      expect(ir.args[1].fn).toBe("TERNARY");
+      expect(ir.args[1].args[1].args[0].fn).toBe("TAIL_SELF");
+      expect(ir.args[1].args[2].args[0].fn).toBe("TAIL_SELF");
+    });
+
+    test("non-tail self call stays as an ordinary expression call", () => {
+      const ir = L("(x) -> x * $(x - 1);");
+      expect(ir.fn).toBe("LAMBDA");
+      expect(ir.args[1].fn).toBe("MUL");
+      expect(ir.args[1].args[1].fn).toBe("CALL_EXPR");
+      expect(ir.args[1].args[1].args[0]).toEqual({ fn: "SELF", args: [] });
+    });
+
+    test("self meta access lowers through ordinary meta ops", () => {
+      const ir = L("(x) -> ($.label, $..);");
+      expect(ir.fn).toBe("LAMBDA");
+      expect(ir.args[1].fn).toBe("TUPLE");
+      expect(ir.args[1].args[0]).toEqual({
+        fn: "META_GET",
+        args: [{ fn: "SELF", args: [] }, "label"],
+      });
+      expect(ir.args[1].args[1]).toEqual({
+        fn: "META_ALL",
+        args: [{ fn: "SELF", args: [] }],
+      });
+    });
+
+    test("assigning to bare $ is rejected during lowering", () => {
+      expect(() => L("$ = 1;")).toThrow(/Cannot assign to '\$'/);
+    });
   });
 
   describe("Collections", () => {

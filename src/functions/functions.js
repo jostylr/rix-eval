@@ -33,6 +33,78 @@ function resolvePartial(partial, callArgs) {
     return { fn, args: [...filled, ...callArgs.slice(maxIdx)] };
 }
 
+const TAIL_SELF_MARKER = Symbol("tailSelfCall");
+
+function createTailSelfCall(args) {
+    return { marker: TAIL_SELF_MARKER, args };
+}
+
+function isTailSelfCall(value) {
+    return value && value.marker === TAIL_SELF_MARKER;
+}
+
+function bindCallScope(params, callArgs, evaluate) {
+    const scope = new Map();
+    if (!params?.positional) {
+        return scope;
+    }
+
+    for (let i = 0; i < params.positional.length; i++) {
+        const param = params.positional[i];
+        const missing = i >= callArgs.length;
+        const argVal = missing ? null : callArgs[i];
+        let value;
+        if (missing) {
+            value = param.holeDefault ? evaluate(param.holeDefault)
+                : param.default ? evaluate(param.default)
+                : HOLE;
+        } else if (isHole(argVal)) {
+            value = param.holeDefault ? evaluate(param.holeDefault) : HOLE;
+        } else {
+            value = argVal;
+        }
+        scope.set(param.name, value);
+    }
+
+    return scope;
+}
+
+function invokeUserCallable(fn, callArgs, context, evaluate, options = {}) {
+    const callName = options.callName ?? fn.name ?? null;
+    const shareBody = options.shareBody !== false;
+    let scopeActive = false;
+
+    context.push(bindCallScope(fn.params, callArgs, evaluate));
+    scopeActive = true;
+    if (callName) context.pushCall(callName);
+
+    try {
+        while (true) {
+            let result;
+            context.pushCurrentCallable(fn);
+            try {
+                result = shareBody
+                    ? context.withSharedBody(fn.body, () => evaluate(fn.body))
+                    : evaluate(fn.body);
+            } finally {
+                context.popCurrentCallable();
+            }
+
+            if (!isTailSelfCall(result)) {
+                return result;
+            }
+
+            context.pop();
+            scopeActive = false;
+            context.push(bindCallScope(fn.params, result.args, evaluate));
+            scopeActive = true;
+        }
+    } finally {
+        if (callName) context.popCall();
+        if (scopeActive) context.pop();
+    }
+}
+
 /**
  * Call a resolved function value (function/lambda/sysref/partial/native) with
  * concrete (already-evaluated) args.
@@ -50,35 +122,7 @@ function callWithConcreteArgs(fn, callArgs, context, evaluate) {
     }
 
     if (fn.type === "function" || fn.type === "lambda") {
-        const scope = new Map();
-        if (fn.params?.positional) {
-            for (let i = 0; i < fn.params.positional.length; i++) {
-                const param = fn.params.positional[i];
-                const missing = i >= callArgs.length;
-                const argVal = missing ? null : callArgs[i];
-                let finalVal;
-                if (missing) {
-                    // Arg not passed: ?| default takes priority, then := default, then HOLE
-                    finalVal = param.holeDefault ? evaluate(param.holeDefault)
-                        : param.default ? evaluate(param.default)
-                        : HOLE;
-                } else if (isHole(argVal)) {
-                    // Explicit hole: use ?| default, or propagate HOLE
-                    finalVal = param.holeDefault ? evaluate(param.holeDefault) : HOLE;
-                } else {
-                    finalVal = argVal;
-                }
-                scope.set(param.name, finalVal);
-            }
-        }
-        context.push(scope);
-        if (fn.name) context.pushCall(fn.name);
-        try {
-            return context.withSharedBody(fn.body, () => evaluate(fn.body));
-        } finally {
-            if (fn.name) context.popCall();
-            context.pop();
-        }
+        return invokeUserCallable(fn, callArgs, context, evaluate, { callName: fn.name });
     }
 
     // System function reference — concrete values have no .fn so they pass
@@ -131,31 +175,10 @@ function invokeTraversalCallback(func, callArgs, context, evaluate) {
         return evaluate({ fn: func.name, args: callArgs });
     }
     if (func && (func.type === "function" || func.type === "lambda")) {
-        const scope = new Map();
-        if (func.params?.positional) {
-            for (let i = 0; i < func.params.positional.length; i++) {
-                const param = func.params.positional[i];
-                const missing = i >= callArgs.length;
-                const argVal = missing ? null : callArgs[i];
-                let value;
-                if (missing) {
-                    value = param.holeDefault ? evaluate(param.holeDefault)
-                        : param.default ? evaluate(param.default)
-                        : HOLE;
-                } else if (isHole(argVal)) {
-                    value = param.holeDefault ? evaluate(param.holeDefault) : HOLE;
-                } else {
-                    value = argVal;
-                }
-                scope.set(param.name, value);
-            }
-        }
-        context.push(scope);
-        try {
-            return evaluate(func.body);
-        } finally {
-            context.pop();
-        }
+        return invokeUserCallable(func, callArgs, context, evaluate, {
+            callName: func.name,
+            shareBody: false,
+        });
     }
     if (typeof func === "function") {
         return func(...callArgs);
@@ -195,43 +218,9 @@ export const functionFunctions = {
 
             // If it's a user-defined function (FUNCDEF or LAMBDA result)
             if (funcDef.type === "function" || funcDef.type === "lambda") {
-                const params = funcDef.params;
-                const body = funcDef.body;
-
                 // Evaluate arguments (user functions are NOT lazy by default for now)
                 const callArgs = argNodes.map((a) => evaluate(a));
-
-                // Create a new scope with parameter bindings
-                const scope = new Map();
-                if (params && params.positional) {
-                    for (let i = 0; i < params.positional.length; i++) {
-                        const param = params.positional[i];
-                        const missing = i >= callArgs.length;
-                        const argVal = missing ? null : callArgs[i];
-                        let value;
-                        if (missing) {
-                            value = param.holeDefault ? evaluate(param.holeDefault)
-                                : param.default ? evaluate(param.default)
-                                : HOLE;
-                        } else if (isHole(argVal)) {
-                            value = param.holeDefault ? evaluate(param.holeDefault) : HOLE;
-                        } else {
-                            value = argVal;
-                        }
-                        scope.set(param.name, value);
-                    }
-                }
-
-                // Push scope, evaluate body, pop scope
-                context.push(scope);
-                context.pushCall(name);
-                try {
-                    const result = context.withSharedBody(body, () => evaluate(body));
-                    return result;
-                } finally {
-                    context.popCall();
-                    context.pop();
-                }
+                return invokeUserCallable(funcDef, callArgs, context, evaluate, { callName: name });
             }
 
             // If it's a sysref (system function reference)
@@ -276,35 +265,9 @@ export const functionFunctions = {
             }
 
             if (funcVal && (funcVal.type === "function" || funcVal.type === "lambda")) {
-                const params = funcVal.params;
-                const body = funcVal.body;
-
-                const scope = new Map();
-                if (params && params.positional) {
-                    for (let i = 0; i < params.positional.length; i++) {
-                        const param = params.positional[i];
-                        const missing = i >= callArgs.length;
-                        const argVal = missing ? null : callArgs[i];
-                        let value;
-                        if (missing) {
-                            value = param.holeDefault ? evaluate(param.holeDefault)
-                                : param.default ? evaluate(param.default)
-                                : HOLE;
-                        } else if (isHole(argVal)) {
-                            value = param.holeDefault ? evaluate(param.holeDefault) : HOLE;
-                        } else {
-                            value = argVal;
-                        }
-                        scope.set(param.name, value);
-                    }
-                }
-
-                context.push(scope);
-                try {
-                    return context.withSharedBody(body, () => evaluate(body));
-                } finally {
-                    context.pop();
-                }
+                return invokeUserCallable(funcVal, callArgs, context, evaluate, {
+                    callName: funcVal.name,
+                });
             }
 
             if (funcVal && funcVal.type === "sysref") {
@@ -318,6 +281,25 @@ export const functionFunctions = {
             throw new Error("Expression is not callable");
         },
         doc: "Call an expression that evaluates to a function",
+    },
+
+    TAIL_SELF: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const currentCallable = context.getCurrentCallable();
+            if (currentCallable === undefined) {
+                throw new Error("Self reference '$' is only valid within a function body");
+            }
+
+            if (args.some(isPlaceholderNode)) {
+                const template = args.map((arg) => evaluate(arg));
+                return { type: "partial", fn: currentCallable, template };
+            }
+
+            const callArgs = args.map((arg) => evaluate(arg));
+            return createTailSelfCall(callArgs);
+        },
+        doc: "Tail-position self call that reuses the current function frame",
     },
 
     LAMBDA: {

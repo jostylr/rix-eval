@@ -396,7 +396,7 @@ describe("RiX Evaluator", () => {
                 times = 0;
                 [1, 2, 3] |>> (x) -> {;
                     @times += 1;
-                    @x * 2;
+                    x * 2;
                 };
             `;
             const ctx = new Context();

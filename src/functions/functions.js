@@ -177,7 +177,6 @@ function invokeTraversalCallback(func, callArgs, context, evaluate) {
     if (func && (func.type === "function" || func.type === "lambda")) {
         return invokeUserCallable(func, callArgs, context, evaluate, {
             callName: func.name,
-            shareBody: false,
         });
     }
     if (typeof func === "function") {

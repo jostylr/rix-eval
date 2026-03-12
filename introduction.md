@@ -308,21 +308,13 @@ F(,)       ## both args are holes
 
 ### Parameter defaults with `?|`
 
-Parameters can declare a **hole default** using `?|`. The default is only used when the caller explicitly passes a hole (or omits the argument):
+Parameters can declare a **hole default** using `?|`. The default is used when the caller explicitly passes a hole or when the argument is omitted entirely:
 
 ```rix
 F := (x ?| 2, a) -> a ^ x
 F(, 7)     ## → 49   (hole for x → x defaults to 2, 7^2)
 F(3, 7)    ## → 343  (explicit 3, 7^3)
 F(0, 7)    ## → 1    (explicit 0, 7^0; holeDefault not triggered)
-```
-
-Compare with `:=` defaults, which only apply when the *argument is absent entirely* (argument list too short):
-
-```rix
-G := (x := 2, a) -> a ^ x
-G(7)       ## → 49   (x defaults to 2, a = 7)
-G(3, 7)    ## → 343
 ```
 
 ### Holes in pipes

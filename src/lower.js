@@ -884,12 +884,10 @@ function lowerParams(params) {
   return {
     positional: (params.positional || []).map((p) => ({
       name: p.name,
-      default: p.defaultValue ? lowerNode(p.defaultValue) : null,
       holeDefault: p.holeDefault ? lowerNode(p.holeDefault) : null,
     })),
     keyword: (params.keyword || []).map((p) => ({
       name: p.name,
-      default: p.defaultValue ? lowerNode(p.defaultValue) : null,
     })),
     conditionals: (params.conditionals || []).map(lowerNode),
     metadata: params.metadata || {},

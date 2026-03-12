@@ -343,12 +343,12 @@ describe("Lowering Pass", () => {
       expect(ir.args[1].fn).toBe("POW");
     });
 
-    test("function with default params", () => {
-      const ir = L("f(x, n := 5) :-> x^n;");
+    test("function with hole-default params", () => {
+      const ir = L("f(x, n ?| 5) :-> x^n;");
       expect(ir.fn).toBe("FUNCDEF");
       const params = ir.args[1];
-      expect(params.positional[1].default.fn).toBe("LITERAL");
-      expect(params.positional[1].default.args[0]).toBe("5");
+      expect(params.positional[1].holeDefault.fn).toBe("LITERAL");
+      expect(params.positional[1].holeDefault.args[0]).toBe("5");
     });
 
     test("self reference lowers to SELF inside function bodies", () => {

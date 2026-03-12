@@ -55,9 +55,7 @@ function bindCallScope(params, callArgs, evaluate) {
         const argVal = missing ? null : callArgs[i];
         let value;
         if (missing) {
-            value = param.holeDefault ? evaluate(param.holeDefault)
-                : param.default ? evaluate(param.default)
-                : HOLE;
+            value = param.holeDefault ? evaluate(param.holeDefault) : HOLE;
         } else if (isHole(argVal)) {
             value = param.holeDefault ? evaluate(param.holeDefault) : HOLE;
         } else {

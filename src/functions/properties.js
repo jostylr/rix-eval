@@ -9,6 +9,7 @@
 
 import { Integer } from "@ratmath/core";
 import { keyOf, canonicalizeMetaKey } from "./keyof.js";
+import { isTensor, tensorAssignBySelectors, tensorGetBySelectors } from "../tensor.js";
 
 /**
  * Convert a key value to a numeric index.
@@ -82,6 +83,101 @@ function applyMutations(target, ops) {
         }
     }
     return target;
+}
+
+function assertMutableIndexTarget(obj) {
+    const ext = obj?._ext;
+    if (ext?.get("immutable")) throw new Error("Cannot set index: object is immutable");
+    if (ext?.get("frozen")) throw new Error("Cannot set index: object is frozen");
+    if (!ext?.get("mutable")) {
+        throw new Error("Cannot set index: collection is not mutable. Set meta property 'mutable' to true first.");
+    }
+}
+
+function indexGetResolved(obj, key) {
+    if (isTensor(obj)) {
+        return tensorGetBySelectors(obj, [{ kind: "index", value: key }]);
+    }
+
+    // Sequences / tuples (1-based, negative allowed)
+    if (obj && (obj.type === "sequence" || obj.type === "tuple")) {
+        const idx = toInteger(key);
+        const len = obj.values.length;
+        const i = idx < 0 ? len + idx : idx - 1;
+        if (i < 0 || i >= len) return null;
+        return obj.values[i];
+    }
+
+    // Strings (1-based character access)
+    if (obj && obj.type === "string") {
+        const idx = toInteger(key);
+        const s = obj.value;
+        const i = idx < 0 ? s.length + idx : idx - 1;
+        if (i < 0 || i >= s.length) return null;
+        return { type: "string", value: s[i] };
+    }
+
+    // Maps — string or value keys
+    if (obj && obj.type === "map" && obj.entries instanceof Map) {
+        const mapKey = keyOf(key);
+        return obj.entries.has(mapKey) ? obj.entries.get(mapKey) : null;
+    }
+
+    // Callable types — arity-cap syntax: fn[n]
+    if (obj && (obj.type === "function" || obj.type === "lambda" ||
+                obj.type === "sysref" || obj.type === "partial" || obj.type === "arityCap")) {
+        let n;
+        try { n = toInteger(key); } catch (_) {
+            throw new Error("Arity cap must be a non-negative integer");
+        }
+        if (!Number.isInteger(n) || n < 0) {
+            throw new Error(`Arity cap must be a non-negative integer, got ${n}`);
+        }
+        return { type: "arityCap", fn: obj, cap: n };
+    }
+
+    throw new Error(`Type "${obj?.type || typeof obj}" is not indexable`);
+}
+
+function indexSetResolved(obj, key, value) {
+    assertMutableIndexTarget(obj);
+
+    if (isTensor(obj)) {
+        return tensorAssignBySelectors(obj, [{ kind: "index", value: key }], value);
+    }
+
+    if (obj && (obj.type === "sequence" || obj.type === "tuple")) {
+        const idx = toInteger(key);
+        const len = obj.values.length;
+        const i = idx < 0 ? len + idx : idx - 1;
+        obj.values[i] = value;
+        return value;
+    }
+
+    if (obj && obj.type === "map" && obj.entries instanceof Map) {
+        const mapKey = keyOf(key);
+        obj.entries.set(mapKey, value);
+        return value;
+    }
+
+    throw new Error(`Cannot set index on "${obj?.type || typeof obj}"`);
+}
+
+function decodeBracketSpec(specNode, evaluate) {
+    if (specNode && specNode.fn === "FULL_SLICE") {
+        return { kind: "full" };
+    }
+    if (specNode && specNode.fn === "SLICE_SPEC") {
+        return {
+            kind: "slice",
+            start: evaluate(specNode.args[0]),
+            end: evaluate(specNode.args[1]),
+        };
+    }
+    return {
+        kind: "index",
+        value: evaluate(specNode),
+    };
 }
 
 export const propertyFunctions = {
@@ -185,48 +281,7 @@ export const propertyFunctions = {
 
     INDEX_GET: {
         impl(args) {
-            const obj = args[0];
-            const key = args[1];
-
-            // Sequences / tuples (1-based, negative allowed)
-            if (obj && (obj.type === "sequence" || obj.type === "tuple")) {
-                const idx = toInteger(key);
-                const len = obj.values.length;
-                const i = idx < 0 ? len + idx : idx - 1;  // 1-based, -1 = last
-                if (i < 0 || i >= len) return null;  // out of range = null
-                return obj.values[i];
-            }
-
-            // Strings (1-based character access)
-            if (obj && obj.type === "string") {
-                const idx = toInteger(key);
-                const s = obj.value;
-                const i = idx < 0 ? s.length + idx : idx - 1;
-                if (i < 0 || i >= s.length) return null;
-                return { type: "string", value: s[i] };
-            }
-
-            // Maps — string or value keys
-            if (obj && obj.type === "map" && obj.entries instanceof Map) {
-                const mapKey = keyOf(key);
-                return obj.entries.has(mapKey) ? obj.entries.get(mapKey) : null;
-            }
-
-            // Callable types — arity-cap syntax: fn[n]
-            if (obj && (obj.type === "function" || obj.type === "lambda" ||
-                        obj.type === "sysref" || obj.type === "partial" || obj.type === "arityCap")) {
-                let n;
-                try { n = toInteger(key); } catch (_) {
-                    throw new Error("Arity cap must be a non-negative integer");
-                }
-                if (!Number.isInteger(n) || n < 0) {
-                    throw new Error(`Arity cap must be a non-negative integer, got ${n}`);
-                }
-                return { type: "arityCap", fn: obj, cap: n };
-            }
-
-            // Not indexable
-            throw new Error(`Type "${obj?.type || typeof obj}" is not indexable`);
+            return indexGetResolved(args[0], args[1]);
         },
         doc: "Index into collection (1-based for sequences; string or value keys for maps) — obj[i]",
     },
@@ -239,29 +294,53 @@ export const propertyFunctions = {
             const key = evaluate(args[1]);
             const value = evaluate(args[2]);
 
-            // Check mutable flag
-            const ext = obj?._ext;
-            if (ext?.get("immutable")) throw new Error("Cannot set index: object is immutable");
-            if (ext?.get("frozen")) throw new Error("Cannot set index: object is frozen");
-            if (!ext?.get("mutable")) throw new Error("Cannot set index: collection is not mutable. Set meta property 'mutable' to true first.");
-
-            if (obj && (obj.type === "sequence" || obj.type === "tuple")) {
-                const idx = toInteger(key);
-                const len = obj.values.length;
-                const i = idx < 0 ? len + idx : idx - 1;
-                obj.values[i] = value;
-                return value;
-            }
-
-            if (obj && obj.type === "map" && obj.entries instanceof Map) {
-                const mapKey = keyOf(key);
-                obj.entries.set(mapKey, value);
-                return value;
-            }
-
-            throw new Error(`Cannot set index on "${obj?.type || typeof obj}"`);
+            return indexSetResolved(obj, key, value);
         },
         doc: "Set index in collection (requires mutable=true meta flag) — obj[i] = val",
+    },
+
+    BRACKET_GET: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const obj = evaluate(args[0]);
+            const specCount = args[1];
+            const specNodes = args.slice(2, 2 + specCount);
+            const specs = specNodes.map((specNode) => decodeBracketSpec(specNode, evaluate));
+
+            if (isTensor(obj)) {
+                return tensorGetBySelectors(obj, specs);
+            }
+
+            if (specs.length === 1 && specs[0].kind === "index") {
+                return indexGetResolved(obj, specs[0].value);
+            }
+
+            throw new Error("Bracket slicing is only supported for tensors");
+        },
+        doc: "Tensor-aware bracket indexing and slicing",
+    },
+
+    BRACKET_SET: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const obj = evaluate(args[0]);
+            const specCount = args[1];
+            const specNodes = args.slice(2, 2 + specCount);
+            const value = evaluate(args[2 + specCount]);
+            const specs = specNodes.map((specNode) => decodeBracketSpec(specNode, evaluate));
+
+            if (isTensor(obj)) {
+                assertMutableIndexTarget(obj);
+                return tensorAssignBySelectors(obj, specs, value);
+            }
+
+            if (specs.length === 1 && specs[0].kind === "index") {
+                return indexSetResolved(obj, specs[0].value, value);
+            }
+
+            throw new Error("Bracket slice assignment is only supported for tensors");
+        },
+        doc: "Tensor-aware bracket assignment",
     },
 
     KEYOF: {

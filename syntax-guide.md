@@ -189,7 +189,7 @@ N-ary brace notes:
 
 Note that in the text version below there is a leading escape slash in front of the pipes for markdown table compatibility. In actual use, do not use the escape slash.
 
-Collection-traversing pipes support arrays, tuples (become arrays), strings, and maps (for the traversal/fold operators only — see below). All pipe operators return **new** collections; they never mutate the original.
+Collection-traversing pipes support arrays, tuples (become arrays), strings, maps (for the traversal/fold operators only — see below), and tensors. All pipe operators return **new** collections; they never mutate the original.
 
 | Syntax | System Function | Description |
 |--------|----------------|-------------|
@@ -231,7 +231,7 @@ For sort (`|<>`), the comparator receives only:
 The **locator** is the native indexing/key form for the source collection kind:
 - **sequences and strings**: 1-based integer position
 - **maps**: the map key (as a canonical string, consistent with `KEYOF` and `INDEX_GET`)
-- **tensors** (future): index tuple
+- **tensors**: 1-based index tuple
 
 Callbacks that declare fewer parameters simply ignore the extra arguments — existing one-arg and two-arg callbacks continue to work without modification.
 
@@ -247,6 +247,16 @@ For map traversal, callbacks receive `(value, key, sourceMap)`. The key is the c
 - **`map |>||`** — returns first passing value; `null` if none pass or empty.
 - **`map |>:`** — implicit-init: first traversed value as accumulator; order is unspecified.
 - **`map |:> init >: fn`** — explicit init; order is unspecified.
+
+#### Tensor-specific behavior
+
+- **Tensor literal**: `{:d1xd2x...: elems }` creates a dense tensor in row-major order. `{:d1xd2x...:}` creates an empty mutable tensor filled with holes.
+- **Tensor indexing**: `A[i, j]`, `A[::, 2]`, `A[-1:1, ::]`. Indices are 1-based; negative indices count from the end; `0` is invalid.
+- **Tensor slices**: bracket slices are strict, closed, and directed. `::` is sugar for the full forward slice.
+- **Transpose**: `A^^` swaps the two axes of a rank-2 tensor as a view.
+- **`tensor |>>`** — callback receives `(value, indexTuple, tensor)` and returns a new tensor with the same shape.
+- **`tensor |>?`** — callback receives `(value, indexTuple, tensor)` and returns a sequence of `{: value, indexTuple }` pairs for matches.
+- **`tensor |>:` / `tensor |:> init >: fn`** — reducer receives `(acc, value, indexTuple, tensor)`.
 
 Maps do **not** support `|>/|` (split), `|>#|` (chunk), or `|<>` (sort) — these require ordered sequences.
 
@@ -578,6 +588,7 @@ Map literals reject duplicate keys after canonicalization:
 | `SET(elems...)` | Create set | `{\| a, b, c \|}` |
 | `TUPLE(elems...)` | Create tuple | `{: a, b, c }` |
 | `MAP(pairs...)` | Create map/object | `{= k=v, ... }` |
+| `TENSOR_LITERAL(shape, elems...)` | Create tensor with explicit shape | `{:2x3: 1, 2, 3; 4, 5, 6 }` |
 | `INTERVAL(args...)` | Create interval or check n-ary betweenness (unpacks nested intervals/sets) | `a:b` or `a:b:c...` |
 | `UNION(a, b)` | Binary set union / interval hull | `A \/ B` |
 | `INTERSECT(a, b)` | Binary set intersection / interval overlap | `A /\ B` |
@@ -591,6 +602,7 @@ Map literals reject duplicate keys after canonicalization:
 | `GETEL(coll, i)` | Get element at 1-based index | — |
 | `IRANGE(start, end)` | Integer range `[start, end]` | — |
 | `.RAND_NAME(len?, alphabet?)` | Random string generator | `.RAND_NAME()`, `.RAND_NAME(8, "abc")` |
+| `.TGEN(shape, fn)` | Generate tensor by index tuple | `.TGEN({: 2, 3 }, idx -> idx[1] * 10 + idx[2])` |
 
 ### Functional / Pipes
 
@@ -602,9 +614,9 @@ Map literals reject duplicate keys after canonicalization:
 | `PSLICE_CLAMP(coll, i:j)` | Clamped slice collection | `coll \|>// i:j` |
 | `PSPLIT(coll, sep)` | Split collection by delimiter | `coll \|>/\| sep` |
 | `PCHUNK(coll, n)` | Chunk collection by size or predicate | `coll \|>#\| nOrFn` |
-| `PMAP(coll, fn)` | Map function over collection (arrays/strings/maps); for maps preserves keys | `coll \|>> fn`, `MAP(coll, fn)` |
-| `PFILTER(coll, pred)` | Filter by predicate (arrays/strings/maps) | `coll \|>? pred`, `FILTER(coll, pred)` |
-| `PREDUCE(coll, fn, init)` | Reduce/fold (arrays/strings/maps) | `coll \|>: fn`, `coll \|:> init >: fn`, `REDUCE(coll, fn, init)` |
+| `PMAP(coll, fn)` | Map function over collection (arrays/strings/maps/tensors); maps preserve keys; tensors preserve shape | `coll \|>> fn`, `MAP(coll, fn)` |
+| `PFILTER(coll, pred)` | Filter by predicate (arrays/strings/maps/tensors) | `coll \|>? pred`, `FILTER(coll, pred)` |
+| `PREDUCE(coll, fn, init)` | Reduce/fold (arrays/strings/maps/tensors) | `coll \|>: fn`, `coll \|:> init >: fn`, `REDUCE(coll, fn, init)` |
 | `PREVERSE(coll)` | Reverse collection (new copy) | `coll \|><` |
 | `PSORT(coll, fn)` | Sort with comparator (new copy) | `coll \|<> fn` |
 
@@ -634,12 +646,14 @@ Function-call lookup note:
 | `META_MERGE(obj, map)` | Bulk merge map into meta (null values = delete) | `obj .= map` |
 | `INDEX_GET(obj, key)` | Index into collection (1-based for sequences/strings; normalized keys for maps) | `obj[expr]`, `obj[:name]`, `obj[:1]` |
 | `INDEX_SET(obj, key, val)` | Set index (requires `mutable=1` meta flag) | `obj[i] = val` |
+| `BRACKET_GET(obj, specs...)` | Tensor-aware bracket indexing and slicing | `obj[i, ::]` |
+| `BRACKET_SET(obj, specs..., val)` | Tensor-aware bracket assignment | `obj[::, 1] = val` |
 | `.KEYOF(x)` | Resolve canonical map key string | `.KEYOF(x)` |
 | `.KEYS(obj)` | Get keys of map as set | `obj.\|`, `.KEYS(obj)` |
 | `.VALUES(obj)` | Get values of map as set | `obj\|.`, `.VALUES(obj)` |
 
 **Mutability & Locking:**
-- **`mutable`**: By default, **arrays** and **maps** are created with `mutable=1`. This allows modification after creation using `INDEX_SET` (e.g., `arr[1] = 99`). To lock an object against further modification, set `obj.mutable = _`.
+- **`mutable`**: By default, **arrays**, **maps**, and **tensors** are created with `mutable=1`. This allows modification after creation using `INDEX_SET` / tensor bracket assignment. To lock an object against further modification, set `obj.mutable = _`.
 - **`frozen`**: When `frozen=1`, no meta properties can be changed except for `frozen` itself. This provides a "temporary lock" on meta settings.
 - **`immutable`**: When `immutable=1`, the object is permanently locked. No meta properties (including `immutable` or `frozen`) can be changed.
 - **`.key` identity**: `.key` must be string/integer and is effectively write-once (idempotent same-value writes allowed; changing value is an error). Used by `KEYOF` for map keys.
@@ -679,7 +693,9 @@ Scope note:
 | `GENERATOR(args...)` | Sequence generator (future) |
 | `STEP(start, end, step)` | Step/range generator (future) |
 | `MATRIX(rows...)` | Matrix literal |
-| `TENSOR(data...)` | Tensor literal |
+| `TENSOR(data...)` | Legacy tensor constructor |
+| `TENSOR_LITERAL(shape, elems...)` | Explicit-shape tensor literal |
+| `TENSOR_TRANSPOSE(t)` | Rank-2 tensor transpose view |
 | `UNIT(val, unit)` | Scientific unit annotation |
 | `MATHUNIT(val, unit)` | Mathematical unit annotation |
 

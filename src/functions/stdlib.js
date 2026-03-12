@@ -4,6 +4,9 @@
  */
 
 import { Integer } from "@ratmath/core";
+import { coerceShapeValue, createTensor, forEachTensorCell, tensorIndexTuple, tensorSize, isTensor } from "../tensor.js";
+import { callWithConcreteArgs } from "./functions.js";
+import { formatValue } from "../format.js";
 
 export const stdlibFunctions = {
     // --- Collection Functions ---
@@ -15,6 +18,9 @@ export const stdlibFunctions = {
             }
             if (coll && coll.type === "map" && coll.entries instanceof Map) {
                 return new Integer(coll.entries.size);
+            }
+            if (isTensor(coll)) {
+                return new Integer(BigInt(tensorSize(coll)));
             }
             if (coll && typeof coll.value === "string") {
                 return new Integer(coll.value.length);
@@ -31,6 +37,17 @@ export const stdlibFunctions = {
             if (coll && (coll.type === "sequence" || coll.type === "tuple" || coll.type === "set")) {
                 return coll.values[0];
             }
+            if (isTensor(coll)) {
+                let first = null;
+                let found = false;
+                forEachTensorCell(coll, (value) => {
+                    if (!found) {
+                        first = value;
+                        found = true;
+                    }
+                });
+                return found ? first : null;
+            }
             return null;
         },
         pure: true,
@@ -42,6 +59,15 @@ export const stdlibFunctions = {
             const coll = args[0];
             if (coll && (coll.type === "sequence" || coll.type === "tuple" || coll.type === "set")) {
                 return coll.values[coll.values.length - 1];
+            }
+            if (isTensor(coll)) {
+                let last = null;
+                let found = false;
+                forEachTensorCell(coll, (value) => {
+                    last = value;
+                    found = true;
+                });
+                return found ? last : null;
             }
             return null;
         },
@@ -59,6 +85,18 @@ export const stdlibFunctions = {
 
             if (coll && (coll.type === "sequence" || coll.type === "tuple" || coll.type === "set")) {
                 return coll.values[index - 1]; // 1-based index
+            }
+            if (isTensor(coll)) {
+                const target = idx instanceof Integer ? Number(idx.value) : Number(idx);
+                let found = null;
+                let seen = 0;
+                forEachTensorCell(coll, (value) => {
+                    seen += 1;
+                    if (seen === target) {
+                        found = value;
+                    }
+                });
+                return found;
             }
             return null;
         },
@@ -106,6 +144,23 @@ export const stdlibFunctions = {
             return evaluate({ fn: "PREDUCE", args: [args[0], args[1], args[2]] });
         },
         doc: "Reduce a collection",
+    },
+
+    TGEN: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const shape = coerceShapeValue(evaluate(args[0]));
+            const fn = evaluate(args[1]);
+            const tensor = createTensor(shape);
+            const filled = [];
+
+            forEachTensorCell(tensor, (_value, tuple) => {
+                filled.push(callWithConcreteArgs(fn, [tensorIndexTuple(tuple)], context, evaluate));
+            });
+
+            return createTensor(shape, filled);
+        },
+        doc: "Generate a tensor from a shape and index callback",
     },
 
     // --- Control Flow ---
@@ -200,26 +255,8 @@ export const stdlibFunctions = {
     // --- I/O ---
     PRINT: {
         impl(args) {
-            function stringify(val) {
-                if (val === null || val === undefined) return "null";
-                if (typeof val === "object" && val !== null) {
-                    if (val.type === "string") return val.value;
-                    if (val.type === "sequence" || val.type === "set" || val.type === "tuple") {
-                        const open = val.type === "set" ? "{| " : val.type === "tuple" ? "( " : "[";
-                        const close = val.type === "set" ? " |}" : val.type === "tuple" ? " )" : "]";
-                        return open + (val.values || []).map(stringify).join(", ") + close;
-                    }
-                    if (val.type === "map") {
-                        const entries = [];
-                        (val.entries || new Map()).forEach((v, k) => entries.push(`${k}=${stringify(v)}`));
-                        return `{= ${entries.join(", ")} }`;
-                    }
-                    if (val.type === "interval") return `${val.start || val.lo}:${val.end || val.hi}`;
-                }
-                return val.toString();
-            }
             for (const arg of args) {
-                console.log(stringify(arg));
+                console.log(formatValue(arg));
             }
             return null;
         },

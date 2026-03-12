@@ -5,6 +5,7 @@
 import { Integer, Rational } from "@ratmath/core";
 import { keyOf } from "./keyof.js";
 import { HOLE, isHole } from "../hole.js";
+import { createTensor, forEachTensorCell, isTensor, tensorIndexTuple } from "../tensor.js";
 
 const isTruthy = (val) => val !== null && val !== undefined;
 
@@ -107,7 +108,7 @@ function invokeUserCallable(fn, callArgs, context, evaluate, options = {}) {
  * Call a resolved function value (function/lambda/sysref/partial/native) with
  * concrete (already-evaluated) args.
  */
-function callWithConcreteArgs(fn, callArgs, context, evaluate) {
+export function callWithConcreteArgs(fn, callArgs, context, evaluate) {
     if (!fn) throw new Error("Cannot call null/undefined");
 
     if (fn.type === "arityCap") {
@@ -907,6 +908,21 @@ export const functionFunctions = {
 
             const func = evaluate(funcNode);
 
+            if (isTensor(collection)) {
+                const results = [];
+                forEachTensorCell(collection, (item, tuple) => {
+                    results.push(
+                        invokeTraversalCallback(
+                            func,
+                            [item, tensorIndexTuple(tuple), collection],
+                            context,
+                            evaluate,
+                        ),
+                    );
+                });
+                return createTensor(collection.shape, results);
+            }
+
             // Map support: transform values, preserve original keys.
             // Callback receives (val, key, src) where key is the canonical map key.
             if (collection.type === "map") {
@@ -973,6 +989,28 @@ export const functionFunctions = {
 
             const func = evaluate(funcNode);
 
+            if (isTensor(collection)) {
+                const results = [];
+                forEachTensorCell(collection, (item, tuple) => {
+                    if (
+                        isTruthy(
+                            invokeTraversalCallback(
+                                func,
+                                [item, tensorIndexTuple(tuple), collection],
+                                context,
+                                evaluate,
+                            ),
+                        )
+                    ) {
+                        results.push({
+                            type: "tuple",
+                            values: [item, tensorIndexTuple(tuple)],
+                        });
+                    }
+                });
+                return { type: "sequence", values: results };
+            }
+
             // Map support: keep entries whose predicate passes.
             // Callback receives (val, key, src).
             if (collection.type === "map") {
@@ -1027,6 +1065,27 @@ export const functionFunctions = {
             if (collection === null || collection === undefined) return null;
 
             const func = evaluate(funcNode);
+
+            if (isTensor(collection)) {
+                const visited = [];
+                forEachTensorCell(collection, (item, tuple) => {
+                    visited.push([item, tensorIndexTuple(tuple)]);
+                });
+
+                if (visited.length === 0) {
+                    return initProvided ? explicitInit : null;
+                }
+
+                let acc = initProvided ? explicitInit : visited[0][0];
+                const startIdx = initProvided ? 0 : 1;
+
+                for (let i = startIdx; i < visited.length; i++) {
+                    const [item, tuple] = visited[i];
+                    acc = invokeTraversalCallback(func, [acc, item, tuple, collection], context, evaluate);
+                }
+
+                return acc;
+            }
 
             // Map support: reduce over map entries.
             // Callback receives (acc, val, key, src).
@@ -1196,6 +1255,35 @@ export const functionFunctions = {
 
             const func = evaluate(funcNode);
 
+            if (isTensor(collection)) {
+                let sawAny = false;
+                let lastItem = null;
+                let failed = false;
+                forEachTensorCell(collection, (item, tuple) => {
+                    if (!sawAny) {
+                        sawAny = true;
+                    }
+                    if (
+                        failed ||
+                        !isTruthy(
+                            invokeTraversalCallback(
+                                func,
+                                [item, tensorIndexTuple(tuple), collection],
+                                context,
+                                evaluate,
+                            ),
+                        )
+                    ) {
+                        failed = true;
+                        return;
+                    }
+                    lastItem = item;
+                });
+                if (!sawAny) return null;
+                if (failed) return null;
+                return lastItem;
+            }
+
             // Map support: test all entries with (val, key, src).
             // Returns last value if all pass; null on first failure or empty map.
             if (collection.type === "map") {
@@ -1253,6 +1341,28 @@ export const functionFunctions = {
             if (collection === null || collection === undefined) return null;
 
             const func = evaluate(funcNode);
+
+            if (isTensor(collection)) {
+                let found = null;
+                let foundAny = false;
+                forEachTensorCell(collection, (item, tuple) => {
+                    if (
+                        !foundAny &&
+                        isTruthy(
+                            invokeTraversalCallback(
+                                func,
+                                [item, tensorIndexTuple(tuple), collection],
+                                context,
+                                evaluate,
+                            ),
+                        )
+                    ) {
+                        found = item;
+                        foundAny = true;
+                    }
+                });
+                return foundAny ? found : null;
+            }
 
             // Map support: test entries with (val, key, src).
             // Returns first passing value; null if none pass or empty.

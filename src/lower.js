@@ -479,6 +479,10 @@ const LOWERERS = {
     return ir("TENSOR", ...node.elements.map(lowerNode));
   },
 
+  TensorLiteral(node) {
+    return ir("TENSOR_LITERAL", node.shape, ...node.elements.map(lowerNode));
+  },
+
   // === Brace Sigil Containers ===
 
   MapContainer(node) {
@@ -566,6 +570,15 @@ const LOWERERS = {
       return ir("INDEX_GET", obj, node.property.name);
     }
     return ir("INDEX_GET", obj, lowerNode(node.property));
+  },
+
+  BracketIndex(node) {
+    return ir(
+      "BRACKET_GET",
+      lowerNode(node.object),
+      node.specs.length,
+      ...node.specs.map(lowerBracketSpec),
+    );
   },
 
   ExternalAccess(node) {
@@ -670,6 +683,10 @@ const LOWERERS = {
 
   Ask(node) {
     return ir("ASK", lowerNode(node.target), lowerNode(node.arg));
+  },
+
+  Transpose(node) {
+    return ir("TENSOR_TRANSPOSE", lowerNode(node.expression));
   },
 
   // === Calculus ===
@@ -845,6 +862,16 @@ function lowerAssignment(node) {
     );
   }
 
+  if (left.type === "BracketIndex") {
+    return ir(
+      "BRACKET_SET",
+      lowerNode(left.object),
+      left.specs.length,
+      ...left.specs.map(lowerBracketSpec),
+      lowerNode(node.right),
+    );
+  }
+
   // Fallback: generic assignment expression
   return ir("ASSIGN_EXPR", lowerNode(left), lowerNode(node.right));
 }
@@ -892,4 +919,14 @@ function lowerParams(params) {
     conditionals: (params.conditionals || []).map(lowerNode),
     metadata: params.metadata || {},
   };
+}
+
+function lowerBracketSpec(spec) {
+  if (spec.type === "FullSlice") {
+    return ir("FULL_SLICE");
+  }
+  if (spec.type === "SliceSpec") {
+    return ir("SLICE_SPEC", lowerNode(spec.start), lowerNode(spec.end));
+  }
+  return lowerNode(spec);
 }

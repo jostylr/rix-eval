@@ -5,6 +5,7 @@
  */
 
 import { Integer, Rational } from "@ratmath/core";
+import { formatValue } from "../format.js";
 
 /**
  * Ensure a value is a ratmath numeric type.
@@ -31,31 +32,7 @@ function ensureNumeric(val) {
 }
 
 function stringify(val) {
-    if (val === null || val === undefined) return "null";
-    if (typeof val === "object" && val !== null) {
-        if (val.type === "string") return val.value;
-        if (val.type === "sequence") {
-            const open = val.kind === "set" ? "{| " : val.kind === "tuple" ? "( " : "[";
-            const close = val.kind === "set" ? " |}" : val.kind === "tuple" ? " )" : "]";
-            const items = val.values || val.elements || [];
-            return open + items.map(stringify).join(", ") + close;
-        }
-        if (val.type === "set" || val.type === "tuple") {
-            const open = val.type === "set" ? "{| " : "( ";
-            const close = val.type === "set" ? " |}" : " )";
-            return open + val.values.map(stringify).join(", ") + close;
-        }
-        if (val.type === "map") {
-            const entries = [];
-            const mapObj = val.entries || val.elements || new Map();
-            mapObj.forEach((v, k) => {
-                entries.push(`${k}=${stringify(v)}`);
-            });
-            return `{= ${entries.join(", ")} }`;
-        }
-        if (val.type === "interval") return `${val.start || val.lo}:${val.end || val.hi}`;
-    }
-    return val.toString();
+    return formatValue(val);
 }
 
 export const arithmeticFunctions = {

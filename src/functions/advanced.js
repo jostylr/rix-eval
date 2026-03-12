@@ -6,6 +6,7 @@
  */
 
 import { Integer, Rational } from "@ratmath/core";
+import { createTensor, createTensorView, isTensor, tensorRank } from "../tensor.js";
 
 function toNumber(val) {
     if (val instanceof Integer) return Number(val.value);
@@ -154,10 +155,35 @@ export const advancedFunctions = {
 
     TENSOR: {
         impl(args) {
-            return { type: "tensor", data: args };
+            return createTensor([args.length], args);
         },
         pure: true,
         doc: "Tensor literal",
+    },
+
+    TENSOR_LITERAL: {
+        impl(args) {
+            const [shape, ...values] = args;
+            return createTensor(shape, values.length === 0 ? null : values);
+        },
+        pure: true,
+        doc: "Tensor literal with explicit shape",
+    },
+
+    TENSOR_TRANSPOSE: {
+        impl(args) {
+            const tensor = args[0];
+            if (!isTensor(tensor) || tensorRank(tensor) !== 2) {
+                throw new Error("^^ expects rank-2 tensor (matrix)");
+            }
+            return createTensorView(tensor, {
+                shape: [tensor.shape[1], tensor.shape[0]],
+                strides: [tensor.strides[1], tensor.strides[0]],
+                offset: tensor.offset,
+            });
+        },
+        pure: true,
+        doc: "Transpose a rank-2 tensor view",
     },
 
     UNIT: {

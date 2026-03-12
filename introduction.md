@@ -68,7 +68,7 @@ comparator(a, b)
 **Locator** is the native indexing/key form for the source collection kind:
 - **Sequences and strings**: 1-based integer position (position 1 is the first element)
 - **Maps**: the canonical map key as a RiX string
-- **Tensors** (planned): an index tuple
+- **Tensors**: a 1-based index tuple
 
 Callbacks that declare fewer parameters simply ignore the extra arguments.
 
@@ -142,6 +142,30 @@ m |>> (v, k) -> k ++ "=" ++ v   ## {= a="a=2", b="b=3" }
 ```
 
 Maps do **not** support `|>/|` (split), `|>#|` (chunk), or `|<>` (sort).
+
+### Examples — tensors
+
+Tensor literals use an explicit shape header and row-major order:
+
+```rix
+m := {:2x3: 1, 2, 3; 4, 5, 6 }
+m[2, 3]            ## 6
+m[1, ::]           ## tensor view of the first row
+m^^                ## transpose view, shape {: 3, 2 }
+```
+
+Tensor traversal pipes use the index tuple as the locator:
+
+```rix
+{:2x3:} |>> (v, idx) -> idx[1] * 10 + idx[2]
+## {:2x3: 11, 12, 13; 21, 22, 23 }
+```
+
+This is the preferred fill idiom. Assignment loops are usually unnecessary because tuple pipes already unpack index tuples:
+
+```rix
+{:2x3x7:} |>> (v, idx) -> (idx |> SomeFormula)
+```
 
 ### Reduce syntax — two forms
 
@@ -342,6 +366,9 @@ rix> x + 1
 Error: Undefined variable: x
 ```
 
-## Future: Tensor Locators
+## Tensor Notes
 
-The callback contract `(val, locator, src)` is designed to accommodate tensor index tuples as locators in a future revision, without requiring API changes to user callbacks.
+- Tensor indices are 1-based; negative indices count from the end; index `0` is invalid.
+- Bracket slices are strict, closed, and directed. `::` is sugar for the full forward slice.
+- Tensor `|>>` returns a new dense tensor with the same shape.
+- Tensor `|>?` returns a sequence of `{: value, indexTuple }` pairs.

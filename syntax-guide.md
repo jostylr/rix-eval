@@ -42,7 +42,8 @@
 | `{ a; b; c }` | `BLOCK` | Sequential execution, returns last value. Optional top-of-block import header: `{ <...> ... }` |
 | `{; a; b; c }` | `BLOCK` | Sequential execution (explicit block). Optional top-of-block import header: `{; <...> ... }` |
 | `{? c1 ? v1; c2 ? v2; default }` | `CASE` | Conditional branching (if/elseif/else) |
-| `{@ init; cond; body; update }` | `LOOP` | Loop with init, condition, body, update. Optional top-of-block import header: `{@ <...> ... }` |
+| `{@ init; cond; body; update }` | `LOOP` | Loop with init, condition, body, update. Loop headers also support `{@name@ ... }`, `{@:100@ ... }`, `{@name:100@ ... }`, `{@::@ ... }`, and `{@name::@ ... }`. Optional top-of-block import header: `{@ <...> ... }` |
+| `{! expr }` | `BREAK` | Break the nearest matching block/case/loop and use `expr` as that target's final value |
 | `{$ eq1; eq2 }` | `SYSTEM` | Mathematical system (equations/assertions). Optional top-of-block import header: `{$ <...> ... }` |
 | `{= k1=v1, (expr)=v2 }` | `MAP` | Map/object literal (`k1` identifier sugar or parenthesized key expression) |
 | `{\| a, b, c }` | `SET` | Set literal |
@@ -102,6 +103,65 @@ Operator alias mapping:
 | `@&&` | `.AND` |
 | `@\|\|` | `.OR` |
 | `@!` | `.NOT` |
+
+### Loop Headers And Break Blocks
+
+Loop max syntax:
+
+- `{@ ... }` or `{@name@ ... }` uses the runtime default loop max.
+- `{@:100@ ... }` or `{@name:100@ ... }` sets an explicit finite max.
+- `{@::@ ... }` or `{@name::@ ... }` disables max checking.
+
+The current runtime default is `defaultLoopMax = 10000` unless the host changes it. The max check happens after the loop condition succeeds and before the next body execution, so a max of `100` permits exactly 100 iterations.
+
+If a finite cap is exceeded, evaluation throws:
+
+```text
+Loop exceeded max iteration count: 100
+```
+
+Break block targeting:
+
+- `{! expr }` — nearest enclosing breakable construct of any supported kind
+- `{!; expr }` — nearest enclosing block (`{ ... }` or `{; ... }`)
+- `{!@ expr }` — nearest enclosing loop
+- `{!? expr }` — nearest enclosing case block
+- `{!name! expr }` — nearest enclosing breakable construct named `name`
+- `{!;name! expr }`, `{!@name! expr }`, `{!?name! expr }` — typed named targeting
+
+Breakable constructs are plain blocks, explicit blocks, case blocks, and loops. The break value becomes the target construct's final result, and any remaining code inside that target is skipped.
+
+Examples:
+
+```rix
+{;
+    a := 1
+    {! 5}
+    99
+}
+## => 5
+
+{@:100@
+    i := 0;
+    i < 10;
+    {? i < 3 ? _; {!@ i} };
+    i += 1
+}
+## => 3
+
+{;outer;
+    {;inner;
+        {!outer! 5}
+    };
+    9
+}
+## => 5
+```
+
+Scoping inside a break block is intentionally asymmetric:
+
+- Plain reads can see the immediate surrounding scope without `@`.
+- Writes stay local unless you use `@name` to write to that surrounding scope explicitly.
 
 ### Scoped Block Import Headers
 
@@ -574,7 +634,8 @@ Map literals reject duplicate keys after canonicalization:
 |----------|-------------|----------------|
 | `BLOCK(stmts...)` | Execute sequentially, return last | `{ a; b }`, `{; a; b }` |
 | `CASE(branches...)` | If/elseif/else branching | `{? cond ? val; default }` |
-| `LOOP(init, cond, body, update)` | Loop | `{@ init; cond; body; update }` |
+| `LOOP(init, cond, body, update)` | Loop with optional name/max metadata | `{@ init; cond; body; update }`, `{@name:100@ ... }`, `{@::@ ... }` |
+| `BREAK(meta, value)` | Structured break that exits the nearest matching target | `{! value }`, `{!@ value }`, `{!?name! value }` |
 | `SYSTEM(stmts...)` | Mathematical system container | `{$ eq1; eq2 }` |
 | `TERNARY(cond, t, f)` | Ternary conditional | `cond ?? t ?: f` |
 | `IF(cond, t, f)` | If-then-else (stdlib) | — |

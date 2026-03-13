@@ -506,7 +506,17 @@ const LOWERERS = {
   },
 
   CaseContainer(node) {
-    return ir("CASE", ...node.elements.map((el) => ir("DEFER", lowerNode(el))));
+    const lowerCaseElement = (element) => {
+      if (element?.type === "BinaryOperation" && element.operator === "?") {
+        return ir("DEFER", ir("CONDITION", lowerNode(element.left), lowerNode(element.right)));
+      }
+      return ir("DEFER", lowerNode(element));
+    };
+
+    if (node.name) {
+      return ir("CASE", { name: node.name }, ...node.elements.map(lowerCaseElement));
+    }
+    return ir("CASE", ...node.elements.map(lowerCaseElement));
   },
 
   BlockContainer(node) {
@@ -529,11 +539,17 @@ const LOWERERS = {
   },
 
   LoopContainer(node) {
-    const hasMeta = (node.imports && node.imports.length > 0) || node.name;
+    const hasMeta =
+      (node.imports && node.imports.length > 0) ||
+      node.name ||
+      node.maxIterations !== undefined ||
+      node.unlimited === true;
     if (hasMeta) {
       const meta = {};
       if (node.imports && node.imports.length > 0) meta.imports = lowerImports(node.imports);
       if (node.name) meta.name = node.name;
+      if (node.maxIterations !== undefined) meta.maxIterations = node.maxIterations;
+      if (node.unlimited === true) meta.unlimited = true;
       return ir("LOOP", meta, ...node.elements.map((el) => ir("DEFER", lowerNode(el))));
     }
     return ir("LOOP", ...node.elements.map((el) => ir("DEFER", lowerNode(el))));
@@ -548,6 +564,13 @@ const LOWERERS = {
       return ir("SYSTEM", meta, ...node.elements.map(lowerNode));
     }
     return ir("SYSTEM", ...node.elements.map(lowerNode));
+  },
+
+  BreakBlock(node) {
+    const meta = {};
+    if (node.targetType) meta.targetType = node.targetType;
+    if (node.targetName) meta.targetName = node.targetName;
+    return ir("BREAK", meta, lowerNode(node.value));
   },
 
 

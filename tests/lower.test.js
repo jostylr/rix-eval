@@ -466,6 +466,44 @@ describe("Lowering Pass", () => {
       expect(ir.args[0].fn).toBe("DEFER");
     });
 
+    test("{@loop:7@ ... } → LOOP with metadata", () => {
+      const ir = L("{@loop:7@ i := 0; i < 1; i; i += 1 };");
+      expect(ir.fn).toBe("LOOP");
+      expect(ir.args[0]).toEqual({ name: "loop", maxIterations: 7 });
+      expect(ir.args[1].fn).toBe("DEFER");
+    });
+
+    test("{@::@ ... } → LOOP with unlimited metadata", () => {
+      const ir = L("{@::@ i := 0; i < 1; i; i += 1 };");
+      expect(ir.fn).toBe("LOOP");
+      expect(ir.args[0]).toEqual({ unlimited: true });
+    });
+
+    test("{?choose? ... } → CASE with name metadata", () => {
+      const ir = L("{?choose? x > 0 ? 1; 2 };");
+      expect(ir.fn).toBe("CASE");
+      expect(ir.args[0]).toEqual({ name: "choose" });
+      expect(ir.args[1].fn).toBe("DEFER");
+    });
+
+    test("{? cond ? action; fallback } lowers condition branches to CONDITION", () => {
+      const ir = L("{? x > 0 ? 1; 2 };");
+      expect(ir.fn).toBe("CASE");
+      expect(ir.args[0].fn).toBe("DEFER");
+      expect(ir.args[0].args[0].fn).toBe("CONDITION");
+    });
+
+    test("{!@outer! 5 } → BREAK", () => {
+      const ir = L("{!@outer! 5 };");
+      expect(ir).toEqual({
+        fn: "BREAK",
+        args: [
+          { targetType: "loop", targetName: "outer" },
+          { fn: "LITERAL", args: ["5"] },
+        ],
+      });
+    });
+
     test("ternary a ?? b ?: c → TERNARY with DEFERs", () => {
       const ir = L("x > 0 ?? 1 ?: -1;");
       expect(ir.fn).toBe("TERNARY");

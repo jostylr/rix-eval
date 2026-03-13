@@ -520,6 +520,91 @@ describe("RiX Evaluator", () => {
         test("undefined variable throws", () => {
             expect(() => evalRix("undeclared;")).toThrow("Undefined variable");
         });
+
+        test("default loop max comes from runtime config/env", () => {
+            const ctx = new Context();
+            ctx.setEnv("defaultLoopMax", 2);
+            expect(evalRix("total = 0; {@ i = 0; i < 2; @total += 1; i += 1 }; total;", ctx).value).toBe(2n);
+            expect(() => evalRix("{@ i = 0; i < 3; _; i += 1 };", ctx)).toThrow("Loop exceeded max iteration count: 2");
+        });
+
+        test("explicit finite loop max overrides default", () => {
+            const ctx = new Context();
+            ctx.setEnv("defaultLoopMax", 1);
+            expect(evalRix("count = 0; {@:3@ i = 0; i < 3; @count += 1; i += 1 }; count;", ctx).value).toBe(3n);
+            expect(() => evalRix("{@:3@ i = 0; i < 4; _; i += 1 };", ctx)).toThrow("Loop exceeded max iteration count: 3");
+        });
+
+        test("unlimited loop header disables max checking", () => {
+            const ctx = new Context();
+            ctx.setEnv("defaultLoopMax", 1);
+            expect(evalRix("count = 0; {@::@ i = 0; i < 3; @count += 1; i += 1 }; count;", ctx).value).toBe(3n);
+        });
+
+        test("named loop max variants evaluate normally", () => {
+            expect(evalRix("count = 0; {@loop:2@ i = 0; i < 2; @count += 1; i += 1 }; count;").value).toBe(2n);
+            expect(evalRix("count = 0; {@loop::@ i = 0; i < 3; @count += 1; i += 1 }; count;").value).toBe(3n);
+        });
+
+        test("generic break exits nearest plain block and returns its value", () => {
+            expect(evalRix("{ x = 1; {! 5}; 99 };").value).toBe(5n);
+        });
+
+        test("typed block break skips non-block constructs and exits the surrounding block", () => {
+            expect(evalRix("{; {@ i = 0; i < 1; {? 1 ? {!; 5}; _ }; i += 1 }; 9 }").value).toBe(5n);
+        });
+
+        test("typed loop break exits the nearest loop", () => {
+            const result = evalRix('{@:10@ i = 0; i < 5; {!@ "done"}; i += 1 };');
+            expect(result.type).toBe("string");
+            expect(result.value).toBe("done");
+        });
+
+        test("typed case break exits the nearest named case", () => {
+            const result = evalRix('{?choose? 1 ? {!?choose! "big"}; "small" };');
+            expect(result.type).toBe("string");
+            expect(result.value).toBe("big");
+        });
+
+        test("generic break uses the nearest breakable construct in mixed nesting", () => {
+            expect(evalRix("{; {? 1 ? {! 7}; 9 }; 11 }").value).toBe(11n);
+        });
+
+        test("named break finds the correct outer block", () => {
+            expect(evalRix("{;outer; {;inner; {!outer! 5} }; 9 }").value).toBe(5n);
+        });
+
+        test("typed named break finds the correct named loop", () => {
+            const result = evalRix('{@loop:5@ _; 1; {!@loop! "done"}; _ };');
+            expect(result.type).toBe("string");
+            expect(result.value).toBe("done");
+        });
+
+        test("missing break targets raise a clear runtime error", () => {
+            expect(() => evalRix("{!@ 5 };")).toThrow("No matching break target found");
+        });
+
+        test("post-break code is skipped and the break value becomes the target value", () => {
+            expect(evalRix("{; x = 1; y = 2; {! 9}; x + y }").value).toBe(9n);
+        });
+
+        test("break blocks can read the immediate outer scope without @", () => {
+            expect(evalRix("{; x = 5; {! x + 1 }; 0 }").value).toBe(6n);
+        });
+
+        test("break blocks require @ to mutate the immediate outer scope", () => {
+            const localWrite = evalRix("{; x = 1; y = {? 1 ? {!? x = 5}; _ }; [x, y] }");
+            expect(localWrite.values[0].value).toBe(1n);
+            expect(localWrite.values[1].value).toBe(5n);
+
+            const outerWrite = evalRix("{; x = 1; y = {? 1 ? {!? @x = 5}; _ }; [x, y] }");
+            expect(outerWrite.values[0].value).toBe(5n);
+            expect(outerWrite.values[1].value).toBe(5n);
+        });
+
+        test("break from inside a case nested in a loop can exit the loop", () => {
+            expect(evalRix("{@:10@ i = 0; i < 5; {? i < 2 ? _; {!@ i} }; i += 1 };").value).toBe(2n);
+        });
     });
 
     describe("Comparison", () => {

@@ -42,6 +42,7 @@ export class Context {
             bindings,
             aliases: new Map(),
             isolated: options.isolated === true,
+            readThrough: options.readThrough === true,
         };
         this.localScopes.push(scope);
         return bindings;
@@ -148,6 +149,16 @@ export class Context {
             const ref = this.resolveBindingInScope(scope, name);
             if (ref) {
                 return ref;
+            }
+            if (scope.readThrough) {
+                const outerScope = this.localScopes[i - 1];
+                if (outerScope) {
+                    return this.resolveBindingInScope(outerScope, name);
+                }
+                if (this.globalScope.has(name)) {
+                    return { map: this.globalScope, name };
+                }
+                return null;
             }
             if (respectIsolation && scope.isolated) {
                 return null;

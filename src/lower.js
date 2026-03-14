@@ -566,6 +566,31 @@ const LOWERERS = {
     return ir("SYSTEM", ...node.elements.map(lowerNode));
   },
 
+  SystemSpecLiteral(node) {
+    const meta = {
+      inputs: [...(node.inputs || [])],
+      outputs: [...(node.outputs || [])],
+      outputsDeclared: node.outputsDeclared === true,
+      statements: (node.statements || []).map((statement) => ({
+        kind: "assign",
+        target: statement.target,
+        expr: lowerNode(statement.expr),
+      })),
+    };
+    if (node.imports && node.imports.length > 0) {
+      meta.imports = lowerImports(node.imports);
+    }
+    return ir("SYSTEM_SPEC", meta);
+  },
+
+  SpecAssign(node) {
+    return {
+      kind: "assign",
+      target: node.target,
+      expr: lowerNode(node.expr),
+    };
+  },
+
   BreakBlock(node) {
     const meta = {};
     if (node.targetType) meta.targetType = node.targetType;

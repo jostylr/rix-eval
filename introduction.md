@@ -17,6 +17,67 @@ Arrays and maps are **mutable by default** (`mutable=1`). Other collections are 
 
 Map keys are canonicalized via `KEYOF`: integers become their decimal string, strings stay as-is, and arbitrary values may supply a `.key` meta property.
 
+## Symbolic System Specs
+
+RiX now uses `{# ... }` for symbolic system specs.
+
+```rix
+S = {#x,y,z:p#
+  p = x^2 * y + z
+}
+```
+
+This form does not execute its body as a runtime block. Instead it returns a first-class symbolic spec object with:
+
+- `kind = "systemSpec"`
+- `inputs`
+- `outputs`
+- `statements`
+
+Header forms:
+
+```rix
+{# ... }
+{#x,y,z# ... }
+{#:p,q# ... }
+{#x,y,z:p,q# ... }
+```
+
+Rules for the header:
+
+- Names before `:` are declared inputs.
+- Names after `:` are declared outputs.
+- Header names must be bare identifiers.
+- Duplicate input names, duplicate output names, and input/output overlap are rejected.
+
+Rules for the body in the current implementation:
+
+- Only symbolic assignment statements are supported: `name = expr`
+- The left-hand side must be a bare identifier.
+- `=` inside `{# ... }` means symbolic definition inside the spec, not runtime assignment and not solver equality.
+- If outputs are declared, each declared output must be assigned exactly once.
+- If outputs are omitted, outputs are inferred from top-level assignment targets in encounter order.
+
+Expression trees are stored structurally, not as precomputed values and not as reparsed source strings. Outer references such as `@name` are preserved symbolically for later consumers to interpret.
+
+Current host-side helpers used in tests:
+
+```rix
+P = {#x,y,z:p# p = x^2 * y + z } |> Poly
+Dx = Deriv({#x,y,z:p# p = x^2 * y + z }, "x")
+```
+
+`Poly` and `Deriv` currently support a restricted polynomial subset:
+
+- constants
+- identifiers
+- `+`
+- `-`
+- `*`
+- `^` with a nonnegative integer literal exponent
+
+Relation and constraint forms such as `:=:`, `:<:`, and `:>:` remain separate and are reserved for later relational/solver work.
+
 ## Pipe Operators
 
 Pipes pass values through transformations. All collection-pipe operators return **new** collections and never mutate the source.

@@ -21,6 +21,7 @@ import { functionFunctions } from "./functions/functions.js";
 import { propertyFunctions } from "./functions/properties.js";
 import { advancedFunctions } from "./functions/advanced.js";
 import { stdlibFunctions } from "./functions/stdlib.js";
+import { installSymbolicBindings, symbolicFunctions } from "./functions/symbolic.js";
 
 /**
  * Create the internal operator/language registry (no user-accessible stdlib).
@@ -37,6 +38,7 @@ export function createDefaultRegistry() {
     registry.registerAll(functionFunctions);
     registry.registerAll(propertyFunctions);
     registry.registerAll(advancedFunctions);
+    registry.registerAll(symbolicFunctions);
     // Note: stdlibFunctions no longer registered here — use createDefaultSystemContext()
     return registry;
 }
@@ -228,6 +230,9 @@ export function parseAndEvaluate(code, options = {}) {
     const { lower } = require("./lower.js");
 
     const context = options.context || new Context();
+    if (!options.context) {
+        installSymbolicBindings(context);
+    }
     const registry = options.registry || createDefaultRegistry();
     const systemContext = options.systemContext || createDefaultSystemContext();
     const systemLookup = options.systemLookup || defaultSystemLookup;

@@ -444,7 +444,7 @@ describe("RiX Evaluator", () => {
             expect(evalRix("y;", ctx).value).toBe(4n);
         });
 
-        test("system blocks are isolated for now", () => {
+        test("transitional {$ blocks behave like isolated block aliases", () => {
             expect(() => evalRix("x = 5; {$ x }")).toThrow("Undefined variable: x");
             expect(evalRix("x = 5; {$ @x }").value).toBe(5n);
         });

@@ -251,6 +251,38 @@ describe("Lowering Pass", () => {
     });
   });
 
+  describe("System Specs", () => {
+    test("{#x,y:p# p = x + y } lowers to SYSTEM_SPEC", () => {
+      const ir = L("{#x,y:p# p = x + y };");
+      expect(ir.fn).toBe("SYSTEM_SPEC");
+      expect(ir.args[0]).toEqual({
+        inputs: ["x", "y"],
+        outputs: ["p"],
+        outputsDeclared: true,
+        statements: [
+          {
+            kind: "assign",
+            target: "p",
+            expr: {
+              fn: "ADD",
+              args: [
+                { fn: "RETRIEVE", args: ["x"] },
+                { fn: "RETRIEVE", args: ["y"] },
+              ],
+            },
+          },
+        ],
+      });
+    });
+
+    test("{# p = x + 1 } infers outputs during lowering metadata", () => {
+      const ir = L("{# p = x + 1 };");
+      expect(ir.fn).toBe("SYSTEM_SPEC");
+      expect(ir.args[0].outputs).toEqual(["p"]);
+      expect(ir.args[0].outputsDeclared).toBe(false);
+    });
+  });
+
   describe("Implicit Multiplication", () => {
     test("f(x) → MUL(RETRIEVE(f), RETRIEVE(x))", () => {
       const ir = L("f(x);");

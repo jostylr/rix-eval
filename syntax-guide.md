@@ -44,7 +44,7 @@
 | `{? c1 ? v1; c2 ? v2; default }` | `CASE` | Conditional branching (if/elseif/else) |
 | `{@ init; cond; body; update }` | `LOOP` | Loop with init, condition, body, update. Loop headers also support `{@name@ ... }`, `{@:100@ ... }`, `{@name:100@ ... }`, `{@::@ ... }`, and `{@name::@ ... }`. Optional top-of-block import header: `{@ <...> ... }` |
 | `{! expr }` | `BREAK` | Break the nearest matching block/case/loop and use `expr` as that target's final value |
-| `{$ eq1; eq2 }` | `SYSTEM` | Mathematical system (equations/assertions). Optional top-of-block import header: `{$ <...> ... }` |
+| `{#x,y:z# p = x + y }` | `SYSTEM_SPEC` | Symbolic system spec literal. Optional top-of-block import header: `{#x,y:z# <...> ... }` |
 | `{= k1=v1, (expr)=v2 }` | `MAP` | Map/object literal (`k1` identifier sugar or parenthesized key expression) |
 | `{\| a, b, c }` | `SET` | Set literal |
 | `{: a, b, c }` | `TUPLE` | Tuple literal |
@@ -81,6 +81,7 @@ System context meta-methods (called via dot syntax):
 |--------|-------------|---------|
 | `@{; ... }` | Deferred block (returns AST tree, does not evaluate) | `f = @{; x + 1 }` |
 | `@{= ... }` | Deferred map | `lazyMap = @{= a=1 }` |
+| `@{#x:p# p = x + 1 }` | Deferred symbolic system spec | `lazySpec = @{#x:p# p = x + 1 }` |
 | `@+, @*, @<`, etc | Retrieve operator's system capability (alias for `.ADD`, `.MUL`, etc.) | `f = @+; f(10, 20)` → `30` |
 
 Operator alias mapping:
@@ -178,7 +179,7 @@ Supported only for scoped execution blocks:
 - `{ ... }`
 - `{; ... }`
 - `{@ ... }`
-- `{$ ... }`
+- `{# ... }`
 
 Not supported for:
 - `{? ... }`
@@ -215,6 +216,8 @@ Assignment behavior:
 - Copy imports remain ordinary locals after initialization.
 - Alias imports write through to the referenced outer binding.
 - `@name` still explicitly reads or writes the outer scope chain and is not changed by imports.
+
+For `{# ... }`, imports affect symbolic name interpretation only. The spec literal stays symbolic: it does not copy concrete values during creation, and consumers such as `Poly` decide how to interpret those references later.
 
 Errors:
 - Empty headers are invalid: `<>`
@@ -628,6 +631,70 @@ Map literals reject duplicate keys after canonicalization:
 | `ASSERT_LTE(a, b)` | Assert `a <= b` | `:<=:` |
 | `ASSERT_GTE(a, b)` | Assert `a >= b` | `:>=:` |
 
+### Symbolic Specs
+
+`{# ... }` builds a symbolic specification object instead of executing a runtime block.
+
+Supported header forms:
+
+```rix
+{# ... }
+{#x,y,z# ... }
+{#:p,q# ... }
+{#x,y,z:p,q# ... }
+```
+
+Meaning:
+
+- names before `:` are declared inputs
+- names after `:` are declared outputs
+- both sides may be omitted
+- header names must be bare identifiers
+
+Current body rules:
+
+- only `name = expr` symbolic assignments are supported
+- the left-hand side must be a bare identifier
+- `=` inside `{# ... }` is symbolic assignment, not ordinary `ASSIGN`
+- if outputs are declared, every assignment target must be one of them and each must appear exactly once
+- if outputs are omitted, outputs are inferred from top-level assignment targets in encounter order
+
+Result shape:
+
+```rix
+{=
+  kind = "systemSpec",
+  syntax = "#",
+  inputs = {: "x", "y" },
+  outputs = {: "p" },
+  statements = {:
+    {=
+      kind = "assign",
+      target = "p",
+      expr = ...
+    }
+  }
+}
+```
+
+The `expr` field stores a structural symbolic tree. It is not evaluated eagerly and it is not stored as a raw source string.
+
+Current minimal consumers:
+
+- `Poly(spec)` returns a callable for a restricted polynomial subset
+- `Deriv(spec, "x")` returns another compatible spec for that same subset
+
+Current supported subset for `Poly` and `Deriv`:
+
+- constants
+- identifiers
+- `+`
+- `-`
+- `*`
+- `^` with a nonnegative integer literal exponent
+
+Constraint forms such as `:=:`, `:<:`, and `:>:` remain separate and are not part of `{# ... }` semantics yet.
+
 ### Control Flow
 
 | Function | Description | Syntax Aliases |
@@ -636,7 +703,7 @@ Map literals reject duplicate keys after canonicalization:
 | `CASE(branches...)` | If/elseif/else branching | `{? cond ? val; default }` |
 | `LOOP(init, cond, body, update)` | Loop with optional name/max metadata | `{@ init; cond; body; update }`, `{@name:100@ ... }`, `{@::@ ... }` |
 | `BREAK(meta, value)` | Structured break that exits the nearest matching target | `{! value }`, `{!@ value }`, `{!?name! value }` |
-| `SYSTEM(stmts...)` | Mathematical system container | `{$ eq1; eq2 }` |
+| `SYSTEM_SPEC(meta)` | Create a symbolic system spec value | `{#x,y:p# p = x + y }` |
 | `TERNARY(cond, t, f)` | Ternary conditional | `cond ?? t ?: f` |
 | `IF(cond, t, f)` | If-then-else (stdlib) | — |
 | `MULTI(a, b, c...)` | Evaluate all, return last (stdlib) | — |

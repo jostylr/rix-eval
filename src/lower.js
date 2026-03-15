@@ -372,6 +372,17 @@ const LOWERERS = {
     return ir("MUL", lowerNode(node.left), lowerNode(node.right));
   },
 
+  ImplicitApplication(node) {
+    // Implicit callable application by adjacency: F 3x → CALL(F, 3*x)
+    const callable = node.callable;
+    const arg = lowerNode(node.argument);
+    if (callable.type === "SystemIdentifier" || callable.type === "UserIdentifier") {
+      return ir("CALL", callable.name, arg);
+    }
+    // For expression-based callables (e.g. result of another ImplicitApplication)
+    return ir("CALL_EXPR", lowerNode(callable), arg);
+  },
+
   // === Function Calls ===
 
   FunctionCall(node) {
@@ -429,12 +440,6 @@ const LOWERERS = {
       return ir("CALL_EXPR", ir("META_GET", objIR, target.property), objIR, ...args);
     }
     return ir("CALL_EXPR", lowerNode(target), ...args);
-  },
-
-  CommandCall(node) {
-    const name = node.command.name;
-    const args = node.arguments.map(lowerNode);
-    return ir("COMMAND", name, ...args);
   },
 
   // === Function Definitions ===

@@ -86,8 +86,6 @@ export const IR = {
   help: (...args) => ir("HELP", ...args),
   load: (...args) => ir("LOAD", ...args),
   unload: (...args) => ir("UNLOAD", ...args),
-  command: (name, ...args) => ir("COMMAND", name, ...args),
-
   // System direct call (from @_ syntax)
   sys: (name, ...args) => ir(name, ...args),
 

@@ -1373,30 +1373,6 @@ export const coreFunctions = {
         doc: "Placeholder for pattern matching",
     },
 
-    COMMAND: {
-        lazy: true,
-        impl(args, context, evaluate) {
-            // REPL commands like HELP, LOAD, UNLOAD
-            // The parser sometimes produces COMMAND nodes for prefix operators
-            // like NOT when used at statement level. We handle this by trying
-            // to dispatch to the registry if the command name is a known function.
-            const name = args[0];
-            const evalArgs = args.slice(1).map(a => evaluate(a));
-
-            // Try to dispatch as a system function call
-            // The evaluate callback has registry access, so we construct
-            // an IR node and evaluate it
-            const irNode = { fn: name, args: args.slice(1) };
-            try {
-                return evaluate(irNode);
-            } catch {
-                // If the function isn't found, return as a command descriptor
-                return { type: "command", name, args: evalArgs };
-            }
-        },
-        doc: "REPL command dispatch (also handles parser-generated operator commands)",
-    },
-
     ASSIGN_EXPR: {
         lazy: true,
         impl(args, context, evaluate) {

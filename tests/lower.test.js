@@ -647,20 +647,6 @@ describe("Lowering Pass", () => {
     });
   });
 
-  describe("REPL Commands", () => {
-    test("HELP algebra → COMMAND(HELP, ...)", () => {
-      const ir = L("HELP algebra");
-      expect(ir.fn).toBe("COMMAND");
-      expect(ir.args[0]).toBe("HELP");
-    });
-
-    test("LOAD pkg → COMMAND(LOAD, ...)", () => {
-      const ir = L("LOAD mypackage");
-      expect(ir.fn).toBe("COMMAND");
-      expect(ir.args[0]).toBe("LOAD");
-    });
-  });
-
   describe("System Functions (@_)", () => {
     test("@_ASSIGN ref → SYSREF", () => {
       const ir = L("@_ASSIGN;");

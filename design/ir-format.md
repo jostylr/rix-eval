@@ -180,7 +180,6 @@ Operations array: `[{action: "add"|"remove", key: string, value: ir|null}]`
 
 | IR fn | Source | Args |
 |-------|--------|------|
-| `COMMAND` | `HELP topic` | `[command_name, arg1, ...]` |
 | `NOP` | `# comment` | `[]` |
 | `EMBEDDED` | `` `lang code` `` | `[language, code]` |
 

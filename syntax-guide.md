@@ -30,6 +30,65 @@
 | `~~=` | `ASSIGN_DEEP_UPDATE` | `x ~~= val` (deep in-place) |
 | `-` (unary) | `NEG` | `-x` |
 
+### Implicit Multiplication & Callable Application
+
+When two expressions appear adjacent with no binary operator between them, RiX interprets the adjacency as either **implicit multiplication** or **implicit callable application**.
+
+#### Implicit Multiplication
+
+Adjacent expressions that are not callable produce multiplication:
+
+| Syntax | Equivalent | Notes |
+|--------|-----------|-------|
+| `3a` | `3 * a` | Number × identifier |
+| `3 a` | `3 * a` | Space does not change semantics |
+| `a b` | `a * b` | Two lowercase variables |
+| `3(7+x)` | `3 * (7+x)` | Number × parenthesized expression |
+| `(x+1)(x+2)` | `(x+1) * (x+2)` | Two groupings |
+| `3x^2` | `3 * (x^2)` | Exponentiation binds tighter |
+
+`ab` is a single identifier, not `a * b`. Only separate tokens produce implicit multiplication.
+
+#### Implicit Callable Application
+
+An uppercase-leading callable identifier (like `F`, `G`) followed by an adjacent expression consumes the **maximal multiplicative chunk** as its argument:
+
+| Syntax | Equivalent | Notes |
+|--------|-----------|-------|
+| `F 3` | `F(3)` | Simple application |
+| `F x` | `F(x)` | Identifier argument |
+| `F 3x` | `F(3*x)` | Chunk includes implicit mul |
+| `F 3x^2` | `F(3*(x^2))` | Chunk includes exponentiation |
+| `F 3*x + 7` | `F(3*x) + 7` | Chunk stops at `+` |
+| `F 3/x + 7` | `F(3/x) + 7` | Chunk includes `/` |
+| `F (3x + 7)` | `F(3*x + 7)` | Parens extend argument past chunk |
+
+**Nested application** chains right-to-left through callables:
+
+| Syntax | Equivalent | Notes |
+|--------|-----------|-------|
+| `F G 7` | `F(G(7))` | Nested callable consumption |
+| `3 F G 7` | `3 * F(G(7))` | Number prefix is multiplication |
+| `3 F G 7 H 9` | `3 * F(G(7 * H(9)))` | Full chain |
+
+#### Precedence
+
+From loosest to tightest:
+1. Addition/subtraction (`+`, `-`)
+2. Explicit multiplication (`*`, `/`, `//`, `%`)
+3. Implicit multiplication (adjacency of non-callable expressions)
+4. Implicit application (adjacency where left is callable)
+5. Exponentiation (`^`)
+
+#### Key rules
+
+- `3 F` does **not** implicitly call `F` — it is `3 * F`, which errors if `F` is a bare function value.
+- `F` alone is just variable retrieval, not a call.
+- `F + 1` does not auto-call `F`.
+- Explicit call syntax `F(args)` is always available and unchanged.
+- Uppercase identifiers are callable; lowercase identifiers are not.
+- `3 < 7` remains an ordinary comparison — comparison operators are not affected.
+
 ### Assignment & Definition
 
 Variables name **cells** — mutable containers holding a value and meta properties. Different assignment operators produce different cell semantics.

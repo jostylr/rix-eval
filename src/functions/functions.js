@@ -11,6 +11,24 @@ const isTruthy = (val) => val !== null && val !== undefined;
 
 // --- Partial Application Helpers ---
 
+function evaluateArgs(argNodes, evaluate) {
+    const evaluatedArgs = [];
+    for (const arg of argNodes) {
+        if (arg && arg.fn === "SPREAD") {
+            const spreadVal = evaluate(arg.args[0]);
+            if (spreadVal && (spreadVal.type === "tuple" || spreadVal.type === "sequence" || spreadVal.type === "array" || spreadVal.type === "set")) {
+                const items = spreadVal.values || spreadVal.elements || [];
+                evaluatedArgs.push(...items);
+            } else {
+                throw new Error("Spread operator requires an iterable collection (array, tuple, sequence, set)");
+            }
+        } else {
+            evaluatedArgs.push(evaluate(arg));
+        }
+    }
+    return evaluatedArgs;
+}
+
 /**
  * True if a raw IR node (unevaluated arg) is a PLACEHOLDER.
  */
@@ -50,8 +68,13 @@ function bindCallScope(params, callArgs, evaluate) {
         return scope;
     }
 
-    for (let i = 0; i < params.positional.length; i++) {
-        const param = params.positional[i];
+    // Handle rest parameter if the last positional parameter has isRest
+    const posParams = params.positional;
+    const hasRest = posParams.length > 0 && posParams[posParams.length - 1].isRest;
+    const normalParamCount = hasRest ? posParams.length - 1 : posParams.length;
+
+    for (let i = 0; i < normalParamCount; i++) {
+        const param = posParams[i];
         const missing = i >= callArgs.length;
         const argVal = missing ? null : callArgs[i];
         let value;
@@ -63,6 +86,12 @@ function bindCallScope(params, callArgs, evaluate) {
             value = argVal;
         }
         scope.set(param.name, value);
+    }
+
+    if (hasRest) {
+        const restParam = posParams[posParams.length - 1];
+        const restArgs = callArgs.slice(normalParamCount);
+        scope.set(restParam.name, { type: "sequence", values: restArgs });
     }
 
     return scope;
@@ -195,7 +224,7 @@ export const functionFunctions = {
 
             // If any arg is a placeholder, build a partial application instead.
             if (argNodes.some(isPlaceholderNode)) {
-                const template = argNodes.map(a => evaluate(a));
+                const template = evaluateArgs(argNodes, evaluate);
                 const funcDef = context.getCallable(name);
                 const fn = funcDef || { type: "sysref", name };
                 return { type: "partial", fn, template };
@@ -210,14 +239,14 @@ export const functionFunctions = {
 
             // If it's a partial or arityCap, apply it with the concrete call args.
             if (funcDef.type === "partial" || funcDef.type === "arityCap") {
-                const callArgs = argNodes.map(a => evaluate(a));
+                const callArgs = evaluateArgs(argNodes, evaluate);
                 return callWithConcreteArgs(funcDef, callArgs, context, evaluate);
             }
 
             // If it's a user-defined function (FUNCDEF or LAMBDA result)
             if (funcDef.type === "function" || funcDef.type === "lambda") {
                 // Evaluate arguments (user functions are NOT lazy by default for now)
-                const callArgs = argNodes.map((a) => evaluate(a));
+                const callArgs = evaluateArgs(argNodes, evaluate);
                 return invokeUserCallable(funcDef, callArgs, context, evaluate, { callName: name });
             }
 
@@ -229,7 +258,7 @@ export const functionFunctions = {
 
             // If it's a native JS function (from packages)
             if (typeof funcDef === "function") {
-                const callArgs = argNodes.map((a) => evaluate(a));
+                const callArgs = evaluateArgs(argNodes, evaluate);
                 return funcDef(...callArgs);
             }
 
@@ -250,12 +279,12 @@ export const functionFunctions = {
             // If any arg is a placeholder, build a partial application.
             if (argNodes.some(isPlaceholderNode)) {
                 const funcVal = evaluate(funcNode);
-                const template = argNodes.map(a => evaluate(a));
+                const template = evaluateArgs(argNodes, evaluate);
                 return { type: "partial", fn: funcVal, template };
             }
 
             const funcVal = evaluate(funcNode);
-            const callArgs = argNodes.map((a) => evaluate(a));
+            const callArgs = evaluateArgs(argNodes, evaluate);
 
             // If it's a partial or arityCap, apply it.
             if (funcVal && (funcVal.type === "partial" || funcVal.type === "arityCap")) {
@@ -290,11 +319,11 @@ export const functionFunctions = {
             }
 
             if (args.some(isPlaceholderNode)) {
-                const template = args.map((arg) => evaluate(arg));
+                const template = evaluateArgs(args, evaluate);
                 return { type: "partial", fn: currentCallable, template };
             }
 
-            const callArgs = args.map((arg) => evaluate(arg));
+            const callArgs = evaluateArgs(args, evaluate);
             return createTailSelfCall(callArgs);
         },
         doc: "Tail-position self call that reuses the current function frame",
@@ -384,7 +413,7 @@ export const functionFunctions = {
             if (funcNode.fn === "CALL") {
                 const name = funcNode.args[0];
                 const funcDef = context.getCallable(name);
-                const extraArgs = funcNode.args.slice(1).map((a) => evaluate(a));
+                const extraArgs = evaluateArgs(funcNode.args.slice(1), evaluate);
 
                 if (funcDef && (funcDef.type === "function" || funcDef.type === "lambda")) {
                     return callWithConcreteArgs(funcDef, [...callArgs, ...extraArgs], context, evaluate);

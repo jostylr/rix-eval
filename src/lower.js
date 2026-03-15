@@ -480,6 +480,10 @@ const LOWERERS = {
 
   // === Collections ===
 
+  Spread(node) {
+    return ir("SPREAD", lowerNode(node.expression));
+  },
+
   Array(node) {
     return ir("ARRAY", ...node.elements.map(lowerNode));
   },
@@ -999,10 +1003,16 @@ function lowerParams(params) {
   if (!params) return { positional: [], keyword: [], conditionals: [] };
 
   return {
-    positional: (params.positional || []).map((p) => ({
-      name: p.name,
-      holeDefault: p.holeDefault ? lowerNode(p.holeDefault) : null,
-    })),
+    positional: (params.positional || []).map((p) => {
+      const res = {
+        name: p.name,
+        holeDefault: p.holeDefault ? lowerNode(p.holeDefault) : null,
+      };
+      if (p.isRest) {
+        res.isRest = true;
+      }
+      return res;
+    }),
     keyword: (params.keyword || []).map((p) => ({
       name: p.name,
     })),

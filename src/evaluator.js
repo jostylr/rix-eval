@@ -597,13 +597,24 @@ export function evaluate(irNode, context, registry, systemContext) {
     }
 
     // Otherwise, evaluate all args first
-    const evaluatedArgs = args.map((arg) => {
-        if (arg === null || arg === undefined) return arg;
-        if (typeof arg !== "object") return arg;
-        if (Array.isArray(arg)) return arg;
-        if (!arg.fn) return arg; // not an IR node
-        return evalFn(arg);
-    });
+    const evaluatedArgs = [];
+    for (const arg of args) {
+        if (arg === null || arg === undefined) {
+            evaluatedArgs.push(arg);
+        } else if (typeof arg !== "object" || Array.isArray(arg) || !arg.fn) {
+            evaluatedArgs.push(arg);
+        } else if (arg.fn === "SPREAD") {
+            const spreadVal = evalFn(arg.args[0]);
+            if (spreadVal && (spreadVal.type === "tuple" || spreadVal.type === "sequence" || spreadVal.type === "array" || spreadVal.type === "set")) {
+                const items = spreadVal.values || spreadVal.elements || [];
+                evaluatedArgs.push(...items);
+            } else {
+                throw new Error("Spread operator requires an iterable collection (array, tuple, sequence, set)");
+            }
+        } else {
+            evaluatedArgs.push(evalFn(arg));
+        }
+    }
 
     // Hole check: standard (non-hole-aware) operations cannot consume holes
     if (!funcDef.holeAware) {

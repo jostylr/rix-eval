@@ -2,21 +2,24 @@
  * Evaluation Context
  *
  * Manages the scope chain for variable storage during evaluation.
- * The scope chain is a stack of Map objects. Variable lookup walks
- * from innermost (top) to outermost (bottom / global).
+ * All bindings store Cell objects (mutable value boxes).
+ *
+ * Cell sharing enables true aliasing:
+ *   b = a   → b and a share the SAME Cell; mutations via ~= are visible to both
+ *   a = expr → a gets a NEW Cell; b still holds the old Cell
+ *   a ~= v   → mutates Cell in-place; all names sharing that Cell see the change
  */
+
+import { Cell } from "./cell.js";
 
 export class Context {
     constructor() {
-        // Global scope is always the bottom of the chain
+        // Global scope: Map<name, Cell>
         this.globalScope = new Map();
-        // Global-level aliases (name → { map, name } binding references)
-        this.globalAliases = new Map();
-        // Stack of local scopes (innermost = last element)
-        // Each entry is { bindings: Map, aliases: Map, isolated: boolean }.
-        // Isolated scopes act as lookup barriers for plain identifiers.
+        // Stack of local scopes (innermost = last element).
+        // Each entry is { bindings: Map<name, Cell>, isolated, readThrough }.
         this.localScopes = [];
-        // User-defined functions: name → { params, body, closure }
+        // User-defined functions: name → funcDef
         this.functions = new Map();
         // Environment config
         this.env = new Map();
@@ -31,18 +34,23 @@ export class Context {
     // --- Scope management ---
 
     /**
-     * Push a new local scope (e.g. entering a function or block).
-     * @param {Map|Object} [initial] - Optional initial bindings
-     * @returns {Map} The new scope
+     * Push a new local scope.
+     * @param {Map|Object} [initial] - Optional initial bindings (raw values, wrapped in Cells)
+     * @returns {Map} The new bindings Map
      */
     push(initial, options = {}) {
-        const bindings =
+        const rawMap =
             initial instanceof Map
                 ? initial
                 : new Map(initial ? Object.entries(initial) : []);
+        const bindings = new Map();
+        for (const [k, v] of rawMap) {
+            // If already a Cell (e.g. passed from setCell context), share it;
+            // otherwise wrap in a new Cell.
+            bindings.set(k, v instanceof Cell ? v : new Cell(v));
+        }
         const scope = {
             bindings,
-            aliases: new Map(),
             isolated: options.isolated === true,
             readThrough: options.readThrough === true,
         };
@@ -52,7 +60,6 @@ export class Context {
 
     /**
      * Pop the innermost local scope.
-     * @returns {Map} The removed scope
      */
     pop() {
         return this.localScopes.pop();
@@ -60,123 +67,107 @@ export class Context {
 
     /**
      * Get a variable value, searching from innermost scope outward.
-     * @param {string} name
-     * @returns {*} The value, or undefined if not found
      */
     get(name) {
-        const ref = this.resolveBinding(name);
-        if (ref) {
-            return ref.map.get(ref.name);
-        }
-        return undefined;
+        const cell = this._findCell(name);
+        return cell ? cell.value : undefined;
     }
 
     /**
-     * Set a variable in the current (innermost) scope.
-     * If the name is aliased, writes through the alias.
-     * If no local scope exists, sets in global scope.
+     * Write a value to the current scope.
+     * If a Cell already exists for name in the current scope, updates it in-place
+     * (cell-preserving). Otherwise creates a new Cell in the current scope.
      * @param {string} name
      * @param {*} value
      */
     set(name, value) {
         if (this.localScopes.length > 0) {
             const scope = this.localScopes[this.localScopes.length - 1];
-            const aliasRef = scope.aliases.get(name);
-            if (aliasRef) {
-                aliasRef.map.set(aliasRef.name, value);
+            const cell = scope.bindings.get(name);
+            if (cell) {
+                cell.value = value;
                 return;
             }
-            scope.bindings.set(name, value);
+            scope.bindings.set(name, new Cell(value));
         } else {
-            const aliasRef = this.globalAliases.get(name);
-            if (aliasRef) {
-                aliasRef.map.set(aliasRef.name, value);
+            const cell = this.globalScope.get(name);
+            if (cell) {
+                cell.value = value;
                 return;
             }
-            this.globalScope.set(name, value);
+            this.globalScope.set(name, new Cell(value));
         }
     }
 
     /**
-     * Create a fresh binding for name, breaking any existing alias.
-     * Used by := and ::= which always create independent copies.
-     * @param {string} name
-     * @param {*} value
+     * Create a fresh Cell for name in the current scope, breaking any sharing.
+     * Used by := and = with expression rhs.
      */
     setFresh(name, value) {
+        const newCell = new Cell(value);
         if (this.localScopes.length > 0) {
-            const scope = this.localScopes[this.localScopes.length - 1];
-            scope.aliases.delete(name);
-            scope.bindings.set(name, value);
+            this.localScopes[this.localScopes.length - 1].bindings.set(name, newCell);
         } else {
-            this.globalAliases.delete(name);
-            this.globalScope.set(name, value);
+            this.globalScope.set(name, newCell);
         }
     }
 
     /**
-     * Make name an alias to an existing binding reference.
-     * Used by = when rhs is a variable (alias/rebind semantics).
-     * @param {string} name
-     * @param {{ map: Map, name: string }} ref - binding reference to alias to
+     * Store an existing Cell for name in the current scope.
+     * Used by = with variable rhs to share a Cell between two names.
      */
-    setAlias(name, ref) {
+    setCell(name, cell) {
         if (this.localScopes.length > 0) {
-            const scope = this.localScopes[this.localScopes.length - 1];
-            scope.bindings.delete(name);
-            scope.aliases.set(name, ref);
+            this.localScopes[this.localScopes.length - 1].bindings.set(name, cell);
         } else {
-            this.globalScope.delete(name);
-            this.globalAliases.set(name, ref);
+            this.globalScope.set(name, cell);
         }
     }
 
     /**
-     * Resolve the binding reference for a name (including alias following).
-     * Public wrapper around resolveBinding for use in assignment operators.
-     * @param {string} name
-     * @returns {{ map: Map, name: string }|null}
+     * Find the Cell for name, searching from innermost scope outward.
+     * Returns null if not found.
      */
-    getBindingRef(name) {
-        return this.resolveBinding(name);
+    getCell(name) {
+        return this._findCell(name);
     }
 
     /**
-     * Resolve the binding reference for a name in outer scopes.
-     * @param {string} name
-     * @returns {{ map: Map, name: string }|null}
+     * Find the Cell for name in outer scopes (skipping the innermost local scope).
+     * Used by OUTER_UPDATE and importAlias.
      */
-    getOuterBindingRef(name) {
-        return this.resolveBinding(name, { skipInnermost: true, respectIsolation: false });
+    getOuterCell(name) {
+        return this._findCell(name, { skipInnermost: true, respectIsolation: false });
     }
 
     /**
      * Set a variable in the global scope regardless of local scopes.
      */
     setGlobal(name, value) {
-        this.globalScope.set(name, value);
+        const cell = this.globalScope.get(name);
+        if (cell) {
+            cell.value = value;
+        } else {
+            this.globalScope.set(name, new Cell(value));
+        }
     }
 
     /**
      * Get a variable value from the outer scopes (skipping the innermost local scope).
-     * @param {string} name 
      */
     getOuter(name) {
-        const ref = this.resolveBinding(name, { skipInnermost: true, respectIsolation: false });
-        if (ref) {
-            return ref.map.get(ref.name);
-        }
-        return undefined;
+        const cell = this._findCell(name, { skipInnermost: true, respectIsolation: false });
+        return cell ? cell.value : undefined;
     }
 
     /**
-     * Set a variable value in an outer scope where it already exists (skipping innermost).
-     * If the variable doesn't exist anywhere in the outer scopes (or global), an error is thrown.
+     * Write a value to an existing outer scope variable (cell-preserving).
+     * Throws if the variable doesn't exist in any outer scope.
      */
     setOuter(name, value) {
-        const ref = this.resolveBinding(name, { skipInnermost: true, respectIsolation: false });
-        if (ref) {
-            ref.map.set(ref.name, value);
+        const cell = this._findCell(name, { skipInnermost: true, respectIsolation: false });
+        if (cell) {
+            cell.value = value;
             return;
         }
         throw new Error(`Cannot assign to outer variable '@${name}' because it does not exist in any outer scope.`);
@@ -186,13 +177,13 @@ export class Context {
      * Check if a variable exists in any scope.
      */
     has(name) {
-        return Boolean(this.resolveBinding(name));
+        return Boolean(this._findCell(name));
     }
 
     getCallable(name) {
-        const ref = this.resolveBinding(name, { respectIsolation: false });
-        if (ref) {
-            return ref.map.get(ref.name);
+        const cell = this._findCell(name, { respectIsolation: false });
+        if (cell) {
+            return cell.value;
         }
         if (this.functions.has(name)) {
             return this.functions.get(name);
@@ -200,81 +191,64 @@ export class Context {
         return undefined;
     }
 
-    resolveBinding(name, options = {}) {
+    /**
+     * Find the Cell for name by searching the scope chain.
+     * @param {string} name
+     * @param {object} [options]
+     * @returns {Cell|null}
+     */
+    _findCell(name, options = {}) {
         const skipInnermost = options.skipInnermost === true;
         const respectIsolation = options.respectIsolation !== false;
         const startIndex = this.localScopes.length - 1 - (skipInnermost ? 1 : 0);
 
         for (let i = startIndex; i >= 0; i--) {
             const scope = this.localScopes[i];
-            const ref = this.resolveBindingInScope(scope, name);
-            if (ref) {
-                return ref;
-            }
+            const cell = scope.bindings.get(name);
+            if (cell) return cell;
+
             if (scope.readThrough) {
                 const outerScope = this.localScopes[i - 1];
                 if (outerScope) {
-                    return this.resolveBindingInScope(outerScope, name);
+                    return outerScope.bindings.get(name) ?? null;
                 }
-                if (this.globalScope.has(name)) {
-                    return { map: this.globalScope, name };
-                }
-                return null;
+                return this.globalScope.get(name) ?? null;
             }
             if (respectIsolation && scope.isolated) {
                 return null;
             }
         }
 
-        if (this.globalScope.has(name)) {
-            return { map: this.globalScope, name };
-        }
-
-        if (this.globalAliases.has(name)) {
-            return this.globalAliases.get(name);
-        }
-
-        return null;
-    }
-
-    resolveBindingInScope(scope, name) {
-        if (scope.bindings.has(name)) {
-            return { map: scope.bindings, name };
-        }
-        if (scope.aliases.has(name)) {
-            return scope.aliases.get(name);
-        }
-        return null;
+        return this.globalScope.get(name) ?? null;
     }
 
     importCopy(localName, sourceName) {
         if (this.localScopes.length === 0) {
             throw new Error("Import headers require an active local scope");
         }
-        const ref = this.resolveBinding(sourceName, { skipInnermost: true, respectIsolation: false });
-        if (!ref) {
+        const cell = this._findCell(sourceName, { skipInnermost: true, respectIsolation: false });
+        if (!cell) {
             throw new Error(`Undefined outer variable for import: ${sourceName}`);
         }
         const scope = this.localScopes[this.localScopes.length - 1];
-        scope.bindings.set(localName, ref.map.get(ref.name));
+        scope.bindings.set(localName, new Cell(cell.value));
     }
 
     importAlias(localName, sourceName) {
         if (this.localScopes.length === 0) {
             throw new Error("Import headers require an active local scope");
         }
-        const ref = this.resolveBinding(sourceName, { skipInnermost: true, respectIsolation: false });
-        if (!ref) {
+        const cell = this._findCell(sourceName, { skipInnermost: true, respectIsolation: false });
+        if (!cell) {
             throw new Error(`Undefined outer variable for import alias: ${sourceName}`);
         }
         const scope = this.localScopes[this.localScopes.length - 1];
-        scope.aliases.set(localName, ref);
+        // Share the same Cell — mutations via ~= will be visible in both scopes.
+        scope.bindings.set(localName, cell);
     }
 
     /**
      * Define a user function.
-     * @param {string} name
-     * @param {Object} funcDef - { params, body, closure? }
      */
     defineFunction(name, funcDef) {
         this.set(name, funcDef);
@@ -326,13 +300,12 @@ export class Context {
     }
 
     /**
-     * Create a child context (shares global scope but has independent local scopes).
-     * Useful for function calls that need their own scope chain.
+     * Create a child context (shares global scope and functions but has
+     * independent local scopes).
      */
     child() {
         const child = new Context();
         child.globalScope = this.globalScope;
-        child.globalAliases = this.globalAliases;
         child.functions = this.functions;
         child.env = this.env;
         child.callStack = [...this.callStack];
@@ -370,12 +343,12 @@ export class Context {
         this.sharedBodyOverrides.pop();
         return true;
     }
+
     /**
      * Clear all non-environment state.
      */
     clear() {
         this.globalScope.clear();
-        this.globalAliases.clear();
         this.localScopes = [];
         this.functions.clear();
         this.callStack = [];
@@ -388,8 +361,7 @@ export class Context {
     getAllNames() {
         const names = new Set([
             ...this.globalScope.keys(),
-            ...this.globalAliases.keys(),
-            ...this.functions.keys()
+            ...this.functions.keys(),
         ]);
         return Array.from(names).sort();
     }

@@ -794,22 +794,24 @@ function checkFrozenImmutable(value) {
  */
 function performUpdate(name, rhsValue, context, depth) {
     const copyFn = depth === "deep" ? deepCopyValue : shallowCopyValue;
-    const ref = context.getBindingRef(name);
+    const cell = context.getCell(name);
 
-    if (ref) {
-        const oldValue = ref.map.get(ref.name);
+    if (cell) {
+        const oldValue = cell.value;
         checkLocked(oldValue);
         checkFrozenImmutable(oldValue);
         const newValue = copyFn(rhsValue);
         transferMetaForUpdate(oldValue, newValue, rhsValue, depth);
-        ref.map.set(ref.name, newValue);
+        cell.value = newValue;
         return newValue;
     }
 
-    // lhs doesn't exist yet — create fresh binding with rhs value + meta
+    // lhs doesn't exist yet — create fresh binding.
+    // Even with no old cell, ordinary meta from rhs is NOT inherited.
+    // Only ephemeral (_) and sticky (__) transfer; transferMetaForUpdate
+    // with oldValue=null handles this correctly.
     const newValue = copyFn(rhsValue);
-    // Copy all rhs meta since there's no old meta to preserve
-    copyAllMeta(rhsValue, newValue, depth);
+    transferMetaForUpdate(null, newValue, rhsValue, depth);
     context.setFresh(name, newValue);
     return newValue;
 }
@@ -819,15 +821,15 @@ function performUpdate(name, rhsValue, context, depth) {
  */
 function performOuterUpdate(name, rhsValue, context, depth) {
     const copyFn = depth === "deep" ? deepCopyValue : shallowCopyValue;
-    const ref = context.getOuterBindingRef(name);
+    const cell = context.getOuterCell(name);
 
-    if (ref) {
-        const oldValue = ref.map.get(ref.name);
+    if (cell) {
+        const oldValue = cell.value;
         checkLocked(oldValue);
         checkFrozenImmutable(oldValue);
         const newValue = copyFn(rhsValue);
         transferMetaForUpdate(oldValue, newValue, rhsValue, depth);
-        ref.map.set(ref.name, newValue);
+        cell.value = newValue;
         return newValue;
     }
 
@@ -1194,30 +1196,30 @@ export const coreFunctions = {
             const name = resolveAssignName(args[0], evaluate);
             const rhsIR = args[1];
 
-            // If rhs is a simple variable reference, alias to its binding slot
+            // If rhs is a simple variable reference, share the same Cell
             if (rhsIR && typeof rhsIR === "object" && rhsIR.fn === "RETRIEVE") {
                 const rhsName = rhsIR.args[0];
-                const ref = context.getBindingRef(rhsName);
-                if (ref) {
-                    context.setAlias(name, ref);
-                    return ref.map.get(ref.name);
+                const cell = context.getCell(rhsName);
+                if (cell) {
+                    context.setCell(name, cell);
+                    return cell.value;
                 }
             }
             if (rhsIR && typeof rhsIR === "object" && rhsIR.fn === "OUTER_RETRIEVE") {
                 const rhsName = rhsIR.args[0];
-                const ref = context.getOuterBindingRef(rhsName);
-                if (ref) {
-                    context.setAlias(name, ref);
-                    return ref.map.get(ref.name);
+                const cell = context.getOuterCell(rhsName);
+                if (cell) {
+                    context.setCell(name, cell);
+                    return cell.value;
                 }
             }
 
-            // Otherwise evaluate and create a fresh binding
+            // Otherwise evaluate and create a fresh Cell
             const value = evaluate(rhsIR);
             context.setFresh(name, value);
             return value;
         },
-        doc: "Alias/rebind — lhs shares the same binding slot as rhs variable, or gets a fresh binding for expressions",
+        doc: "Alias/rebind — lhs shares the same Cell as rhs variable, or gets a fresh Cell for expressions",
     },
 
     ASSIGN_COPY: {

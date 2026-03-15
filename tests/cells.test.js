@@ -83,6 +83,19 @@ describe("Cell Assignment Semantics", () => {
             const result = evalRix("x := 5; y = x; y = 99; x;");
             expect(result.value).toBe(5n); // rebinding y doesn't affect x
         });
+
+        test("rebinding lhs after = alias — b keeps old cell", () => {
+            // Bug 3 regression: b = a shares a's cell; a = [2,3] rebinds a to
+            // a NEW cell; b must still see the OLD cell's value (7).
+            const result = evalRix("a = 7; b = a; a = [2,3]; b;");
+            expect(result.value).toBe(7n);
+        });
+
+        test("~= after = alias — b sees a's in-place update", () => {
+            // Contrast: a ~= [2,3] mutates the shared cell; b should see [2,3].
+            const result = evalRix("a := [1]; b = a; a ~= [2,3]; b[1];");
+            expect(result.value).toBe(2n);
+        });
     });
 
     // ─── B. Fresh copy with := ───────────────────────────────────────
@@ -414,17 +427,20 @@ describe("Cell Assignment Semantics", () => {
             expect(result.value).toBe(2n);
         });
 
-        test("~= on undefined copies rhs meta (no old meta to preserve)", () => {
+        test("~= on undefined: only ephemeral and sticky from rhs, NOT ordinary", () => {
             const result = evalRix(`
                 src := [1];
                 src.__units = "C";
                 src._spec = "temp";
+                src.key = "label";
                 dst ~= src;
-                [dst.__units, dst._spec];
+                [dst.__units, dst._spec, dst.key];
             `);
-            // With no old meta, all rhs meta is copied as-is
+            // sticky (__units) and ephemeral (_spec) are inherited from rhs
             expect(result.values[0].value).toBe("C");
             expect(result.values[1].value).toBe("temp");
+            // ordinary meta (key) is NOT inherited from rhs
+            expect(result.values[2]).toBeNull();
         });
     });
 

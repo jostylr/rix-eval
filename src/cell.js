@@ -1,8 +1,12 @@
 /**
  * Cell helpers for RiX assignment semantics.
  *
- * A variable names a cell. A cell contains a value and meta.
- * Meta is stored on the value object via `_ext` (a Map).
+ * A variable names a cell. A cell is a mutable box (Cell object) containing
+ * a value. Meta is stored on the value object via `_ext` (a Map).
+ *
+ * Cells enable true aliasing: `b = a` makes b and a share the same Cell
+ * object. `a ~= newValue` mutates the Cell in-place (both see the change).
+ * `a = expr` creates a new Cell for a without affecting b's Cell.
  *
  * Meta keys are classified by prefix:
  *   - ordinary:  no leading underscore  (e.g. "key", "mutable", "frozen")
@@ -10,15 +14,27 @@
  *   - sticky:    double underscore       (e.g. "__units")
  *
  * Assignment operators differ in how they handle value and meta:
- *   =    alias/rebind — share the same binding slot
- *   :=   fresh copy   — shallow-copy value + all meta
- *   ~=   in-place     — replace value, preserve ordinary meta,
+ *   =    alias/rebind — share the same Cell (variable rhs) or fresh Cell (expr rhs)
+ *   :=   fresh copy   — shallow-copy value + all meta into new Cell
+ *   ~=   in-place     — replace value inside Cell, preserve ordinary meta,
  *                        replace ephemeral wholesale, preserve sticky unless rhs overrides
  *   ::=  deep copy    — like := but deep
  *   ~~=  deep update  — like ~= but deep copies
  */
 
-import { Integer } from "@ratmath/core";
+// ─── Cell ─────────────────────────────────────────────────────────────
+
+/**
+ * A mutable value box. All scope bindings store Cell objects so that
+ * aliasing (`b = a`) shares a single Cell and `~=` can mutate in-place.
+ */
+export class Cell {
+    constructor(value) {
+        this.value = value;
+    }
+}
+
+import { Integer, Rational, RationalInterval } from "@ratmath/core";
 import { isTensor, computeDefaultStrides } from "./tensor.js";
 
 // ─── Meta key classification ─────────────────────────────────────────
@@ -37,18 +53,27 @@ export function classifyMetaKey(name) {
 // ─── Shallow / deep value copy ───────────────────────────────────────
 
 /**
- * Shallow-copy a RiX value. Primitives (Integer, string objects, null)
- * are returned as-is since they are immutable. Collections get a new
- * top-level container with the same element references.
+ * Shallow-copy a RiX value. Returns a NEW object so that _ext can be
+ * set independently from the source (critical for ~= meta transfer).
+ * Numeric ratmath types (Integer, Rational, RationalInterval) get fresh
+ * instances because they are used as plain objects but may carry _ext.
+ * Collections get a new top-level container with the same element references.
  */
 export function shallowCopyValue(value) {
     if (value == null) return value;
     if (typeof value !== "object") return value;
 
-    // Integer — immutable, share reference
-    if (value instanceof Integer) return value;
+    // Ratmath numeric types — create fresh instances so _ext is independent
+    if (value instanceof Integer) return new Integer(value.value);
+    if (value instanceof Rational) return new Rational(value.numerator, value.denominator);
+    if (value instanceof RationalInterval) {
+        return new RationalInterval(
+            new Rational(value.low.numerator, value.low.denominator),
+            new Rational(value.high.numerator, value.high.denominator),
+        );
+    }
 
-    // String object — immutable
+    // String object — always creates a new plain object
     if (value.type === "string") return { type: "string", value: value.value };
 
     // Sequence
@@ -109,7 +134,14 @@ export function shallowCopyValue(value) {
 export function deepCopyValue(value) {
     if (value == null) return value;
     if (typeof value !== "object") return value;
-    if (value instanceof Integer) return value;
+    if (value instanceof Integer) return new Integer(value.value);
+    if (value instanceof Rational) return new Rational(value.numerator, value.denominator);
+    if (value instanceof RationalInterval) {
+        return new RationalInterval(
+            new Rational(value.low.numerator, value.low.denominator),
+            new Rational(value.high.numerator, value.high.denominator),
+        );
+    }
 
     if (value.type === "string") return { type: "string", value: value.value };
 
@@ -228,12 +260,18 @@ export function copyAllMeta(source, target, depth) {
 export function transferMetaForUpdate(oldValue, newValue, rhsValue, depth) {
     if (!newValue || typeof newValue !== "object") return;
 
+    // Capture meta refs BEFORE touching newValue._ext (guards against
+    // newValue === rhsValue, which can happen for immutable ratmath types
+    // that shallowCopyValue might still share in edge cases).
     const oldMeta = oldValue?._ext;
     const rhsMeta = rhsValue?._ext;
 
     if (!oldMeta && !rhsMeta) return;
 
-    const tgtMeta = ensureExt(newValue);
+    // Always create a FRESH meta map — never merge into newValue's existing _ext,
+    // which might be shared with rhsValue.
+    const tgtMeta = new Map();
+    newValue._ext = tgtMeta;
     const copyVal = depth === "deep" ? deepCopyValue : (v) => v;
 
     // 1. Ordinary meta — preserve from old value

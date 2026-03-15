@@ -135,7 +135,7 @@ export const collectionFunctions = {
             return {
                 type: "sequence",
                 values,
-                _ext: new Map([["mutable", new Integer(1n)]])
+                _ext: new Map([["_mutable", new Integer(1n)]])
             };
         },
         pure: true,
@@ -228,7 +228,7 @@ export const collectionFunctions = {
             return {
                 type: "map",
                 entries,
-                _ext: new Map([["mutable", new Integer(1n)]])
+                _ext: new Map([["_mutable", new Integer(1n)]])
             };
         },
         pure: true, // It might not be pure if evaluate calls non-pure functions, but usually for literals it's okay.

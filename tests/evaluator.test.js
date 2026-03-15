@@ -1283,22 +1283,22 @@ describe("RiX Evaluator", () => {
             expect(evalRix("m[:a];", ctx).value).toBe(2n);
         });
 
-        test("Removing mutable flag locks the object", () => {
+        test("Removing ._mutable flag blocks index mutation", () => {
             const ctx = new Context();
             evalRix("arr = [1, 2, 3];", ctx);
-            evalRix("arr.mutable = _;", ctx);
-            expect(() => evalRix("arr[1] = 99;", ctx)).toThrow("mutable");
+            evalRix("arr._mutable = _;", ctx);
+            expect(() => evalRix("arr[1] = 99;", ctx)).toThrow("_mutable");
 
             evalRix("m = {= a=1 };", ctx);
-            evalRix("m.mutable = _;", ctx);
-            expect(() => evalRix("m[:a] = 2;", ctx)).toThrow("mutable");
+            evalRix("m._mutable = _;", ctx);
+            expect(() => evalRix("m[:a] = 2;", ctx)).toThrow("_mutable");
         });
 
-        test("INDEX_SET works when explicitly re-enabled", () => {
+        test("INDEX_SET works when ._mutable explicitly re-enabled", () => {
             const ctx = new Context();
             evalRix("arr = [1, 2, 3];", ctx);
-            evalRix("arr.mutable = _;", ctx);
-            evalRix("arr.mutable = 1;", ctx);
+            evalRix("arr._mutable = _;", ctx);
+            evalRix("arr._mutable = 1;", ctx);
             evalRix("arr[1] = 99;", ctx);
             expect(evalRix("arr[1];", ctx).value).toBe(99n);
         });

@@ -119,7 +119,7 @@ export function createTensor(shape, data = null, options = {}) {
         shape: normalizedShape,
         strides: options.strides ? [...options.strides] : computeDefaultStrides(normalizedShape),
         offset: options.offset ?? 0,
-        _ext: options.ext ?? new Map([["mutable", new Integer(1n)]]),
+        _ext: options.ext ?? new Map([["_mutable", new Integer(1n)]]),
     };
 }
 

@@ -180,12 +180,12 @@ describe("Cell Assignment Semantics", () => {
             expect(result.value).toBe("temperature");
         });
 
-        test(".mutable preserved on ~=", () => {
+        test("._mutable is ephemeral (value-level) meta, defaults to 1 for arrays", () => {
             const result = evalRix(`
                 t := [0];
-                t.mutable;
+                t._mutable;
             `);
-            // Arrays default to mutable=1
+            // Arrays default to ._mutable=1
             expect(result.value).toBe(1n);
         });
 
@@ -444,61 +444,72 @@ describe("Cell Assignment Semantics", () => {
         });
     });
 
-    // ─── K. Locked / frozen / immutable interaction ──────────────────
+    // ─── K. lock / frozen / immutable interaction ────────────────────
 
-    describe("locked meta property", () => {
-        test("locked prevents ~=", () => {
+    describe(".lock meta property", () => {
+        test(".lock prevents ~=", () => {
             expect(() => evalRix(`
                 x := [1];
-                x.locked = 1;
+                x.lock = 1;
                 x ~= [2];
             `)).toThrow(/locked/i);
         });
 
-        test("locked prevents ~~=", () => {
+        test(".lock prevents ~~=", () => {
             expect(() => evalRix(`
                 x := [1];
-                x.locked = 1;
+                x.lock = 1;
                 x ~~= [2];
             `)).toThrow(/locked/i);
         });
 
-        test("locked prevents +=", () => {
+        test(".lock prevents +=", () => {
             expect(() => evalRix(`
                 x := 5;
-                x.locked = 1;
+                x.lock = 1;
                 x += 1;
             `)).toThrow(/locked/i);
         });
 
-        test("locked allows = (rebind)", () => {
+        test(".lock allows = (rebind)", () => {
             const result = evalRix(`
                 x := [1];
-                x.locked = 1;
+                x.lock = 1;
                 x = [2];
                 x[1];
             `);
             expect(result.value).toBe(2n);
         });
 
-        test("locked allows := (fresh copy)", () => {
+        test(".lock allows := (fresh copy)", () => {
             const result = evalRix(`
                 x := [1];
-                x.locked = 1;
+                x.lock = 1;
                 x := [2];
                 x[1];
             `);
             expect(result.value).toBe(2n);
         });
 
-        test("locked allows meta changes", () => {
+        test(".lock allows meta changes", () => {
             const result = evalRix(`
                 x := [1];
-                x.locked = 1;
+                x.lock = 1;
                 x._spec = "test";
                 x._spec;
             `);
             expect(result.value).toBe("test");
+        });
+
+        test(".lock does NOT block index mutation on mutable array", () => {
+            const result = evalRix(`
+                x := [1, 2, 3];
+                x.lock = 1;
+                x[1] = 9;
+                x[1];
+            `);
+            // lock blocks ~= (whole-value replacement) but not in-place structural mutation
+            expect(result.value).toBe(9n);
         });
     });
 
@@ -520,6 +531,25 @@ describe("Cell Assignment Semantics", () => {
             `);
             expect(result.value).toBe(2n);
         });
+
+        test("frozen blocks ordinary meta edits", () => {
+            expect(() => evalRix(`
+                x := [1];
+                x.frozen = 1;
+                x.key = "test";
+            `)).toThrow(/frozen/i);
+        });
+
+        test("frozen does NOT block index mutation on mutable array", () => {
+            const result = evalRix(`
+                x := [1, 2, 3];
+                x.frozen = 1;
+                x[1] = 9;
+                x[1];
+            `);
+            // frozen blocks ~= (cell replacement) but not in-place value mutation
+            expect(result.value).toBe(9n);
+        });
     });
 
     describe("immutable interaction", () => {
@@ -539,6 +569,225 @@ describe("Cell Assignment Semantics", () => {
                 x[1];
             `);
             expect(result.value).toBe(2n);
+        });
+
+        test("immutable blocks meta edits", () => {
+            expect(() => evalRix(`
+                x := [1];
+                x.immutable = 1;
+                x.key = "test";
+            `)).toThrow(/immutable/i);
+        });
+
+        test("immutable does NOT block index mutation on mutable array", () => {
+            const result = evalRix(`
+                x := [1, 2, 3];
+                x.immutable = 1;
+                x[1] = 9;
+                x[1];
+            `);
+            // immutable blocks ~= (cell replacement) but not in-place value mutation
+            expect(result.value).toBe(9n);
+        });
+    });
+
+    // ─── L. Value mutability semantics ───────────────────────────────
+
+    describe("._mutable value-level mutability", () => {
+        test("arrays default to ._mutable=1", () => {
+            const result = evalRix("x := [1,2,3]; x._mutable;");
+            expect(result.value).toBe(1n);
+        });
+
+        test("maps default to ._mutable=1", () => {
+            const result = evalRix("x := {= a=1 }; x._mutable;");
+            expect(result.value).toBe(1n);
+        });
+
+        test("removing ._mutable blocks index assignment", () => {
+            expect(() => evalRix(`
+                x := [1,2,3];
+                x._mutable = _;
+                x[1] = 9;
+            `)).toThrow(/_mutable/i);
+        });
+
+        test("setting ._mutable re-enables index assignment", () => {
+            const result = evalRix(`
+                x := [1,2,3];
+                x._mutable = _;
+                x._mutable = 1;
+                x[1] = 9;
+                x[1];
+            `);
+            expect(result.value).toBe(9n);
+        });
+
+        test("._mutable is replaced wholesale under ~= (ephemeral)", () => {
+            // lhs mutable, rhs NOT mutable — after ~= lhs becomes not mutable
+            const result = evalRix(`
+                a := [1,2];
+                b := [3,4];
+                b._mutable = _;
+                a ~= b;
+                a._mutable;
+            `);
+            // rhs has no ._mutable → lhs ._mutable is gone too
+            expect(result).toBeNull();
+        });
+
+        test("._mutable from rhs adopted by lhs after ~=", () => {
+            // lhs NOT mutable, rhs mutable — after ~= lhs becomes mutable
+            const result = evalRix(`
+                a := [1,2];
+                a._mutable = _;
+                b := [3,4];
+                a ~= b;
+                a._mutable;
+            `);
+            expect(result.value).toBe(1n);
+        });
+
+        test(":= copies ._mutable from source", () => {
+            const result = evalRix(`
+                x := [1,2];
+                y := x;
+                y._mutable;
+            `);
+            expect(result.value).toBe(1n);
+        });
+
+        test(":= copy with no ._mutable stays immutable", () => {
+            const result = evalRix(`
+                x := [1,2];
+                x._mutable = _;
+                y := x;
+                y._mutable;
+            `);
+            expect(result).toBeNull();
+        });
+    });
+
+    // ─── M. DeepMutable ──────────────────────────────────────────────
+
+    describe("DeepMutable", () => {
+        test("DeepMutable(x, 1) sets ._mutable on nested arrays", () => {
+            const result = evalRix(`
+                x := [[1,2],[3,4]];
+                x._mutable = _;
+                x[1]._mutable = _;
+                x[2]._mutable = _;
+                .DeepMutable(x, 1);
+                [x._mutable, x[1]._mutable, x[2]._mutable];
+            `);
+            expect(result.values[0].value).toBe(1n);
+            expect(result.values[1].value).toBe(1n);
+            expect(result.values[2].value).toBe(1n);
+        });
+
+        test("DeepMutable(x, _) removes ._mutable from nested arrays", () => {
+            const result = evalRix(`
+                x := [[1,2],[3,4]];
+                .DeepMutable(x, _);
+                [x._mutable, x[1]._mutable, x[2]._mutable];
+            `);
+            expect(result.values[0]).toBeNull();
+            expect(result.values[1]).toBeNull();
+            expect(result.values[2]).toBeNull();
+        });
+
+        test("DeepMutable(x, 0) makes mutable — 0 is non-null in RiX", () => {
+            const result = evalRix(`
+                x := [1,2];
+                x._mutable = _;
+                .DeepMutable(x, 0);
+                x._mutable;
+            `);
+            // 0 is non-null, so it makes the array mutable
+            expect(result.value).toBe(1n);
+        });
+
+        test("DeepMutable on nested map", () => {
+            const result = evalRix(`
+                x := {= arr = [1,2] };
+                .DeepMutable(x, _);
+                x._mutable;
+            `);
+            expect(result).toBeNull();
+        });
+
+        test("after DeepMutable off, index mutation blocked", () => {
+            expect(() => evalRix(`
+                x := [1,2,3];
+                .DeepMutable(x, _);
+                x[1] = 9;
+            `)).toThrow(/_mutable/i);
+        });
+
+        test("after DeepMutable on, index mutation works", () => {
+            const result = evalRix(`
+                x := [1,2,3];
+                .DeepMutable(x, _);
+                .DeepMutable(x, 1);
+                x[1] = 9;
+                x[1];
+            `);
+            expect(result.value).toBe(9n);
+        });
+
+        test("tuples support INDEX_SET when ._mutable is set", () => {
+            // Tuples are NOT mutable by default (no _ext), but can be made mutable
+            const result = evalRix(`
+                t := {: 10, 20, 30 };
+                t._mutable = 1;
+                t[2] = 99;
+                t[2];
+            `);
+            expect(result.value).toBe(99n);
+        });
+
+        test("DeepMutable sets ._mutable on tuple", () => {
+            const result = evalRix(`
+                t := {: 10, 20 };
+                .DeepMutable(t, 1);
+                t._mutable;
+            `);
+            expect(result.value).toBe(1n);
+        });
+
+        test("DeepMutable traverses into tuple to reach nested arrays", () => {
+            const result = evalRix(`
+                t := {: [1,2], [3,4] };
+                .DeepMutable(t, _);
+                [t._mutable, t[1]._mutable, t[2]._mutable];
+            `);
+            // tuple itself loses ._mutable (it gains one then it is removed)
+            expect(result.values[0]).toBeNull();
+            // nested arrays lose ._mutable
+            expect(result.values[1]).toBeNull();
+            expect(result.values[2]).toBeNull();
+        });
+
+        test("DeepMutable traverses into set to reach nested arrays", () => {
+            // Sets don't support INDEX_SET — no ._mutable set on set itself
+            // But DeepMutable should reach nested arrays inside the set
+            const result = evalRix(`
+                inner := [1,2];
+                s := {| inner |};
+                .DeepMutable(s, _);
+                inner._mutable;
+            `);
+            // inner array referenced in the set should have ._mutable removed
+            expect(result).toBeNull();
+        });
+
+        test("sets receive ._mutable from DeepMutable (future-proofing for set mutation ops)", () => {
+            const result = evalRix(`
+                s := {| 1, 2, 3 |};
+                .DeepMutable(s, 1);
+                s._mutable;
+            `);
+            expect(result.value).toBe(1n);
         });
     });
 

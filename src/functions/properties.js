@@ -88,10 +88,8 @@ function applyMutations(target, ops) {
 
 function assertMutableIndexTarget(obj) {
     const ext = obj?._ext;
-    if (ext?.get("immutable")) throw new Error("Cannot set index: object is immutable");
-    if (ext?.get("frozen")) throw new Error("Cannot set index: object is frozen");
-    if (!ext?.get("mutable")) {
-        throw new Error("Cannot set index: collection is not mutable. Set meta property 'mutable' to true first.");
+    if (!ext?.get("_mutable")) {
+        throw new Error("Cannot set index: collection is not mutable. Set meta property '._mutable' to a non-null value first.");
     }
 }
 
@@ -313,7 +311,7 @@ export const propertyFunctions = {
 
             return indexSetResolved(obj, key, value);
         },
-        doc: "Set index in collection (requires mutable=true meta flag) — obj[i] = val",
+        doc: "Set index in collection (requires ._mutable meta flag) — obj[i] = val",
     },
 
     BRACKET_GET: {

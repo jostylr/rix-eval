@@ -9,9 +9,18 @@
  * `a = expr` creates a new Cell for a without affecting b's Cell.
  *
  * Meta keys are classified by prefix:
- *   - ordinary:  no leading underscore  (e.g. "key", "mutable", "frozen")
- *   - ephemeral: single underscore      (e.g. "_spec", "_deriv")
+ *   - ordinary:  no leading underscore  (e.g. "key", "lock", "frozen", "immutable")
+ *   - ephemeral: single underscore      (e.g. "_mutable", "_spec", "_deriv")
  *   - sticky:    double underscore       (e.g. "__units")
+ *
+ * Cell-level protection (ordinary meta — survives ~=, governs replacement):
+ *   .lock       blocks ~=/~~= value replacement; allows meta edits and index mutation
+ *   .frozen     blocks ~=/~~= replacement and ordinary meta edits
+ *   .immutable  like frozen but permanent
+ *
+ * Value-level mutability (ephemeral meta — replaced wholesale under ~=):
+ *   ._mutable   if truthy, composite value (array/map) may be mutated in place;
+ *               arrays/maps created by literals default to ._mutable=1
  *
  * Assignment operators differ in how they handle value and meta:
  *   =    alias/rebind — share the same Cell (variable rhs) or fresh Cell (expr rhs)
@@ -269,7 +278,8 @@ export function copyAllMeta(source, target, depth) {
  *   ephemeral (_)  → replaced wholesale from rhsValue
  *   sticky (__)    → preserved from oldValue UNLESS rhsValue supplies the same key
  *
- * Special: mutable/frozen/immutable/locked are ordinary meta preserved from old.
+ * Special: lock/frozen/immutable are ordinary meta preserved from old.
+ * Note: ._mutable is ephemeral — replaced wholesale from rhs under ~=.
  * If lhs is a new cell (oldValue is null), no old meta to preserve.
  *
  * @param {*} oldValue  - the value being replaced (may be null if new cell)

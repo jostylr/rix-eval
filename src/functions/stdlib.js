@@ -7,6 +7,7 @@ import { Integer } from "@ratmath/core";
 import { coerceShapeValue, createTensor, forEachTensorCell, tensorIndexTuple, tensorSize, isTensor } from "../tensor.js";
 import { callWithConcreteArgs } from "./functions.js";
 import { formatValue } from "../format.js";
+import { deepSetMutable } from "./core.js";
 
 export const stdlibFunctions = {
     // --- Collection Functions ---
@@ -264,5 +265,15 @@ export const stdlibFunctions = {
             return null;
         },
         doc: "Print each argument on a separate line to console",
+    },
+
+    DEEPMUTABLE: {
+        impl(args) {
+            const value = args[0];
+            const flag = args[1];  // null (_) → remove ._mutable; anything else → set it
+            deepSetMutable(value, flag);
+            return value;
+        },
+        doc: "Recursively set (flag≠_) or remove (flag=_) ._mutable on all nested arrays/maps/tensors. Called via .DeepMutable(value, flag).",
     },
 };

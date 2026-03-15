@@ -644,7 +644,7 @@ RiX separates two distinct access concepts: **meta properties** (external annota
 | `obj .= map` | `META_MERGE` | Bulk merge map into meta properties (null values = delete) |
 | `obj[expr]` | `INDEX_GET` | Index into collection (1-based for sequences/strings; key for maps) |
 | `obj[:name]` | `INDEX_GET` | Map access by key literal (`:name`, `:1`, `:"1"`) |
-| `obj[i] = val` | `INDEX_SET` | Set collection index (allowed by default for arrays and maps; requires `mutable=1`) |
+| `obj[i] = val` | `INDEX_SET` | Set collection index (requires `._mutable` value meta; arrays/maps/tensors default to mutable) |
 | `obj.\|` | `KEYS` | Get set of map keys |
 | `obj\|.` | `VALUES` | Get set of map values |
 | `obj.Method(args)` | `CALL_EXPR` | Method call — desugars to `CALL_EXPR(META_GET(obj,"Method"), obj, args...)` |
@@ -896,11 +896,11 @@ Function-call lookup note:
 | Function | Description | Syntax Aliases |
 |----------|-------------|----------------|
 | `META_GET(obj, name)` | Get meta property (null if absent) | `obj.name` |
-| `META_SET(obj, name, val)` | Set meta property (null = delete; respects immutable/frozen) | `obj.name = val` |
+| `META_SET(obj, name, val)` | Set meta property (null = delete; blocked by `.immutable`; blocked by `.frozen` for non-frozen keys) | `obj.name = val` |
 | `META_ALL(obj)` | Get all meta properties as read-only map | `obj..` |
 | `META_MERGE(obj, map)` | Bulk merge map into meta (null values = delete) | `obj .= map` |
 | `INDEX_GET(obj, key)` | Index into collection (1-based for sequences/strings; normalized keys for maps) | `obj[expr]`, `obj[:name]`, `obj[:1]` |
-| `INDEX_SET(obj, key, val)` | Set index (requires `mutable=1` meta flag) | `obj[i] = val` |
+| `INDEX_SET(obj, key, val)` | Set index (requires `._mutable` value flag) | `obj[i] = val` |
 | `BRACKET_GET(obj, specs...)` | Tensor-aware bracket indexing and slicing | `obj[i, ::]` |
 | `BRACKET_SET(obj, specs..., val)` | Tensor-aware bracket assignment | `obj[::, 1] = val` |
 | `.KEYOF(x)` | Resolve canonical map key string | `.KEYOF(x)` |
@@ -913,20 +913,42 @@ Meta properties are classified by key prefix, which controls how they behave dur
 
 | Prefix | Category | Examples | Survives `~=`? |
 |--------|----------|----------|----------------|
-| *(none)* | **Ordinary** | `.key`, `.mutable`, `.frozen`, `.immutable`, `.locked` | Yes — preserved from lhs |
-| `_` | **Ephemeral** (value-linked) | `._spec`, `._deriv` | Replaced wholesale from rhs |
+| *(none)* | **Ordinary** | `.key`, `.lock`, `.frozen`, `.immutable` | Yes — preserved from lhs |
+| `_` | **Ephemeral** (value-linked) | `._mutable`, `._spec`, `._deriv` | Replaced wholesale from rhs |
 | `__` | **Sticky** (value-interpretation) | `.__units`, `.__format` | Preserved unless rhs supplies same key |
 
 - `:=` / `::=` copy **all** meta categories into the new cell.
 - `~=` / `~~=` preserve ordinary, replace ephemeral, merge sticky (lhs wins unless rhs overrides).
 - `=` (alias) shares the cell entirely — no meta copying occurs.
 
-**Mutability & Locking:**
-- **`mutable`**: By default, **arrays**, **maps**, and **tensors** are created with `mutable=1`. This allows modification after creation using `INDEX_SET` / tensor bracket assignment. To lock an object against further modification, set `obj.mutable = _`.
-- **`locked`**: When `locked=1`, the value cannot be replaced via `~=` / `~~=` / combo operators. Does **not** prevent meta changes. `=` and `:=` still work (they rebind to a different cell). Use this to protect a specific value from accidental in-place replacement.
-- **`frozen`**: When `frozen=1`, no meta properties can be changed except for `frozen` itself, and the value cannot be replaced via `~=` / `~~=`. This provides a "temporary lock" on both meta and value.
-- **`immutable`**: When `immutable=1`, the object is permanently locked. No meta properties (including `immutable` or `frozen`) can be changed, and the value cannot be replaced via `~=` / `~~=`.
+**Cell-level protections** (ordinary meta — govern whole-value *replacement*):
+
+- **`.lock`**: Blocks `~=`, `~~=`, and combo operators. Does **not** block `=`/`:=` (rebind/copy) or in-place index mutation of a mutable value.
+- **`.frozen`**: Blocks `~=`/`~~=` *and* ordinary meta edits (except unsetting `.frozen` itself). Does **not** block `=`/`:=` or in-place index mutation.
+- **`.immutable`**: Like `.frozen` but permanent — cannot be unset. Blocks all meta edits and `~=`/`~~=`.
 - **`.key` identity**: `.key` must be string/integer and is effectively write-once (idempotent same-value writes allowed; changing value is an error). Used by `KEYOF` for map keys.
+
+**Value-level mutability** (ephemeral meta — governs in-place *structural mutation*):
+
+- **`._mutable`**: When truthy, composite values (arrays, maps, tensors) allow index/bracket assignment (`arr[i] = v`). Arrays, maps, and tensors default to `._mutable = 1`. Remove with `obj._mutable = _` to make the value structurally immutable. Because `._mutable` is ephemeral, it is replaced wholesale when you do `~=` — so the lhs adopts the rhs's `._mutable` state.
+
+**Important:** cell protections (`.lock`, `.frozen`, `.immutable`) and value mutability (`._mutable`) are **independent**. A locked cell may hold a mutable array; a `~=` can replace a locked value (error) but a `[i] = v` succeeds if `._mutable` is set.
+
+```rix
+x := [1, 2, 3]
+x.lock = 1         ## cell locked against ~=
+x ~= [9, 9, 9]    ## ERROR: cell is locked
+x[1] = 9          ## OK: ._mutable controls index assignment, not .lock
+```
+
+**DeepMutable system function** — recursively set or remove `._mutable` throughout a nested value:
+
+| Call | Effect |
+|------|--------|
+| `.DeepMutable(value, 1)` | Set `._mutable` on all nested arrays/maps/tensors |
+| `.DeepMutable(value, _)` | Remove `._mutable` from all nested arrays/maps/tensors |
+
+The flag `_` (null) means "remove"; any non-null value (including `0`) means "add". Only `_` is false in RiX.
 
 ### Regex
 

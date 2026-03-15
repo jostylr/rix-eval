@@ -8,6 +8,7 @@ import {
     shallowCopyValue, deepCopyValue,
     copyAllMeta, transferMetaForUpdate,
 } from "../cell.js";
+import { isTensor } from "../tensor.js";
 
 const BASE_RESERVED_CHARS = new Set([".", "/", "#", "~", "_", "^", "+", "-"]);
 const BASE_MODE_ALIASES = new Map([
@@ -770,7 +771,7 @@ function resolveAssignName(arg, evaluate) {
  */
 function checkLocked(value) {
     const ext = value?._ext;
-    if (ext?.get("locked")) {
+    if (ext?.get("lock")) {
         throw new Error("Cannot update value: cell is locked. Use = or := to rebind instead.");
     }
 }
@@ -834,6 +835,59 @@ function performOuterUpdate(name, rhsValue, context, depth) {
     }
 
     throw new Error(`Cannot update outer variable '@${name}' because it does not exist in any outer scope.`);
+}
+
+/**
+ * Recursively set or remove `._mutable` (value-level mutability meta) on all
+ * composite values within a value graph.
+ * Exported so stdlib can use it for DeepMutable.
+ *
+ * Types that receive `._mutable` and are traversed:
+ *   sequence (array), tuple, map, set, tensor
+ *
+ * Sets currently have no INDEX_SET but may gain mutation ops (e.g. add/remove)
+ * in the future, so ._mutable is set on them too for forward compatibility.
+ *
+ * @param {*} value - the root value to walk
+ * @param {*} flag  - null → remove `._mutable`; anything else → set it to Integer(1)
+ * @param {Set} [visited] - cycle guard
+ * @returns {*} the value (mutated in place)
+ */
+export function deepSetMutable(value, flag, visited = new Set()) {
+    if (!value || typeof value !== "object") return value;
+    if (visited.has(value)) return value;
+    visited.add(value);
+
+    const supportsMutable =
+        value.type === "sequence" ||
+        value.type === "tuple" ||
+        value.type === "map" ||
+        value.type === "set" ||
+        isTensor(value);
+
+    const hasChildren = supportsMutable;
+
+    if (!hasChildren) return value;
+
+    // Set or remove `._mutable` on types that support index assignment
+    if (supportsMutable) {
+        if (!value._ext) value._ext = new Map();
+        if (flag === null) {
+            value._ext.delete("_mutable");
+        } else {
+            value._ext.set("_mutable", new Integer(1n));
+        }
+    }
+
+    // Recurse into children
+    if (value.type === "sequence" || value.type === "tuple" || value.type === "set") {
+        for (const v of value.values) deepSetMutable(v, flag, visited);
+    } else if (value.type === "map" && value.entries instanceof Map) {
+        for (const v of value.entries.values()) deepSetMutable(v, flag, visited);
+    }
+    // Tensor data is flat scalars — no composite children to recurse into
+
+    return value;
 }
 
 export const coreFunctions = {

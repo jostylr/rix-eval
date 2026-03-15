@@ -461,20 +461,26 @@ describe("RiX Evaluator", () => {
             expect(evalRix("x;", context).value).toBe(10n);
         });
 
-        test("alias import same-name writes through", () => {
-            const { result, context } = evalRixWithContext("y = 10; {; <y=> y = y + 5; y };");
+        test("alias import same-name writes through with ~=", () => {
+            const { result, context } = evalRixWithContext("y := 10; {; <y=> y ~= y + 5; y };");
             expect(result.value).toBe(15n);
             expect(evalRix("y;", context).value).toBe(15n);
         });
 
-        test("alias import renamed local writes through", () => {
-            const { result, context } = evalRixWithContext("y = 10; {; <b=y> b = b + 5; b };");
+        test("alias import same-name: = rebinds (breaks alias)", () => {
+            const { result, context } = evalRixWithContext("y := 10; {; <y=> y = y + 5; y };");
+            expect(result.value).toBe(15n);
+            expect(evalRix("y;", context).value).toBe(10n); // outer unchanged
+        });
+
+        test("alias import renamed local writes through with +=", () => {
+            const { result, context } = evalRixWithContext("y := 10; {; <b=y> b += 5; b };");
             expect(result.value).toBe(15n);
             expect(evalRix("y;", context).value).toBe(15n);
         });
 
         test("mixed copy and alias imports behave independently", () => {
-            const { result, context } = evalRixWithContext("x = 3; y = 4; {; <x, y=> x = x + 10; y = y + 10; [x, y] };");
+            const { result, context } = evalRixWithContext("x := 3; y := 4; {; <x, y=> x = x + 10; y ~= y + 10; [x, y] };");
             expect(result.values[0].value).toBe(13n);
             expect(result.values[1].value).toBe(14n);
             expect(evalRix("x;", context).value).toBe(3n);

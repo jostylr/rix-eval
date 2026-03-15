@@ -4,6 +4,10 @@
 
 import { Integer, Rational, RationalInterval, BaseSystem } from "@ratmath/core";
 import { HOLE, isHole } from "../hole.js";
+import {
+    shallowCopyValue, deepCopyValue,
+    copyAllMeta, transferMetaForUpdate,
+} from "../cell.js";
 
 const BASE_RESERVED_CHARS = new Set([".", "/", "#", "~", "_", "^", "+", "-"]);
 const BASE_MODE_ALIASES = new Map([
@@ -745,6 +749,91 @@ function parseRepeatingDecimalLiteral(str) {
     return result;
 }
 
+// ─── Assignment helpers ──────────────────────────────────────────────
+
+/**
+ * Resolve an assignment target name from IR args[0].
+ * Handles raw strings, IR nodes that evaluate to strings, and RiX string objects.
+ */
+function resolveAssignName(arg, evaluate) {
+    let name = typeof arg === "object" && arg !== null && arg.fn
+        ? evaluate(arg)
+        : arg;
+    if (name && typeof name === "object" && name.type === "string") {
+        name = name.value;
+    }
+    return name;
+}
+
+/**
+ * Check if a value is locked (cannot be replaced via ~= / ~~=).
+ */
+function checkLocked(value) {
+    const ext = value?._ext;
+    if (ext?.get("locked")) {
+        throw new Error("Cannot update value: cell is locked. Use = or := to rebind instead.");
+    }
+}
+
+/**
+ * Check if a value is frozen or immutable (cannot be replaced via ~= / ~~=).
+ */
+function checkFrozenImmutable(value) {
+    const ext = value?._ext;
+    if (ext?.get("immutable")) {
+        throw new Error("Cannot update value: cell is immutable");
+    }
+    if (ext?.get("frozen")) {
+        throw new Error("Cannot update value: cell is frozen");
+    }
+}
+
+/**
+ * Perform in-place value replacement (~= / ~~=) on a local binding.
+ * Preserves cell identity (binding slot) so aliases see the change.
+ */
+function performUpdate(name, rhsValue, context, depth) {
+    const copyFn = depth === "deep" ? deepCopyValue : shallowCopyValue;
+    const ref = context.getBindingRef(name);
+
+    if (ref) {
+        const oldValue = ref.map.get(ref.name);
+        checkLocked(oldValue);
+        checkFrozenImmutable(oldValue);
+        const newValue = copyFn(rhsValue);
+        transferMetaForUpdate(oldValue, newValue, rhsValue, depth);
+        ref.map.set(ref.name, newValue);
+        return newValue;
+    }
+
+    // lhs doesn't exist yet — create fresh binding with rhs value + meta
+    const newValue = copyFn(rhsValue);
+    // Copy all rhs meta since there's no old meta to preserve
+    copyAllMeta(rhsValue, newValue, depth);
+    context.setFresh(name, newValue);
+    return newValue;
+}
+
+/**
+ * Perform in-place value replacement on an outer scope binding.
+ */
+function performOuterUpdate(name, rhsValue, context, depth) {
+    const copyFn = depth === "deep" ? deepCopyValue : shallowCopyValue;
+    const ref = context.getOuterBindingRef(name);
+
+    if (ref) {
+        const oldValue = ref.map.get(ref.name);
+        checkLocked(oldValue);
+        checkFrozenImmutable(oldValue);
+        const newValue = copyFn(rhsValue);
+        transferMetaForUpdate(oldValue, newValue, rhsValue, depth);
+        ref.map.set(ref.name, newValue);
+        return newValue;
+    }
+
+    throw new Error(`Cannot update outer variable '@${name}' because it does not exist in any outer scope.`);
+}
+
 export const coreFunctions = {
     LITERAL: {
         impl(args) {
@@ -1091,37 +1180,96 @@ export const coreFunctions = {
         doc: "Look up a variable strictly in the outer scope chains",
     },
 
+    // ─── Assignment operators ─────────────────────────────────────────
+    //
+    // =    ASSIGN            alias/rebind — share binding slot with rhs
+    // :=   ASSIGN_COPY       fresh cell with shallow-copied value + all meta
+    // ~=   ASSIGN_UPDATE     in-place value replacement (cell-preserving)
+    // ::=  ASSIGN_DEEP_COPY  fresh cell with deep-copied value + all meta
+    // ~~=  ASSIGN_DEEP_UPDATE in-place value replacement with deep copies
+
     ASSIGN: {
         lazy: true,
         impl(args, context, evaluate) {
-            // Evaluated name (if it was an IR node like STRING)
-            let name = typeof args[0] === "object" && args[0] !== null && args[0].fn
-                ? evaluate(args[0])
-                : args[0];
+            const name = resolveAssignName(args[0], evaluate);
+            const rhsIR = args[1];
 
-            // Unwrap RiX string object if necessary
-            if (name && typeof name === "object" && name.type === "string") {
-                name = name.value;
+            // If rhs is a simple variable reference, alias to its binding slot
+            if (rhsIR && typeof rhsIR === "object" && rhsIR.fn === "RETRIEVE") {
+                const rhsName = rhsIR.args[0];
+                const ref = context.getBindingRef(rhsName);
+                if (ref) {
+                    context.setAlias(name, ref);
+                    return ref.map.get(ref.name);
+                }
+            }
+            if (rhsIR && typeof rhsIR === "object" && rhsIR.fn === "OUTER_RETRIEVE") {
+                const rhsName = rhsIR.args[0];
+                const ref = context.getOuterBindingRef(rhsName);
+                if (ref) {
+                    context.setAlias(name, ref);
+                    return ref.map.get(ref.name);
+                }
             }
 
-            const value = evaluate(args[1]);
-            context.set(name, value);
+            // Otherwise evaluate and create a fresh binding
+            const value = evaluate(rhsIR);
+            context.setFresh(name, value);
             return value;
         },
-        doc: "Assign a value to a variable in the current scope",
+        doc: "Alias/rebind — lhs shares the same binding slot as rhs variable, or gets a fresh binding for expressions",
+    },
+
+    ASSIGN_COPY: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const name = resolveAssignName(args[0], evaluate);
+            const rhsValue = evaluate(args[1]);
+            const newValue = shallowCopyValue(rhsValue);
+            copyAllMeta(rhsValue, newValue, "shallow");
+            context.setFresh(name, newValue);
+            return newValue;
+        },
+        doc: "Fresh copied-cell assignment (:=) — shallow-copy value + all meta into new binding",
+    },
+
+    ASSIGN_UPDATE: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const name = resolveAssignName(args[0], evaluate);
+            const rhsValue = evaluate(args[1]);
+            return performUpdate(name, rhsValue, context, "shallow");
+        },
+        doc: "In-place value replacement (~=) — preserves cell identity, ordinary meta; replaces ephemeral; preserves sticky unless rhs overrides",
+    },
+
+    ASSIGN_DEEP_COPY: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const name = resolveAssignName(args[0], evaluate);
+            const rhsValue = evaluate(args[1]);
+            const newValue = deepCopyValue(rhsValue);
+            copyAllMeta(rhsValue, newValue, "deep");
+            context.setFresh(name, newValue);
+            return newValue;
+        },
+        doc: "Fresh deep-copied-cell assignment (::=) — deep-copy value + all meta into new binding",
+    },
+
+    ASSIGN_DEEP_UPDATE: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const name = resolveAssignName(args[0], evaluate);
+            const rhsValue = evaluate(args[1]);
+            return performUpdate(name, rhsValue, context, "deep");
+        },
+        doc: "In-place deep value replacement (~~=) — like ~= but deep-copies rhs value",
     },
 
     OUTER_ASSIGN: {
         lazy: true,
         impl(args, context, evaluate) {
-            let name = typeof args[0] === "object" && args[0] !== null && args[0].fn
-                ? evaluate(args[0])
-                : args[0];
-
-            if (name && typeof name === "object" && name.type === "string") {
-                name = name.value;
-            }
-
+            const name = resolveAssignName(args[0], evaluate);
             const value = evaluate(args[1]);
             context.setOuter(name, value);
             return value;
@@ -1129,18 +1277,21 @@ export const coreFunctions = {
         doc: "Assign a value to an existing outer scope variable",
     },
 
+    OUTER_UPDATE: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const name = resolveAssignName(args[0], evaluate);
+            const rhsValue = evaluate(args[1]);
+            const depth = args[2] || "shallow";
+            return performOuterUpdate(name, rhsValue, context, depth);
+        },
+        doc: "In-place value replacement on an outer scope variable (~= / ~~= with @)",
+    },
+
     GLOBAL: {
         lazy: true,
         impl(args, context, evaluate) {
-            let name = typeof args[0] === "object" && args[0] !== null && args[0].fn
-                ? evaluate(args[0])
-                : args[0];
-
-            // Unwrap RiX string object if necessary
-            if (name && typeof name === "object" && name.type === "string") {
-                name = name.value;
-            }
-
+            const name = resolveAssignName(args[0], evaluate);
             const value = evaluate(args[1]);
             context.setGlobal(name, value);
             return value;

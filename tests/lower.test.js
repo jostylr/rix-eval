@@ -106,10 +106,10 @@ describe("Lowering Pass", () => {
       });
     });
 
-    test("x := 5 (same as =)", () => {
+    test("x := 5 produces ASSIGN_COPY", () => {
       const ir = L("x := 5;");
       expect(ir).toEqual({
-        fn: "ASSIGN",
+        fn: "ASSIGN_COPY",
         args: ["x", { fn: "LITERAL", args: ["5"] }],
       });
     });
@@ -482,7 +482,7 @@ describe("Lowering Pass", () => {
       const ir = L("{; a := 1; b := 2; a + b };");
       expect(ir.fn).toBe("BLOCK");
       expect(ir.args.length).toBe(3);
-      expect(ir.args[0].fn).toBe("ASSIGN");
+      expect(ir.args[0].fn).toBe("ASSIGN_COPY");
     });
 
     test("{? cond1; cond2 } → CASE with DEFERs", () => {

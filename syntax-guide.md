@@ -23,17 +23,32 @@
 | `||` | `OR` | `x == 0 || y == 0` |
 | `?|` | `HOLE_COALESCE` | `a[2] ?| 9` — returns left if not a hole, else right |
 | `!` | `NOT` | `!(x == 0)` |
-| `:=` or `=` | `ASSIGN` | `x := 5` or `x = 5` |
+| `=` | `ASSIGN` | `y = x` (alias/rebind) |
+| `:=` | `ASSIGN_COPY` | `x := 5` (fresh copy) |
+| `~=` | `ASSIGN_UPDATE` | `x ~= 9` (in-place) |
+| `::=` | `ASSIGN_DEEP_COPY` | `y ::= x` (deep copy) |
+| `~~=` | `ASSIGN_DEEP_UPDATE` | `x ~~= val` (deep in-place) |
 | `-` (unary) | `NEG` | `-x` |
 
 ### Assignment & Definition
 
-| Syntax | System Function | Example |
-|--------|----------------|---------|
-| `x := expr` | `ASSIGN` | `x := 42` |
-| `x = expr` | `ASSIGN` | `x = 42` |
+Variables name **cells** — mutable containers holding a value and meta properties. Different assignment operators produce different cell semantics.
+
+| Syntax | System Function | Semantics |
+|--------|----------------|-----------|
+| `x = expr` | `ASSIGN` | Alias/rebind — if rhs is a variable, share its cell; otherwise create a fresh cell |
+| `x := expr` | `ASSIGN_COPY` | Fresh copy — shallow-copy value + all meta into a new cell |
+| `x ~= expr` | `ASSIGN_UPDATE` | In-place value replacement — preserve cell identity and ordinary meta |
+| `x ::= expr` | `ASSIGN_DEEP_COPY` | Deep copy — like `:=` but recursively copies nested collections |
+| `x ~~= expr` | `ASSIGN_DEEP_UPDATE` | Deep in-place — like `~=` but deep-copies the rhs value |
+| `x += expr` | `ASSIGN_UPDATE` | Combo ops desugar to `x ~= x + expr` (cell-preserving) |
 | `F(x) -> body` | `FUNCDEF` | `Sq(x) -> x ^ 2` |
 | `(x) -> body` | `LAMBDA` | `(x) -> x + 1` |
+
+**Key distinctions:**
+- `=` shares a cell (aliases track mutations); `:=` creates an independent copy.
+- `~=` replaces the value inside an existing cell, so aliases see the change. `=` rebinds to a different cell.
+- Combo operators (`+=`, `-=`, `*=`, `/=`, `^=`, etc.) use `~=` semantics — they preserve cell identity.
 
 ### Brace Containers
 
@@ -780,10 +795,25 @@ Function-call lookup note:
 | `.KEYS(obj)` | Get keys of map as set | `obj.\|`, `.KEYS(obj)` |
 | `.VALUES(obj)` | Get values of map as set | `obj\|.`, `.VALUES(obj)` |
 
+**Meta Property Categories:**
+
+Meta properties are classified by key prefix, which controls how they behave during `~=` / `~~=` (in-place value replacement):
+
+| Prefix | Category | Examples | Survives `~=`? |
+|--------|----------|----------|----------------|
+| *(none)* | **Ordinary** | `.key`, `.mutable`, `.frozen`, `.immutable`, `.locked` | Yes — preserved from lhs |
+| `_` | **Ephemeral** (value-linked) | `._spec`, `._deriv` | Replaced wholesale from rhs |
+| `__` | **Sticky** (value-interpretation) | `.__units`, `.__format` | Preserved unless rhs supplies same key |
+
+- `:=` / `::=` copy **all** meta categories into the new cell.
+- `~=` / `~~=` preserve ordinary, replace ephemeral, merge sticky (lhs wins unless rhs overrides).
+- `=` (alias) shares the cell entirely — no meta copying occurs.
+
 **Mutability & Locking:**
 - **`mutable`**: By default, **arrays**, **maps**, and **tensors** are created with `mutable=1`. This allows modification after creation using `INDEX_SET` / tensor bracket assignment. To lock an object against further modification, set `obj.mutable = _`.
-- **`frozen`**: When `frozen=1`, no meta properties can be changed except for `frozen` itself. This provides a "temporary lock" on meta settings.
-- **`immutable`**: When `immutable=1`, the object is permanently locked. No meta properties (including `immutable` or `frozen`) can be changed.
+- **`locked`**: When `locked=1`, the value cannot be replaced via `~=` / `~~=` / combo operators. Does **not** prevent meta changes. `=` and `:=` still work (they rebind to a different cell). Use this to protect a specific value from accidental in-place replacement.
+- **`frozen`**: When `frozen=1`, no meta properties can be changed except for `frozen` itself, and the value cannot be replaced via `~=` / `~~=`. This provides a "temporary lock" on both meta and value.
+- **`immutable`**: When `immutable=1`, the object is permanently locked. No meta properties (including `immutable` or `frozen`) can be changed, and the value cannot be replaced via `~=` / `~~=`.
 - **`.key` identity**: `.key` must be string/integer and is effectively write-once (idempotent same-value writes allowed; changing value is an error). Used by `KEYOF` for map keys.
 
 ### Regex
@@ -800,17 +830,23 @@ Function-call lookup note:
 
 ### Variables
 
-| Function | Description | Syntax Aliases |
-|----------|-------------|----------------|
-| `ASSIGN(name, val)` | Set local variable | `name := val`, `name = val` |
+| Function | Description | Syntax |
+|----------|-------------|--------|
+| `ASSIGN(name, val)` | Alias/rebind — share rhs cell or create fresh | `name = val` |
+| `ASSIGN_COPY(name, val)` | Fresh cell with shallow-copied value + all meta | `name := val` |
+| `ASSIGN_UPDATE(name, val)` | In-place value replacement (cell-preserving) | `name ~= val`, `name += val` |
+| `ASSIGN_DEEP_COPY(name, val)` | Deep-copied fresh cell | `name ::= val` |
+| `ASSIGN_DEEP_UPDATE(name, val)` | In-place deep value replacement | `name ~~= val` |
 | `GLOBAL(name, val)` | Set global variable | — |
 | `RETRIEVE(name)` | Look up variable | `name` |
-| `OUTER_ASSIGN(name, val)` | Set an existing outer scope variable | `@name = val`, `@name += val`, etc. |
+| `OUTER_ASSIGN(name, val)` | Rebind an existing outer scope variable | `@name = val` |
+| `OUTER_UPDATE(name, val)` | In-place update of outer variable | `@name += val`, `@name ~= val` |
 | `OUTER_RETRIEVE(name)` | Look up an outer scope variable | `@name` |
 
 Scope note:
 - `RETRIEVE(Name)` remains lexical even for capitalized names.
 - Only direct call syntax `Name(...)` uses outward callable lookup.
+- Combo operators (`+=`, `-=`, etc.) desugar to `ASSIGN_UPDATE` / `OUTER_UPDATE`, preserving cell identity so aliases track changes.
 
 ### Future Extensions (Stubs)
 

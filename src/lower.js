@@ -203,17 +203,19 @@ const LOWERERS = {
   BinaryOperation(node) {
     const op = node.operator;
 
-    // Assignment operators
-    if (op === "=" || op === ":=") {
-      return lowerAssignment(node);
-    }
+    // Assignment operators — each produces a different IR node
+    if (op === "=") return lowerAssignment(node, "ASSIGN");
+    if (op === ":=") return lowerAssignment(node, "ASSIGN_COPY");
+    if (op === "~=") return lowerAssignment(node, "ASSIGN_UPDATE");
+    if (op === "::=") return lowerAssignment(node, "ASSIGN_DEEP_COPY");
+    if (op === "~~=") return lowerAssignment(node, "ASSIGN_DEEP_UPDATE");
 
     // Bulk meta merge
     if (op === ".=") {
       return ir("META_MERGE", lowerNode(node.left), lowerNode(node.right));
     }
 
-    // Combo assignment operators
+    // Combo assignment operators — desugar to ~= (cell-preserving update)
     const comboOpMap = {
       "+=": true,
       "-=": true,
@@ -226,8 +228,7 @@ const LOWERERS = {
     };
 
     if (comboOpMap[op]) {
-      // De-sugar exactly as `left = left OP right`
-      // Create a virtual AST node for the `left OP right` math operation
+      // De-sugar: x += 1 → x ~= x + 1 (preserves cell identity for aliases)
       const mathOpStr = op.slice(0, -1); // Remove '='
       const mathAstNode = {
         type: "BinaryOperation",
@@ -237,16 +238,16 @@ const LOWERERS = {
         pos: node.pos,
       };
 
-      // Create a virtual AST node for `left = mathAstNode`
+      // Use ~= semantics for variable assignments (cell-preserving update)
       const assignAstNode = {
         type: "BinaryOperation",
-        operator: "=",
+        operator: "~=",
         left: node.left,
         right: mathAstNode,
         pos: node.pos,
       };
 
-      return lowerAssignment(assignAstNode);
+      return lowerAssignment(assignAstNode, "ASSIGN_UPDATE");
     }
     if (op === ":=:") {
       const left = node.left;
@@ -850,8 +851,11 @@ function lowerImports(imports) {
 
 /**
  * Lower assignment: x = expr or F(x) = expr
+ * @param {Object} node - AST assignment node
+ * @param {string} irFn - IR function name: ASSIGN, ASSIGN_COPY, ASSIGN_UPDATE,
+ *                        ASSIGN_DEEP_COPY, ASSIGN_DEEP_UPDATE
  */
-function lowerAssignment(node) {
+function lowerAssignment(node, irFn) {
   const left = node.left;
 
   // Base prefix definition assignment: 0A = ...
@@ -864,12 +868,20 @@ function lowerAssignment(node) {
 
   // Outer variable assignment: @a = 5
   if (left.type === "OuterIdentifier") {
+    // Map assignment modes to outer variants
+    const outerFn = irFn === "ASSIGN" ? "OUTER_ASSIGN"
+      : (irFn === "ASSIGN_COPY" || irFn === "ASSIGN_DEEP_COPY") ? "OUTER_ASSIGN"
+      : "OUTER_UPDATE";
+    const depth = (irFn === "ASSIGN_DEEP_COPY" || irFn === "ASSIGN_DEEP_UPDATE") ? "deep" : "shallow";
+    if (outerFn === "OUTER_UPDATE") {
+      return ir("OUTER_UPDATE", left.name, lowerNode(node.right), depth);
+    }
     return ir("OUTER_ASSIGN", left.name, lowerNode(node.right));
   }
 
   // Simple variable assignment: x = 5
   if (left.type === "UserIdentifier" || left.type === "SystemIdentifier") {
-    return ir("ASSIGN", left.name, lowerNode(node.right));
+    return ir(irFn, left.name, lowerNode(node.right));
   }
 
   if (left.type === "SelfRef") {

@@ -10,8 +10,10 @@ export class Context {
     constructor() {
         // Global scope is always the bottom of the chain
         this.globalScope = new Map();
+        // Global-level aliases (name → { map, name } binding references)
+        this.globalAliases = new Map();
         // Stack of local scopes (innermost = last element)
-        // Each entry is { bindings: Map, isolated: boolean }.
+        // Each entry is { bindings: Map, aliases: Map, isolated: boolean }.
         // Isolated scopes act as lookup barriers for plain identifiers.
         this.localScopes = [];
         // User-defined functions: name → { params, body, closure }
@@ -71,6 +73,7 @@ export class Context {
 
     /**
      * Set a variable in the current (innermost) scope.
+     * If the name is aliased, writes through the alias.
      * If no local scope exists, sets in global scope.
      * @param {string} name
      * @param {*} value
@@ -85,8 +88,66 @@ export class Context {
             }
             scope.bindings.set(name, value);
         } else {
+            const aliasRef = this.globalAliases.get(name);
+            if (aliasRef) {
+                aliasRef.map.set(aliasRef.name, value);
+                return;
+            }
             this.globalScope.set(name, value);
         }
+    }
+
+    /**
+     * Create a fresh binding for name, breaking any existing alias.
+     * Used by := and ::= which always create independent copies.
+     * @param {string} name
+     * @param {*} value
+     */
+    setFresh(name, value) {
+        if (this.localScopes.length > 0) {
+            const scope = this.localScopes[this.localScopes.length - 1];
+            scope.aliases.delete(name);
+            scope.bindings.set(name, value);
+        } else {
+            this.globalAliases.delete(name);
+            this.globalScope.set(name, value);
+        }
+    }
+
+    /**
+     * Make name an alias to an existing binding reference.
+     * Used by = when rhs is a variable (alias/rebind semantics).
+     * @param {string} name
+     * @param {{ map: Map, name: string }} ref - binding reference to alias to
+     */
+    setAlias(name, ref) {
+        if (this.localScopes.length > 0) {
+            const scope = this.localScopes[this.localScopes.length - 1];
+            scope.bindings.delete(name);
+            scope.aliases.set(name, ref);
+        } else {
+            this.globalScope.delete(name);
+            this.globalAliases.set(name, ref);
+        }
+    }
+
+    /**
+     * Resolve the binding reference for a name (including alias following).
+     * Public wrapper around resolveBinding for use in assignment operators.
+     * @param {string} name
+     * @returns {{ map: Map, name: string }|null}
+     */
+    getBindingRef(name) {
+        return this.resolveBinding(name);
+    }
+
+    /**
+     * Resolve the binding reference for a name in outer scopes.
+     * @param {string} name
+     * @returns {{ map: Map, name: string }|null}
+     */
+    getOuterBindingRef(name) {
+        return this.resolveBinding(name, { skipInnermost: true, respectIsolation: false });
     }
 
     /**
@@ -167,6 +228,10 @@ export class Context {
 
         if (this.globalScope.has(name)) {
             return { map: this.globalScope, name };
+        }
+
+        if (this.globalAliases.has(name)) {
+            return this.globalAliases.get(name);
         }
 
         return null;
@@ -267,6 +332,7 @@ export class Context {
     child() {
         const child = new Context();
         child.globalScope = this.globalScope;
+        child.globalAliases = this.globalAliases;
         child.functions = this.functions;
         child.env = this.env;
         child.callStack = [...this.callStack];
@@ -309,6 +375,7 @@ export class Context {
      */
     clear() {
         this.globalScope.clear();
+        this.globalAliases.clear();
         this.localScopes = [];
         this.functions.clear();
         this.callStack = [];
@@ -321,6 +388,7 @@ export class Context {
     getAllNames() {
         const names = new Set([
             ...this.globalScope.keys(),
+            ...this.globalAliases.keys(),
             ...this.functions.keys()
         ]);
         return Array.from(names).sort();

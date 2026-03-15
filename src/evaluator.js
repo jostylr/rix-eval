@@ -7,10 +7,14 @@
  * The evaluate function is the core recursive interpreter.
  */
 
+import fs from "node:fs";
+import path from "node:path";
 import { Registry } from "./registry.js";
 import { SystemContext } from "./system-context.js";
 import { Context } from "./context.js";
+import { Cell, copyAllMeta, deepCopyValue, shallowCopyValue } from "./cell.js";
 import { isHole } from "./hole.js";
+import { runtimeDefaults } from "./runtime-config.js";
 import { coreFunctions } from "./functions/core.js";
 import { arithmeticFunctions } from "./functions/arithmetic.js";
 import { comparisonFunctions } from "./functions/comparison.js";
@@ -22,6 +26,9 @@ import { propertyFunctions } from "./functions/properties.js";
 import { advancedFunctions } from "./functions/advanced.js";
 import { stdlibFunctions } from "./functions/stdlib.js";
 import { installSymbolicBindings, symbolicFunctions } from "./functions/symbolic.js";
+import { parse } from "../../parser/src/parser.js";
+import { tokenize } from "../../parser/src/tokenizer.js";
+import { lower } from "./lower.js";
 
 /**
  * Create the internal operator/language registry (no user-accessible stdlib).
@@ -46,6 +53,7 @@ export function createDefaultRegistry() {
 // Operator alias names exposed in the system context (accessible as .ADD, .SUB, @+, @*, etc.)
 const OPERATOR_ALIAS_NAMES = ["ADD", "SUB", "MUL", "DIV", "INTDIV", "MOD", "POW",
     "EQ", "NEQ", "LT", "GT", "LTE", "GTE", "AND", "OR", "NOT"];
+const SCRIPT_RUNTIME_ENV_KEY = "__script_runtime__";
 
 /**
  * Create a default SystemContext with all stdlib capabilities, frozen by default.
@@ -71,6 +79,399 @@ export function createDefaultSystemContext(options = {}) {
     }
     if (frozen) ctx.freeze();
     return ctx;
+}
+
+function getScriptRuntime(context, options = {}) {
+    let runtime = context.getEnv(SCRIPT_RUNTIME_ENV_KEY);
+    if (!runtime) {
+        runtime = {
+            systemLookup: options.systemLookup || defaultSystemLookup,
+            preparedScripts: new Map(),
+            activeImports: [],
+            frameStack: [],
+        };
+        context.setEnv(SCRIPT_RUNTIME_ENV_KEY, runtime);
+        return runtime;
+    }
+
+    if (!runtime.systemLookup) {
+        runtime.systemLookup = options.systemLookup || defaultSystemLookup;
+    }
+    return runtime;
+}
+
+function getScriptCapabilityConfig(context) {
+    const groupOverride = context.getEnv("capabilityGroups", null);
+    const policyOverride = context.getEnv("defaultScriptCapabilityPolicy", null);
+    const permissionOverride = context.getEnv("scriptPermissionNames", null);
+
+    return {
+        capabilityGroups: {
+            ...runtimeDefaults.capabilityGroups,
+            ...(groupOverride || {}),
+        },
+        defaultPolicy: {
+            ...runtimeDefaults.defaultScriptCapabilityPolicy,
+            ...(policyOverride || {}),
+        },
+        permissionNames: new Set(permissionOverride || runtimeDefaults.scriptPermissionNames),
+    };
+}
+
+function getHostAvailablePermissions(context) {
+    return new Set(getScriptCapabilityConfig(context).permissionNames);
+}
+
+function stripMeta(value) {
+    if (value && typeof value === "object" && value._ext) {
+        delete value._ext;
+    }
+    return value;
+}
+
+function cloneValueForBinding(value, mode) {
+    if (mode === "copy") {
+        return stripMeta(shallowCopyValue(value));
+    }
+    if (mode === "copy_meta") {
+        const next = stripMeta(shallowCopyValue(value));
+        copyAllMeta(value, next, "shallow");
+        return next;
+    }
+    if (mode === "deep_copy") {
+        return stripMeta(deepCopyValue(value));
+    }
+    if (mode === "deep_copy_meta") {
+        const next = stripMeta(deepCopyValue(value));
+        copyAllMeta(value, next, "deep");
+        return next;
+    }
+    return value;
+}
+
+function buildBoundCell(sourceCell, mode) {
+    if (mode === "alias") {
+        return sourceCell;
+    }
+    return new Cell(cloneValueForBinding(sourceCell.value, mode));
+}
+
+function applyBindingToCurrentScope(context, target, sourceCell, mode) {
+    if (mode === "alias") {
+        context.setCell(target, sourceCell);
+        return sourceCell.value;
+    }
+    const clonedCell = buildBoundCell(sourceCell, mode);
+    context.setCell(target, clonedCell);
+    return clonedCell.value;
+}
+
+function resolveCallerBindingCell(context, spec) {
+    const sourceScope = spec.sourceScope || "current";
+    const cell =
+        sourceScope === "ancestor"
+            ? context.getAncestorCell(spec.source)
+            : context.getImmediateCell(spec.source);
+
+    if (!cell) {
+        const scopeLabel = sourceScope === "ancestor" ? "ancestor" : "current";
+        throw new Error(`Undefined ${scopeLabel} variable for script binding: ${spec.source}`);
+    }
+    return cell;
+}
+
+function unwrapScriptBoundaryNode(node) {
+    return node?.type === "Statement" ? node.expression : node;
+}
+
+function extractScriptInterface(ast, resolvedPath) {
+    const meaningful = [];
+    for (let i = 0; i < ast.length; i++) {
+        const node = unwrapScriptBoundaryNode(ast[i]);
+        if (!node || node.type === "Comment") continue;
+        meaningful.push({ index: i, node });
+    }
+
+    let inputContract = null;
+    let exportBindings = null;
+    const removeIndices = new Set();
+
+    if (meaningful.length > 0 && meaningful[0].node.type === "ScriptBindingsDeclaration") {
+        inputContract = meaningful[0].node.bindings;
+        removeIndices.add(meaningful[0].index);
+    }
+
+    if (
+        meaningful.length > 0 &&
+        meaningful[meaningful.length - 1].node.type === "ScriptBindingsDeclaration" &&
+        meaningful[meaningful.length - 1].index !== meaningful[0]?.index
+    ) {
+        exportBindings = meaningful[meaningful.length - 1].node.bindings;
+        removeIndices.add(meaningful[meaningful.length - 1].index);
+    }
+
+    const body = ast.filter((_, index) => !removeIndices.has(index));
+    for (const stmt of body) {
+        const node = unwrapScriptBoundaryNode(stmt);
+        if (node?.type === "ScriptBindingsDeclaration") {
+            throw new Error(`Script input/export declarations must appear only as the first or last statement (${resolvedPath})`);
+        }
+    }
+
+    return { inputContract, exportBindings, body };
+}
+
+function prepareScript(resolvedPath, runtime) {
+    const cached = runtime.preparedScripts.get(resolvedPath);
+    if (cached) {
+        return cached;
+    }
+
+    let source;
+    try {
+        source = fs.readFileSync(resolvedPath, "utf8");
+    } catch (error) {
+        throw new Error(`Unable to load script '${resolvedPath}': ${error.message}`);
+    }
+
+    const ast = parse(tokenize(source), runtime.systemLookup || defaultSystemLookup);
+    const { inputContract, exportBindings, body } = extractScriptInterface(ast, resolvedPath);
+    const prepared = {
+        path: resolvedPath,
+        dir: path.dirname(resolvedPath),
+        inputContract,
+        exportBindings,
+        bodyIr: lower(body),
+    };
+
+    runtime.preparedScripts.set(resolvedPath, prepared);
+    return prepared;
+}
+
+function restrictSystemContext(systemContext, allowedNames) {
+    const child = new SystemContext(new Map(), false);
+    for (const name of systemContext.getAllNames()) {
+        if (allowedNames.has(name)) {
+            child.register(name, systemContext.get(name));
+        }
+    }
+    child.freeze();
+    return child;
+}
+
+function expandCapabilityTarget(modifier, availableFunctions, availablePermissions, groups, permissionNames) {
+    if (modifier.targetType === "all") {
+        return {
+            functions: new Set(availableFunctions),
+            permissions: new Set(availablePermissions),
+        };
+    }
+
+    if (modifier.targetType === "function") {
+        return {
+            functions: new Set([modifier.target]),
+            permissions: new Set(),
+        };
+    }
+
+    const groupEntries = groups[modifier.target];
+    if (!Array.isArray(groupEntries)) {
+        throw new Error(`Unknown capability group: ${modifier.target}`);
+    }
+
+    const functions = new Set();
+    const permissions = new Set();
+    for (const name of groupEntries) {
+        if (permissionNames.has(name)) {
+            permissions.add(name);
+        } else {
+            functions.add(name);
+        }
+    }
+    return { functions, permissions };
+}
+
+function deriveScriptCapabilityFrame(systemContext, parentPermissions, modifiers, context) {
+    const { capabilityGroups, defaultPolicy, permissionNames } = getScriptCapabilityConfig(context);
+    const availableFunctions = new Set(systemContext.getAllNames());
+    const availablePermissions = new Set(parentPermissions);
+
+    const allowedFunctions = defaultPolicy.includeAllFunctions
+        ? new Set(availableFunctions)
+        : new Set((defaultPolicy.functions || []).filter((name) => availableFunctions.has(name)));
+    const allowedPermissions = new Set(
+        (defaultPolicy.permissions || []).filter((name) => availablePermissions.has(name)),
+    );
+
+    for (const modifier of modifiers || []) {
+        const expanded = expandCapabilityTarget(
+            modifier,
+            availableFunctions,
+            availablePermissions,
+            capabilityGroups,
+            permissionNames,
+        );
+
+        if (modifier.action === "add") {
+            for (const name of expanded.functions) {
+                if (availableFunctions.has(name)) {
+                    allowedFunctions.add(name);
+                }
+            }
+            for (const name of expanded.permissions) {
+                if (availablePermissions.has(name)) {
+                    allowedPermissions.add(name);
+                }
+            }
+            continue;
+        }
+
+        for (const name of expanded.functions) {
+            allowedFunctions.delete(name);
+        }
+        for (const name of expanded.permissions) {
+            allowedPermissions.delete(name);
+        }
+    }
+
+    return {
+        systemContext: restrictSystemContext(systemContext, allowedFunctions),
+        functionNames: allowedFunctions,
+        permissions: allowedPermissions,
+    };
+}
+
+function validateInputsAgainstContract(inputSpecs, inputContract) {
+    if (!Array.isArray(inputContract) || inputContract.length === 0) {
+        return;
+    }
+
+    const actualByTarget = new Map((inputSpecs || []).map((spec) => [spec.target, spec]));
+    for (const contract of inputContract) {
+        const actual = actualByTarget.get(contract.target);
+        if (!actual) {
+            throw new Error(`Missing required script input: ${contract.target}`);
+        }
+
+        if (contract.mode === "alias" && actual.mode !== "alias") {
+            throw new Error(`Script input '${contract.target}' requires alias passing`);
+        }
+        if (contract.mode !== "alias" && actual.mode === "alias") {
+            throw new Error(`Script input '${contract.target}' requires copy-style passing`);
+        }
+    }
+}
+
+function bindScriptInputs(scriptContext, parentContext, inputSpecs, inputContract) {
+    validateInputsAgainstContract(inputSpecs, inputContract);
+
+    for (const spec of inputSpecs || []) {
+        const sourceCell = resolveCallerBindingCell(parentContext, spec);
+        applyBindingToCurrentScope(scriptContext, spec.target, sourceCell, spec.mode);
+    }
+}
+
+function buildExportBundle(scriptContext, exportBindings) {
+    const entries = new Map();
+
+    for (const spec of exportBindings || []) {
+        const sourceCell = scriptContext.getCell(spec.source);
+        if (!sourceCell) {
+            throw new Error(`Cannot export undefined script binding: ${spec.source}`);
+        }
+        entries.set(spec.target, buildBoundCell(sourceCell, spec.mode));
+    }
+
+    return {
+        type: "export_bundle",
+        entries,
+    };
+}
+
+function getExportBundleCell(bundle, name) {
+    if (!bundle || bundle.type !== "export_bundle" || !(bundle.entries instanceof Map)) {
+        return null;
+    }
+    return bundle.entries.get(name) ?? null;
+}
+
+function applyCallerOutputBindings(context, outputSpecs, bundle) {
+    for (const spec of outputSpecs || []) {
+        const sourceCell = getExportBundleCell(bundle, spec.source);
+        if (!sourceCell) {
+            throw new Error(`Unknown script export: ${spec.source}`);
+        }
+        applyBindingToCurrentScope(context, spec.target, sourceCell, spec.mode);
+    }
+}
+
+function resolveScriptPath(requestedPath, runtime, context) {
+    const currentFrame = runtime.frameStack[runtime.frameStack.length - 1];
+    const baseDir = currentFrame?.dir || context.getEnv("scriptBaseDir", process.cwd());
+    const relativePath = requestedPath.endsWith(".rix") ? requestedPath : `${requestedPath}.rix`;
+    return path.resolve(baseDir, relativePath);
+}
+
+function evaluateScriptImport(spec, context, registry, systemContext) {
+    const runtime = getScriptRuntime(context);
+    const parentFrame = runtime.frameStack[runtime.frameStack.length - 1] || null;
+
+    if (parentFrame && !parentFrame.permissions.has("IMPORTS")) {
+        throw new Error("Script imports are not allowed in this script context");
+    }
+
+    const resolvedPath = resolveScriptPath(spec.path, runtime, context);
+    if (runtime.activeImports.includes(resolvedPath)) {
+        throw new Error(`Cyclic script import detected: ${[...runtime.activeImports, resolvedPath].join(" -> ")}`);
+    }
+
+    const prepared = prepareScript(resolvedPath, runtime);
+    const parentPermissions = parentFrame
+        ? new Set(parentFrame.permissions)
+        : getHostAvailablePermissions(context);
+    const capabilityFrame = deriveScriptCapabilityFrame(
+        systemContext,
+        parentPermissions,
+        spec.capabilityModifiers || [],
+        context,
+    );
+
+    const scriptContext = new Context();
+    scriptContext.env = context.env;
+    installSymbolicBindings(scriptContext);
+    scriptContext.push(undefined, { isolated: true });
+
+    runtime.activeImports.push(resolvedPath);
+    runtime.frameStack.push({
+        path: prepared.path,
+        dir: prepared.dir,
+        functionNames: capabilityFrame.functionNames,
+        permissions: capabilityFrame.permissions,
+    });
+
+    try {
+        bindScriptInputs(scriptContext, context, spec.inputs || [], prepared.inputContract);
+
+        let finalResult = null;
+        for (const node of prepared.bodyIr) {
+            finalResult = evaluate(node, scriptContext, registry, capabilityFrame.systemContext);
+        }
+
+        if (!prepared.exportBindings || prepared.exportBindings.length === 0) {
+            if (spec.outputs && spec.outputs.length > 0) {
+                throw new Error("Caller-side script outputs require the imported script to declare exports");
+            }
+            return finalResult;
+        }
+
+        const bundle = buildExportBundle(scriptContext, prepared.exportBindings);
+        applyCallerOutputBindings(context, spec.outputs || [], bundle);
+        return bundle;
+    } finally {
+        runtime.frameStack.pop();
+        runtime.activeImports.pop();
+        scriptContext.pop();
+    }
 }
 
 /**
@@ -108,6 +509,10 @@ export function evaluate(irNode, context, registry, systemContext) {
     // DEFER: return the node itself without evaluating
     if (fn === "DEFER") {
         return irNode;
+    }
+
+    if (fn === "SCRIPT_IMPORT") {
+        return evaluateScriptImport(args[0] || {}, context, registry, systemContext);
     }
 
     // Bind the recursive evaluator for callbacks
@@ -224,11 +629,6 @@ export function evaluate(irNode, context, registry, systemContext) {
  * @returns {*} The result of the last expression
  */
 export function parseAndEvaluate(code, options = {}) {
-    // Dynamic imports to avoid circular deps at module level
-    const { tokenize } = require("../../parser/src/tokenizer.js");
-    const { parse } = require("../../parser/src/parser.js");
-    const { lower } = require("./lower.js");
-
     const context = options.context || new Context();
     if (!options.context) {
         installSymbolicBindings(context);
@@ -236,6 +636,7 @@ export function parseAndEvaluate(code, options = {}) {
     const registry = options.registry || createDefaultRegistry();
     const systemContext = options.systemContext || createDefaultSystemContext();
     const systemLookup = options.systemLookup || defaultSystemLookup;
+    getScriptRuntime(context, { systemLookup });
 
     const tokens = tokenize(code);
     const ast = parse(tokens, systemLookup);

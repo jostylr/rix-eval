@@ -133,10 +133,32 @@ export class Context {
     }
 
     /**
+     * Find the Cell for name in the immediate/current scope only.
+     * If there is no local scope, this means the global scope.
+     */
+    getImmediateCell(name) {
+        if (this.localScopes.length > 0) {
+            return this.localScopes[this.localScopes.length - 1].bindings.get(name) ?? null;
+        }
+        return this.globalScope.get(name) ?? null;
+    }
+
+    /**
      * Find the Cell for name in outer scopes (skipping the innermost local scope).
      * Used by OUTER_UPDATE and importAlias.
      */
     getOuterCell(name) {
+        return this._findCell(name, { skipInnermost: true, respectIsolation: false });
+    }
+
+    /**
+     * Find the Cell for name in ancestor scopes only, excluding the current scope.
+     * If there is no local scope, there is no ancestor scope.
+     */
+    getAncestorCell(name) {
+        if (this.localScopes.length === 0) {
+            return null;
+        }
         return this._findCell(name, { skipInnermost: true, respectIsolation: false });
     }
 

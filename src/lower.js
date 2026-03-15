@@ -138,6 +138,19 @@ const LOWERERS = {
     return ir("STRING", node.value);
   },
 
+  ScriptImportExpression(node) {
+    return ir("SCRIPT_IMPORT", {
+      path: node.path.value,
+      capabilityModifiers: lowerCapabilityModifiers(node.capabilityModifiers || []),
+      inputs: lowerBindingSpecs(node.inputs || []),
+      outputs: lowerBindingSpecs(node.outputs || []),
+    });
+  },
+
+  ScriptBindingsDeclaration() {
+    throw new Error("Script input/export declarations are only valid as the first or last statement of an imported script");
+  },
+
   RegexLiteral(node) {
     const modeMap = {
       "ONE": 0,
@@ -844,6 +857,23 @@ function lowerImports(imports) {
     local: spec.local,
     source: spec.source,
     mode: spec.mode,
+  }));
+}
+
+function lowerBindingSpecs(specs) {
+  return specs.map((spec) => ({
+    target: spec.target,
+    source: spec.source,
+    mode: spec.mode,
+    ...(spec.sourceScope ? { sourceScope: spec.sourceScope } : {}),
+  }));
+}
+
+function lowerCapabilityModifiers(modifiers) {
+  return modifiers.map((modifier) => ({
+    action: modifier.action,
+    targetType: modifier.targetType,
+    target: modifier.target,
   }));
 }
 

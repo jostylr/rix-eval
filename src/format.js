@@ -92,6 +92,14 @@ export function formatValue(val) {
             });
             return `{= ${entries.join(", ")} }`;
         }
+        if (val.type === "export_bundle") {
+            const entries = [];
+            const mapObj = val.entries || new Map();
+            mapObj.forEach((cell, key) => {
+                entries.push(`${key}=${formatValue(cell?.value)}`);
+            });
+            return `{= ${entries.join(", ")} }`;
+        }
         if (val.type === "function" || val.type === "lambda") {
             const params = val.params?.positional?.map((param) => param.name).join(", ") || "";
             if (val.type === "lambda") {

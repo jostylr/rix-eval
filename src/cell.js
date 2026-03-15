@@ -103,6 +103,14 @@ export function shallowCopyValue(value) {
         };
     }
 
+    if (value.type === "export_bundle" && value.entries instanceof Map) {
+        return {
+            type: "export_bundle",
+            entries: new Map(value.entries),
+            _ext: value._ext ? new Map(value._ext) : undefined,
+        };
+    }
+
     // Set
     if (value.type === "set") {
         return {
@@ -168,6 +176,18 @@ export function deepCopyValue(value) {
         }
         return {
             type: "map",
+            entries: newEntries,
+            _ext: value._ext ? deepCopyMeta(value._ext) : undefined,
+        };
+    }
+
+    if (value.type === "export_bundle" && value.entries instanceof Map) {
+        const newEntries = new Map();
+        for (const [k, v] of value.entries) {
+            newEntries.set(k, new Cell(deepCopyValue(v.value)));
+        }
+        return {
+            type: "export_bundle",
             entries: newEntries,
             _ext: value._ext ? deepCopyMeta(value._ext) : undefined,
         };

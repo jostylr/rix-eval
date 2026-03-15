@@ -9,6 +9,7 @@
 
 import { Integer } from "@ratmath/core";
 import { keyOf, canonicalizeMetaKey } from "./keyof.js";
+import { Cell } from "../cell.js";
 import { isTensor, tensorAssignBySelectors, tensorGetBySelectors } from "../tensor.js";
 
 /**
@@ -123,6 +124,11 @@ function indexGetResolved(obj, key) {
         return obj.entries.has(mapKey) ? obj.entries.get(mapKey) : null;
     }
 
+    if (obj && obj.type === "export_bundle" && obj.entries instanceof Map) {
+        const mapKey = keyOf(key);
+        return obj.entries.has(mapKey) ? obj.entries.get(mapKey).value : null;
+    }
+
     // Callable types — arity-cap syntax: fn[n]
     if (obj && (obj.type === "function" || obj.type === "lambda" ||
                 obj.type === "sysref" || obj.type === "partial" || obj.type === "arityCap")) {
@@ -157,6 +163,17 @@ function indexSetResolved(obj, key, value) {
     if (obj && obj.type === "map" && obj.entries instanceof Map) {
         const mapKey = keyOf(key);
         obj.entries.set(mapKey, value);
+        return value;
+    }
+
+    if (obj && obj.type === "export_bundle" && obj.entries instanceof Map) {
+        const mapKey = keyOf(key);
+        const cell = obj.entries.get(mapKey);
+        if (cell instanceof Cell) {
+            cell.value = value;
+        } else {
+            obj.entries.set(mapKey, new Cell(value));
+        }
         return value;
     }
 
@@ -358,6 +375,10 @@ export const propertyFunctions = {
                 const keys = Array.from(obj.entries.keys());
                 return { type: "set", values: keys };
             }
+            if (obj && obj.type === "export_bundle" && obj.entries instanceof Map) {
+                const keys = Array.from(obj.entries.keys());
+                return { type: "set", values: keys };
+            }
             return { type: "set", values: [] };
         },
         pure: true,
@@ -369,6 +390,10 @@ export const propertyFunctions = {
             const obj = args[0];
             if (obj && obj.type === "map" && obj.entries instanceof Map) {
                 const vals = Array.from(obj.entries.values());
+                return { type: "set", values: vals };
+            }
+            if (obj && obj.type === "export_bundle" && obj.entries instanceof Map) {
+                const vals = Array.from(obj.entries.values(), (cell) => cell.value);
                 return { type: "set", values: vals };
             }
             return { type: "set", values: [] };

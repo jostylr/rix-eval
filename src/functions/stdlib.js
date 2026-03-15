@@ -19,6 +19,9 @@ export const stdlibFunctions = {
             if (coll && coll.type === "map" && coll.entries instanceof Map) {
                 return new Integer(coll.entries.size);
             }
+            if (coll && coll.type === "export_bundle" && coll.entries instanceof Map) {
+                return new Integer(coll.entries.size);
+            }
             if (isTensor(coll)) {
                 return new Integer(BigInt(tensorSize(coll)));
             }

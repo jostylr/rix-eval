@@ -241,6 +241,118 @@ Errors:
 - Malformed specs such as `< a~~x >`, `< a==x >`, or `< a~x, >` are errors
 - A header only has meaning in the top-of-block position for supported scoped blocks
 
+### Script Import Expressions
+
+Script execution uses the angle-call form:
+
+```text
+< "path" /capMods/ inputs ; outputs >
+```
+
+Examples:
+
+```rix
+<"math/square">
+<"math/square" x>
+<"worker" state=data>
+<"net/fetch" /-All,+Core,+Net/ >
+<"poly" x ; p=result, d=deriv>
+```
+
+The path is resolved relative to the current script directory, or the current execution base directory for a top-level run. If the path has no suffix, `.rix` is appended.
+
+Behavior:
+- Every call creates a fresh execution state. There is no module singleton caching.
+- If the script has an explicit export declaration, the expression returns an export bundle.
+- Otherwise the expression returns the final expression value of the script body.
+- Caller-side `; outputs` are only valid when the imported script declared explicit exports.
+- Output bindings happen before any surrounding assignment or enclosing expression consumes the returned value.
+- Active cycles are rejected. `a.rix -> b.rix -> a.rix` is an error.
+
+#### Script Input Bindings
+
+Inputs and outputs use the same binding family:
+
+```text
+bindingSpec :=
+    IDENT
+  | IDENT "=" [source]
+  | IDENT "~" [source]
+  | IDENT ":" [source]
+  | IDENT "~~" [source]
+  | IDENT "::" [source]
+```
+
+Modes:
+- `name` or `name~source` means shallow copy without meta.
+- `name:source` means shallow copy with meta.
+- `name~~source` means deep copy without meta.
+- `name::source` means deep copy with meta.
+- `name=source` means alias/live cell sharing.
+
+Caller-side source lookup rules:
+- Bare `source` reads only from the immediate scope where the import expression appears.
+- `@source` reads only from ancestor scopes, skipping that immediate scope.
+- This is different from ordinary RiX name lookup, which normally searches outward automatically.
+
+#### Capability Modifiers
+
+Capability modifiers live between slashes and are applied left-to-right:
+
+```rix
+<"child" /-All,+Core,+@MAP/ >
+```
+
+Rules:
+- `All` is a pseudo-group meaning every capability currently available to the caller.
+- Plain names such as `Core` or `Arith` are group names.
+- `@Name` names a single capability directly.
+- Nested scripts cannot gain capabilities their parent script does not currently have.
+
+Default policy:
+- Imported scripts start from the configured default script capability base.
+- `Imports` is enabled by default.
+- `Net` and `Files` are not granted unless explicitly enabled and already available to the parent.
+
+#### Script-Side Contracts and Exports
+
+The first statement of an imported script may be an input contract:
+
+```rix
+< x, state=, cache:: >
+```
+
+This declares the local names the script expects. At runtime:
+- Missing declared inputs are errors.
+- Alias declarations (`name=`) require alias passing.
+- Copy-style declarations reject alias passing.
+
+The last statement of an imported script may be an export declaration:
+
+```rix
+< result=r, deriv=d, state=cache, raw >
+```
+
+Semantics:
+- Left side is the exported/public name.
+- Right side is the script-local source name.
+- The operator controls whether the exported bundle entry is live or copied.
+- Live exported cells may outlive the script frame and keep working after the script returns.
+
+Example:
+
+```rix
+< x >
+r := x * x
+< result=r >
+```
+
+Caller:
+
+```rix
+y = <"square" x ; z=result>
+```
+
 ### Set & Interval Algebra
 
 | Syntax | System Function | Example | Description |

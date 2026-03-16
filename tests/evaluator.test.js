@@ -996,6 +996,10 @@ describe("RiX Evaluator", () => {
             const result = evalRix("f(x);", ctx);
             expect(result.value).toBe(15n);
         });
+
+        test("f(x) throws a clear error if f is a lambda due to implicit multiplication", () => {
+            expect(() => evalRix("f = x -> x^2; f(4);")).toThrow("Cannot use function/lambda in arithmetic. If you intended to call a function, its name must be Capitalised.");
+        });
     });
 
     describe("Integration", () => {

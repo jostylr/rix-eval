@@ -28,6 +28,11 @@ function ensureNumeric(val) {
         }
         return new Integer(BigInt(Math.floor(val)));
     }
+    
+    if (typeof val === "function" || (val && typeof val === "object" && (val.type === "lambda" || val.type === "function" || val.type === "pattern_function" || val.type === "sysref" || val.type === "partial" || val.type === "arityCap"))) {
+        throw new Error("Cannot use function/lambda in arithmetic. If you intended to call a function, its name must be Capitalised.");
+    }
+
     throw new Error(`Cannot use ${typeof val} in arithmetic`);
 }
 

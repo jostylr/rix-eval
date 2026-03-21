@@ -155,6 +155,28 @@ describe("Lowering Pass", () => {
       expect(ir.args[2].args[0].args[1]).toBe("x");
     });
 
+    test("combo assignment x \\/= y lowers through ASSIGN_UPDATE", () => {
+      const ir = L("x \\/= y;");
+      expect(ir.fn).toBe("ASSIGN_UPDATE");
+      expect(ir.args[0]).toBe("x");
+      expect(ir.args[1].fn).toBe("UNION");
+      expect(ir.args[1].args[0]).toEqual({ fn: "RETRIEVE", args: ["x"] });
+      expect(ir.args[1].args[1]).toEqual({ fn: "RETRIEVE", args: ["y"] });
+    });
+
+    test("outer combo assignment @x ++= y lowers through OUTER_UPDATE", () => {
+      const ir = L("@x ++= y;");
+      expect(ir.fn).toBe("OUTER_UPDATE");
+      expect(ir.args[0]).toBe("x");
+      expect(ir.args[1].fn).toBe("CONCAT");
+      expect(ir.args[1].args[0]).toEqual({ fn: "OUTER_RETRIEVE", args: ["x"] });
+      expect(ir.args[1].args[1]).toEqual({ fn: "RETRIEVE", args: ["y"] });
+    });
+
+    test("invalid update target rejects combo assignment", () => {
+      expect(() => L("[1, 2] ++= [3];")).toThrow(/Invalid update target/);
+    });
+
     test("base definition assignment 0A = \"...\" lowers to DEFINEBASE", () => {
       const ir = L('0A = "0123456789ABCDEF";');
       expect(ir.fn).toBe("DEFINEBASE");

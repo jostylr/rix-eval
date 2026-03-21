@@ -40,6 +40,31 @@ function stringify(val) {
     return formatValue(val);
 }
 
+function toQuotientParts(value) {
+    if (value instanceof Integer) {
+        return { numerator: value.value, denominator: 1n };
+    }
+    if (value instanceof Rational) {
+        return { numerator: value.numerator, denominator: value.denominator };
+    }
+    return { numerator: BigInt(value.toString()), denominator: 1n };
+}
+
+function ceilDiv(numerator, denominator) {
+    const q = numerator / denominator;
+    const r = numerator % denominator;
+    if (r === 0n) return q;
+    return numerator >= 0n ? q + 1n : q;
+}
+
+function roundDiv(numerator, denominator) {
+    const absNum = numerator < 0n ? -numerator : numerator;
+    const floor = absNum / denominator;
+    const remainder = absNum % denominator;
+    const rounded = remainder * 2n >= denominator ? floor + 1n : floor;
+    return numerator < 0n ? -rounded : rounded;
+}
+
 export const arithmeticFunctions = {
     ADD: {
         impl(args) {
@@ -116,6 +141,30 @@ export const arithmeticFunctions = {
         },
         pure: true,
         doc: "Integer division (floor)",
+    },
+
+    DIVUP: {
+        impl(args) {
+            const a = ensureNumeric(args[0]);
+            const b = ensureNumeric(args[1]);
+            const quotient = a.divide(b);
+            const { numerator, denominator } = toQuotientParts(quotient);
+            return new Integer(ceilDiv(numerator, denominator));
+        },
+        pure: true,
+        doc: "Ceiling division",
+    },
+
+    DIVROUND: {
+        impl(args) {
+            const a = ensureNumeric(args[0]);
+            const b = ensureNumeric(args[1]);
+            const quotient = a.divide(b);
+            const { numerator, denominator } = toQuotientParts(quotient);
+            return new Integer(roundDiv(numerator, denominator));
+        },
+        pure: true,
+        doc: "Rounded division",
     },
 
     MOD: {

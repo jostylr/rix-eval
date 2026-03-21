@@ -391,6 +391,28 @@ describe("RiX Evaluator", () => {
             expect(result.value).toBe(16n);
         });
 
+        test("extended combo assignments reuse their binary operators", () => {
+            const ctx = new Context();
+
+            evalRix("x := [1, 2]; x ++= [3];", ctx);
+            let result = evalRix("x;", ctx);
+            expect(result.type).toBe("sequence");
+            expect(result.values.map((v) => v.toString())).toEqual(["1", "2", "3"]);
+
+            evalRix("s := {| 1, 2 |}; s \\/= {| 2, 3 |};", ctx);
+            result = evalRix("s;", ctx);
+            expect(result.type).toBe("set");
+            expect(result.values.map((v) => v.toString())).toEqual(["1", "2", "3"]);
+
+            evalRix("n := 7; n /^= 3;", ctx);
+            result = evalRix("n;", ctx);
+            expect(result.value).toBe(3n);
+
+            evalRix("m := 7; m /~= 3;", ctx);
+            result = evalRix("m;", ctx);
+            expect(result.value).toBe(2n);
+        });
+
         test("@ outer scope variable mutation", () => {
             const code = `
                 times = 0;

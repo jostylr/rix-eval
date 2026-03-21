@@ -122,6 +122,23 @@ function lowerFunctionBody(node) {
   return lowerNode(node);
 }
 
+const COMBO_ASSIGN_OP_MAP = {
+  "+=": "+",
+  "-=": "-",
+  "*=": "*",
+  "++=": "++",
+  "/=": "/",
+  "//=": "//",
+  "/\\=": "/\\",
+  "/^=": "/^",
+  "/~=": "/~",
+  "%=": "%",
+  "^=": "^",
+  "**=": "**",
+  "\\/=": "\\/",
+  "\\=": "\\",
+};
+
 // Per-node-type lowering functions
 const LOWERERS = {
   // === Literals & Identifiers ===
@@ -229,20 +246,9 @@ const LOWERERS = {
     }
 
     // Combo assignment operators — desugar to ~= (cell-preserving update)
-    const comboOpMap = {
-      "+=": true,
-      "-=": true,
-      "*=": true,
-      "/=": true,
-      "//=": true,
-      "%=": true,
-      "^=": true,
-      "**=": true,
-    };
-
-    if (comboOpMap[op]) {
+    const mathOpStr = COMBO_ASSIGN_OP_MAP[op];
+    if (mathOpStr) {
       // De-sugar: x += 1 → x ~= x + 1 (preserves cell identity for aliases)
-      const mathOpStr = op.slice(0, -1); // Remove '='
       const mathAstNode = {
         type: "BinaryOperation",
         operator: mathOpStr,
@@ -969,6 +975,10 @@ function lowerAssignment(node, irFn) {
       ...left.specs.map(lowerBracketSpec),
       lowerNode(node.right),
     );
+  }
+
+  if (irFn === "ASSIGN_UPDATE" || irFn === "ASSIGN_DEEP_UPDATE") {
+    throw new Error("Invalid update target");
   }
 
   // Fallback: generic assignment expression

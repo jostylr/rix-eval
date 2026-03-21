@@ -394,6 +394,44 @@ describe("Cell Assignment Semantics", () => {
             expect(result.value).toBe(8n);
         });
 
+        test("++= affects aliases", () => {
+            const result = evalRix("x := [1, 2]; y = x; x ++= [3]; y;");
+            expect(result.type).toBe("sequence");
+            expect(result.values.map((v) => v.toString())).toEqual(["1", "2", "3"]);
+        });
+
+        test("\\/= affects aliases", () => {
+            const result = evalRix("s := {| 1, 2 |}; t = s; s \\/= {| 2, 3 |}; t;");
+            expect(result.type).toBe("set");
+            expect(result.values.map((v) => v.toString())).toEqual(["1", "2", "3"]);
+        });
+
+        test("/\\= affects aliases", () => {
+            const result = evalRix("s := {| 1, 2, 3 |}; t = s; s /\\= {| 2, 3, 4 |}; t;");
+            expect(result.type).toBe("set");
+            expect(result.values.map((v) => v.toString())).toEqual(["2", "3"]);
+        });
+
+        test("\\= affects aliases", () => {
+            const result = evalRix("s := {| 1, 2, 3 |}; t = s; s \\= {| 2 |}; t;");
+            expect(result.type).toBe("set");
+            expect(result.values.map((v) => v.toString())).toEqual(["1", "3"]);
+        });
+
+        test("**= affects aliases using existing ** semantics", () => {
+            const result = evalRix('s := {| 1, 2 |}; t = s; s **= {| "a" |}; t;');
+            expect(result.type).toBe("set");
+            expect(result.values.length).toBe(2);
+        });
+
+        test("/^= and /~= affect aliases", () => {
+            let result = evalRix("x := 7; y = x; x /^= 3; y;");
+            expect(result.value).toBe(3n);
+
+            result = evalRix("x := 7; y = x; x /~= 3; y;");
+            expect(result.value).toBe(2n);
+        });
+
         test("+= preserves ordinary meta", () => {
             const result = evalRix(`
                 t := [0];
@@ -408,9 +446,40 @@ describe("Cell Assignment Semantics", () => {
             expect(result.values[2].value).toBe("count");
         });
 
+        test("++= preserves ordinary meta and replaces ephemeral meta like ~=", () => {
+            const result = evalRix(`
+                t := [1];
+                t.key = "list";
+                t._spec = "old";
+                t ++= [2];
+                [t, t.key, t._spec];
+            `);
+            expect(result.values[0].values.map((v) => v.toString())).toEqual(["1", "2"]);
+            expect(result.values[1].value).toBe("list");
+            expect(result.values[2]).toBeNull();
+        });
+
         test("combo op on outer variable writes through", () => {
             const result = evalRix("x := 10; {; <x=> x += 5; x };");
             expect(result.value).toBe(15n);
+        });
+
+        test("new combo ops write through outer scope", () => {
+            let result = evalRix("x := [1]; {; @x ++= [2]; @x };");
+            expect(result.type).toBe("sequence");
+            expect(result.values.map((v) => v.toString())).toEqual(["1", "2"]);
+
+            result = evalRix("s := {| 1, 2 |}; {; @s \\/= {| 2, 3 |}; @s };");
+            expect(result.type).toBe("set");
+            expect(result.values.map((v) => v.toString())).toEqual(["1", "2", "3"]);
+        });
+
+        test("type errors from underlying operators surface through combo assignment", () => {
+            expect(() => evalRix("x := 1; x ++= 2;")).toThrow(/CONCAT|defined for these types/i);
+        });
+
+        test("invalid combo lhs rejects literal targets", () => {
+            expect(() => evalRix("[1, 2] ++= [3];")).toThrow(/Invalid update target/);
         });
     });
 
@@ -468,6 +537,14 @@ describe("Cell Assignment Semantics", () => {
                 x := 5;
                 x.lock = 1;
                 x += 1;
+            `)).toThrow(/locked/i);
+        });
+
+        test(".lock prevents \\/=", () => {
+            expect(() => evalRix(`
+                x := {| 1, 2 |};
+                x.lock = 1;
+                x \\/= {| 2, 3 |};
             `)).toThrow(/locked/i);
         });
 

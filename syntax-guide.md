@@ -100,14 +100,41 @@ Variables name **cells** — mutable containers holding a value and meta propert
 | `x ~= expr` | `ASSIGN_UPDATE` | In-place value replacement — preserve cell identity and ordinary meta |
 | `x ::= expr` | `ASSIGN_DEEP_COPY` | Deep copy — like `:=` but recursively copies nested collections |
 | `x ~~= expr` | `ASSIGN_DEEP_UPDATE` | Deep in-place — like `~=` but deep-copies the rhs value |
-| `x += expr` | `ASSIGN_UPDATE` | Combo ops desugar to `x ~= x + expr` (cell-preserving) |
+| `x += expr` | `ASSIGN_UPDATE` | Combo ops desugar to `x ~= x op expr` (cell-preserving) |
+| `x ++= expr` | `ASSIGN_UPDATE` | Concatenation assignment — delegates to `x ++ expr` then updates in place |
+| `x \/= expr` | `ASSIGN_UPDATE` | Union assignment — delegates to `x \/ expr` then updates in place |
+| `x /\= expr` | `ASSIGN_UPDATE` | Intersection assignment — delegates to `x /\ expr` then updates in place |
+| `x \= expr` | `ASSIGN_UPDATE` | Difference assignment — delegates to `x \ expr` then updates in place |
+| `x **= expr` | `ASSIGN_UPDATE` | `**`-assignment — delegates to the existing `x ** expr` semantics, then updates in place |
+| `x /^= expr` | `ASSIGN_UPDATE` | Ceiling-division assignment — delegates to `x /^ expr` then updates in place |
+| `x /~= expr` | `ASSIGN_UPDATE` | Rounded-division assignment — delegates to `x /~ expr` then updates in place |
 | `F(x) -> body` | `FUNCDEF` | `Sq(x) -> x ^ 2` |
 | `(x) -> body` | `LAMBDA` | `(x) -> x + 1` |
 
 **Key distinctions:**
 - `=` shares a cell (aliases track mutations); `:=` creates an independent copy.
 - `~=` replaces the value inside an existing cell, so aliases see the change. `=` rebinds to a different cell.
-- Combo operators (`+=`, `-=`, `*=`, `/=`, `^=`, etc.) use `~=` semantics — they preserve cell identity.
+- Combo operators (`+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `^=`, `++=`, `\/=`, `/\=`, `\=`, `**=`, `/^=`, `/~=`) use `~=` semantics — they preserve cell identity.
+
+Examples:
+```rix
+xs := [1, 2]
+ys = xs
+xs ++= [3]
+## ys is now [1, 2, 3]
+
+s := {| 1, 2 |}
+s \/= {| 2, 3 |}
+## s is now {| 1, 2, 3 |}
+
+t := {| 1, 2, 3 |}
+t /\= {| 2, 3, 4 |}
+## t is now {| 2, 3 |}
+
+u := {| 1, 2, 3 |}
+u \= {| 2 |}
+## u is now {| 1, 3 |}
+```
 
 ### Brace Containers
 
@@ -1039,7 +1066,7 @@ The flag `_` (null) means "remove"; any non-null value (including `0`) means "ad
 Scope note:
 - `RETRIEVE(Name)` remains lexical even for capitalized names.
 - Only direct call syntax `Name(...)` uses outward callable lookup.
-- Combo operators (`+=`, `-=`, etc.) desugar to `ASSIGN_UPDATE` / `OUTER_UPDATE`, preserving cell identity so aliases track changes.
+- Combo operators (`+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `^=`, `++=`, `\/=`, `/\=`, `\=`, `**=`, `/^=`, `/~=`) desugar to `ASSIGN_UPDATE` / `OUTER_UPDATE`, preserving cell identity so aliases track changes.
 
 ### Future Extensions (Stubs)
 
@@ -1056,7 +1083,7 @@ Scope note:
 | `UNIT(val, unit)` | Scientific unit annotation |
 | `MATHUNIT(val, unit)` | Mathematical unit annotation |
 
-*Note: Combo assignments (`+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `^=`) automatically desugar into `ASSIGN(x, OP(RETRIEVE(x), y))` or their `OUTER` equivalents if prefixed with `@`.*
+*Note: Combo assignments (`+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `^=`, `++=`, `\/=`, `/\=`, `\=`, `**=`, `/^=`, `/~=`) automatically desugar into `ASSIGN_UPDATE(x, OP(RETRIEVE(x), y))` or `OUTER_UPDATE(x, OP(OUTER_RETRIEVE(x), y))`, preserving the original cell.*
 
 ---
 

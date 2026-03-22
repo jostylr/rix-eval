@@ -733,9 +733,26 @@ RiX separates two distinct access concepts: **meta properties** (external annota
 | `obj[i] = val` | `INDEX_SET` | Set collection index (requires `._mutable` value meta; arrays/maps/tensors default to mutable) |
 | `obj.\|` | `KEYS` | Get set of map keys |
 | `obj\|.` | `VALUES` | Get set of map values |
-| `obj.Method(args)` | `CALL_EXPR` | Method call — desugars to `CALL_EXPR(META_GET(obj,"Method"), obj, args...)` |
+| `obj.Method(args)` | `CALL_METHOD` | Receiver-first method call |
+| `obj.Method!(args)` | `CALL_METHOD` | Receiver-first mutating method call |
 
 **Note:** `obj..name` is a **parse error** — use `obj.name` for meta access.
+
+**Method-call semantics:**
+- Only `obj.Method(...)` and `obj.Method!(...)` trigger method resolution.
+- Plain property access like `x = obj.Method` stays a direct `META_GET`; it does not consult `_proto`.
+- `CALL_METHOD(target, name, ...args)` resolves methods in this order:
+  1. `target.name`
+  2. `target.__name`
+  3. `target._name`
+  4. `target._proto[:name]`
+  5. `target._proto[:__name]`
+  6. `target._proto[:_name]`
+- If a direct meta match is found and is not callable, evaluation errors immediately and does not fall back to `_proto`.
+- If no callable is found, evaluation raises `Method not found`.
+- The receiver is always passed as the first argument: `fn(target, ...args)`.
+- Names ending in `!` are the mutating variants. They require a mutable receiver and raise `Cannot mutate immutable value` when `._mutable` is absent or the value is frozen/immutable.
+- `_proto` is a reserved meta property. It must be a map or null. Built-in prototypes are frozen and do not prototype-chain in v1.
 
 **Map Key Resolution (`.KEYOF`):**
 - string -> same key
@@ -985,6 +1002,7 @@ Function-call lookup note:
 | `META_SET(obj, name, val)` | Set meta property (null = delete; blocked by `.immutable`; blocked by `.frozen` for non-frozen keys) | `obj.name = val` |
 | `META_ALL(obj)` | Get all meta properties as read-only map | `obj..` |
 | `META_MERGE(obj, map)` | Bulk merge map into meta (null values = delete) | `obj .= map` |
+| `CALL_METHOD(obj, name, args...)` | Resolve and invoke a receiver-first method | `obj.Method(args)`, `obj.Method!(args)` |
 | `INDEX_GET(obj, key)` | Index into collection (1-based for sequences/strings; normalized keys for maps) | `obj[expr]`, `obj[:name]`, `obj[:1]` |
 | `INDEX_SET(obj, key, val)` | Set index (requires `._mutable` value flag) | `obj[i] = val` |
 | `BRACKET_GET(obj, specs...)` | Tensor-aware bracket indexing and slicing | `obj[i, ::]` |

@@ -215,6 +215,10 @@ export const propertyFunctions = {
             const prop = args[1];      // raw string
             const value = evaluate(args[2]);
 
+            if (prop === "_proto" && value !== null && (value?.type !== "map" || !(value.entries instanceof Map))) {
+                throw new Error('Meta property "_proto" must be a map or null');
+            }
+
             // Immutability checks
             const ext = obj?._ext;
             if (ext) {
@@ -261,7 +265,9 @@ export const propertyFunctions = {
             if (!ext) {
                 return { type: "map", entries: new Map() };
             }
-            return { type: "map", entries: new Map(ext) };  // read-only copy
+            const visible = new Map(ext);
+            visible.delete("_proto");
+            return { type: "map", entries: visible };  // read-only copy
         },
         doc: "Get all meta properties as a map (read-only copy) — obj..",
     },

@@ -73,6 +73,7 @@ export const IR = {
   metaSet: (obj, prop, val) => ir("META_SET", obj, prop, val),
   metaAll: (obj) => ir("META_ALL", obj),
   metaMerge: (obj, map) => ir("META_MERGE", obj, map),
+  callMethod: (obj, name, ...args) => ir("CALL_METHOD", obj, name, ...args),
   indexGet: (obj, idx) => ir("INDEX_GET", obj, idx),
   indexSet: (obj, idx, val) => ir("INDEX_SET", obj, idx, val),
   keys: (obj) => ir("KEYS", obj),

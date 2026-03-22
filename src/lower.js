@@ -439,13 +439,12 @@ const LOWERERS = {
 
   Call(node) {
     const args = lowerCallArgs(node.arguments);
-    const target = node.target;
-    // Method call: expr.method(args) → CALL_EXPR(META_GET(expr,"method"), expr, ...args)
-    if (target.type === "DotAccess") {
-      const objIR = lowerNode(target.object);
-      return ir("CALL_EXPR", ir("META_GET", objIR, target.property), objIR, ...args);
-    }
-    return ir("CALL_EXPR", lowerNode(target), ...args);
+    return ir("CALL_EXPR", lowerNode(node.target), ...args);
+  },
+
+  MethodCall(node) {
+    const args = lowerCallArgs(node.arguments);
+    return ir("CALL_METHOD", lowerNode(node.object), node.method, ...args);
   },
 
   // === Function Definitions ===

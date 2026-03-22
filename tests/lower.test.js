@@ -139,11 +139,18 @@ describe("Lowering Pass", () => {
       expect(ir.args[1]).toBe("foo");
     });
 
-    test("method call arr.Push(1) desugars to CALL_EXPR(META_GET(...))", () => {
-      const ir = L("arr.PUSH(1);");
-      expect(ir.fn).toBe("CALL_EXPR");
-      expect(ir.args[0].fn).toBe("META_GET");
-      expect(ir.args[0].args[1]).toBe("PUSH");
+    test("method call arr.Push(1) lowers to CALL_METHOD", () => {
+      const ir = L("arr.Push(1);");
+      expect(ir.fn).toBe("CALL_METHOD");
+      expect(ir.args[0]).toEqual({ fn: "RETRIEVE", args: ["arr"] });
+      expect(ir.args[1]).toBe("PUSH");
+      expect(ir.args[2]).toEqual({ fn: "LITERAL", args: ["1"] });
+    });
+
+    test("mutating method call arr.Push!(1) preserves the ! in the method name", () => {
+      const ir = L("arr.Push!(1);");
+      expect(ir.fn).toBe("CALL_METHOD");
+      expect(ir.args[1]).toBe("PUSH!");
     });
 
     test("compound meta assignment obj.x += 1 → META_SET(obj, 'x', ADD(META_GET(obj,'x'), 1))", () => {

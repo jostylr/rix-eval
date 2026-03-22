@@ -1228,6 +1228,18 @@ describe("RiX Evaluator", () => {
             expect(result.entries.size).toBe(0);
         });
 
+        test("META_ALL hides _proto but direct access still returns it", () => {
+            const ctx = new Context();
+            evalRix("a := [1,2];", ctx);
+            const allMeta = evalRix("a..;", ctx);
+            expect(allMeta.type).toBe("map");
+            expect(allMeta.entries.has("_proto")).toBe(false);
+
+            const proto = evalRix("a._proto;", ctx);
+            expect(proto?.type).toBe("map");
+            expect(proto.entries.has("PUSH")).toBe(true);
+        });
+
         test("set type is not indexable", () => {
             const ctx = new Context();
             ctx.set("s", { type: "set", values: [new Integer(1), new Integer(2)] });
@@ -1338,6 +1350,66 @@ describe("RiX Evaluator", () => {
             const result = evalRix("obj.count;", ctx);
             expect(result).toBeInstanceOf(Integer);
             expect(result.value).toBe(11n);
+        });
+
+        test("built-in sequence proto provides non-mutating Push with chaining", () => {
+            const result = evalRix("[1,2].Push(3).Push(4);");
+            expect(result.type).toBe("sequence");
+            expect(result.values.map((v) => v.value)).toEqual([1n, 2n, 3n, 4n]);
+        });
+
+        test("Push does not mutate the receiver", () => {
+            const ctx = new Context();
+            const result = evalRix("a := [1,2]; b := a.Push(3); [a, b];", ctx);
+            expect(result.type).toBe("sequence");
+            expect(result.values[0].values.map((v) => v.value)).toEqual([1n, 2n]);
+            expect(result.values[1].values.map((v) => v.value)).toEqual([1n, 2n, 3n]);
+        });
+
+        test("Push! mutates the receiver and returns it for chaining", () => {
+            const ctx = new Context();
+            const result = evalRix("a := [1,2]; a.Push!(3).Push!(4); a;", ctx);
+            expect(result.type).toBe("sequence");
+            expect(result.values.map((v) => v.value)).toEqual([1n, 2n, 3n, 4n]);
+        });
+
+        test("method lookup order checks direct meta before _proto", () => {
+            const ctx = new Context();
+            expect(evalRix("a := [1,2]; a.Push = (target, v) -> 11; a.Push(3);", ctx).value).toBe(11n);
+            expect(evalRix("a := [1,2]; a.__Push = (target, v) -> 12; a.Push(3);", ctx).value).toBe(12n);
+            expect(evalRix("a := [1,2]; a._Push = (target, v) -> 13; a.Push(3);", ctx).value).toBe(13n);
+            expect(evalRix("a := [1,2]; a._proto = {= Push=(target, v) -> 14 }; a.Push(3);", ctx).value).toBe(14n);
+            expect(evalRix("a := [1,2]; a._proto = {= __Push=(target, v) -> 15 }; a.Push(3);", ctx).value).toBe(15n);
+            expect(evalRix("a := [1,2]; a._proto = {= _Push=(target, v) -> 16 }; a.Push(3);", ctx).value).toBe(16n);
+        });
+
+        test("non-callable direct meta blocks fallback to _proto", () => {
+            const ctx = new Context();
+            evalRix("a := [1,2]; a.Push = 5;", ctx);
+            expect(() => evalRix("a.Push(3);", ctx)).toThrow("not callable");
+        });
+
+        test("property access does not resolve methods through _proto", () => {
+            const ctx = new Context();
+            expect(evalRix("a := [1,2]; a.Push;", ctx)).toBeNull();
+        });
+
+        test("mutating methods require a mutable receiver", () => {
+            const ctx = new Context();
+            evalRix("a := [1,2]; a._mutable = _;", ctx);
+            expect(() => evalRix("a.Push!(3);", ctx)).toThrow("Cannot mutate immutable value");
+        });
+
+        test("frozen receivers are treated as immutable for mutating methods", () => {
+            const ctx = new Context();
+            evalRix("a := [1,2]; a.frozen = 1;", ctx);
+            expect(() => evalRix("a.Push!(3);", ctx)).toThrow("Cannot mutate immutable value");
+        });
+
+        test("_proto meta must be a map or null", () => {
+            const ctx = new Context();
+            evalRix("a := [1,2];", ctx);
+            expect(() => evalRix("a._proto = 1;", ctx)).toThrow('_proto');
         });
     });
 

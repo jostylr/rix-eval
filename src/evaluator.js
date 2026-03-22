@@ -22,6 +22,7 @@ import { logicFunctions } from "./functions/logic.js";
 import { controlFunctions } from "./functions/control.js";
 import { collectionFunctions } from "./functions/collections.js";
 import { functionFunctions } from "./functions/functions.js";
+import { methodFunctions } from "./functions/methods.js";
 import { propertyFunctions } from "./functions/properties.js";
 import { advancedFunctions } from "./functions/advanced.js";
 import { stdlibFunctions } from "./functions/stdlib.js";
@@ -43,6 +44,7 @@ export function createDefaultRegistry() {
     registry.registerAll(controlFunctions);
     registry.registerAll(collectionFunctions);
     registry.registerAll(functionFunctions);
+    registry.registerAll(methodFunctions);
     registry.registerAll(propertyFunctions);
     registry.registerAll(advancedFunctions);
     registry.registerAll(symbolicFunctions);

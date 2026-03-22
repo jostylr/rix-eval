@@ -5,6 +5,7 @@
 import { Integer, Rational, RationalInterval } from "@ratmath/core";
 import { keyOf } from "./keyof.js";
 import { HOLE } from "../hole.js";
+import { attachBuiltinProto } from "../methods.js";
 
 function isTruthy(val) {
     return val !== null && val !== undefined;
@@ -140,11 +141,11 @@ export const collectionFunctions = {
                 }
                 i++;
             }
-            return {
+            return attachBuiltinProto({
                 type: "sequence",
                 values,
                 _ext: new Map([["_mutable", new Integer(1n)]])
-            };
+            });
         },
         pure: true,
         doc: "Create an array/sequence (supports sequence generators)",

@@ -1,4 +1,3 @@
-import { shallowCopyValue } from "../cell.js";
 import { ensureMutableReceiver, resolveMethod } from "../methods.js";
 import { callWithConcreteArgs } from "./functions.js";
 
@@ -33,33 +32,11 @@ export const methodFunctions = {
             }
 
             const fn = resolveMethod(target, methodName);
+            if (fn?.type === "method_builtin") {
+                return fn.impl([target, ...callArgs], context, evaluate, callWithConcreteArgs);
+            }
             return callWithConcreteArgs(fn, [target, ...callArgs], context, evaluate);
         },
         doc: "Resolve and invoke a receiver-first method call",
-    },
-
-    PUSH: {
-        impl(args) {
-            const [target, ...values] = args;
-            if (!target || target.type !== "sequence") {
-                throw new Error("Push is only defined for sequences");
-            }
-            const copy = shallowCopyValue(target);
-            copy.values.push(...values);
-            return copy;
-        },
-        doc: "Non-mutating sequence append",
-    },
-
-    "PUSH!": {
-        impl(args) {
-            const [target, ...values] = args;
-            if (!target || target.type !== "sequence") {
-                throw new Error("Push! is only defined for sequences");
-            }
-            target.values.push(...values);
-            return target;
-        },
-        doc: "Mutating sequence append",
     },
 };

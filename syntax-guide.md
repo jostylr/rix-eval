@@ -753,6 +753,7 @@ RiX separates two distinct access concepts: **meta properties** (external annota
 - The receiver is always passed as the first argument: `fn(target, ...args)`.
 - Names ending in `!` are the mutating variants. They require a mutable receiver and raise `Cannot mutate immutable value` when `._mutable` is absent or the value is frozen/immutable.
 - `_proto` is a reserved meta property. It must be a map or null. Built-in prototypes are frozen and do not prototype-chain in v1.
+- The built-in method surface is documented in [methods-guide.md](./methods-guide.md).
 
 **Map Key Resolution (`.KEYOF`):**
 - string -> same key

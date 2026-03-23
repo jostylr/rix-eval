@@ -171,7 +171,11 @@ export const collectionFunctions = {
                     values.push(val);
                 }
             }
-            return { type: "set", values };
+            return {
+                type: "set",
+                values,
+                _ext: new Map([["_mutable", new Integer(1n)]])
+            };
         },
         pure: true,
         doc: "Create a set (unique values)",

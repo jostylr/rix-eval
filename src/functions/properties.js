@@ -11,6 +11,7 @@ import { Integer } from "@ratmath/core";
 import { keyOf, canonicalizeMetaKey } from "./keyof.js";
 import { Cell } from "../cell.js";
 import { isTensor, tensorAssignBySelectors, tensorGetBySelectors } from "../tensor.js";
+import { getBuiltinProto } from "../methods.js";
 
 /**
  * Convert a key value to a numeric index.
@@ -200,6 +201,9 @@ export const propertyFunctions = {
         impl(args) {
             const obj = args[0];
             const prop = args[1];
+            if (prop === "_proto") {
+                return getBuiltinProto(obj);
+            }
             const ext = obj?._ext;
             if (!ext || !ext.has(prop)) return null;
             return ext.get(prop);

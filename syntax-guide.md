@@ -639,6 +639,21 @@ Arity cap is simpler when you just want to drop trailing context args. Placehold
 | `a:(b:c):d` | `INTERVAL` | `2:(3:4):5` (nested betweenness) |
 | `a:{|b:c|}:d` | `INTERVAL` | `2:{|3:4|}:5` (set unpacking) |
 
+### Colon-Strings
+
+A colon in prefix position (where a value is expected) followed by an identifier or number produces a string literal. The colon must not follow a value — after a value, `:` remains the interval operator.
+
+| Syntax | Result | Notes |
+|--------|--------|-------|
+| `:hello` | `"hello"` | Lowercase identifier |
+| `:World` | `"World"` | Case is preserved (not uppercased) |
+| `:some_key` | `"some_key"` | Underscores allowed |
+| `:123` | `"123"` | Number becomes string |
+| `a:b` | interval | `:` in infix position = interval |
+| `a :b` | interval | Whitespace doesn't change infix `:` |
+
+Colon-strings work anywhere a value is expected: in arrays (`[:a, :b]`), as function arguments, after `=` or `:=`, after commas, etc. They are syntactic sugar for quoted strings and evaluate identically.
+
 ### Special Number Literals
 
 These formats all produce exact rational values parsed by `LITERAL`.

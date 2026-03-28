@@ -1249,6 +1249,82 @@ Runs a test group. Returns a rich result map. Two modes:
 
 **Duplicate labels:** Two `.Test(...)` calls with the same label in the same file produce an error.
 
+### `.TestError(label, setup, expr)`
+
+Tests that a single expression aborts with an error. Passes when `expr` aborts via `.Error(...)` or any runtime/interpreter error. The setup block runs first; if setup aborts for any reason, the entire test fails.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `label` | string | Test label (unique per file) |
+| `setup` | block | Runs once before the tested expression |
+| `expr` | expression | The single expression expected to abort with an error |
+
+**Pass criteria:**
+- Setup completes normally, AND
+- `expr` aborts with `.Error(...)` → outcome `"error"`, OR
+- `expr` aborts with a runtime error → outcome `"runtimeError"`
+
+**Fail criteria:**
+- Setup aborts for any reason
+- `expr` returns normally (including returning `_`)
+- `expr` aborts with `.Stop(...)` instead of an error kind
+
+```rix
+.TestError("division by zero", {;
+    x := 10;
+    y := 0
+}, x / y)
+
+.TestError("explicit error", {;
+    x := 5
+}, .Error("bad input", {= x = x }))
+```
+
+**Result shape:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `kind` | `"test"` | Event kind |
+| `testKind` | `"error"` | Abort test kind |
+| `label` | string | Test label |
+| `file` | string | Source file path |
+| `passed` | `1` or `_` | Overall pass/fail |
+| `expected` | `"error"` | Expected abort kind |
+| `setup` | map | `{ passed, outcome, value?, abort?, error? }` |
+| `expr` | map | `{ passed, outcome, value?, abort?, error? }` |
+| `summary` | map | `{ expected, setupPassed, exprOutcome }` |
+
+Outcome values: `"returned"`, `"error"`, `"stop"`, `"runtimeError"`.
+
+**Duplicate labels:** Two `.TestError(...)` (or `.Test(...)` / `.TestStop(...)`) calls with the same label in the same file produce an error.
+
+### `.TestStop(label, setup, expr)`
+
+Tests that a single expression aborts via `.Stop(...)`. Passes only when `expr` triggers a stop-kind abort. The setup block runs first; if setup aborts for any reason, the entire test fails.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `label` | string | Test label (unique per file) |
+| `setup` | block | Runs once before the tested expression |
+| `expr` | expression | The single expression expected to abort via `.Stop(...)` |
+
+**Pass criteria:**
+- Setup completes normally, AND
+- `expr` aborts with `.Stop(...)` → outcome `"stop"`
+
+**Fail criteria:**
+- Setup aborts for any reason
+- `expr` returns normally (including returning `_`)
+- `expr` aborts with `.Error(...)` or a runtime error instead of stop
+
+```rix
+.TestStop("negative guard", {;
+    x := -3
+}, .Stop("negative", x < 0, {= x = x }))
+```
+
+The result shape is the same as `.TestError(...)` with `testKind = "stop"` and `expected = "stop"`.
+
 ### `.Debug(label, expr)`
 
 AST-aware debug inspection. Captures the expression's IR/source structure, evaluates it once, and **returns the evaluated value** (not the event). Also emits a `kind="debug"` event.

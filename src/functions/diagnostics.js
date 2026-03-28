@@ -11,6 +11,7 @@ import {
     getDiagnostics,
     getCurrentFilePath,
     RixAbort,
+    isRixAbort,
     rixStringValue,
     rixIntValue,
     isRixMap,
@@ -662,12 +663,164 @@ export const TRACE = {
     doc: "Trace execution: .Trace(label, depth, trackedVars?, thunkOrCallable)",
 };
 
+// --- Shared helpers for .TestError / .TestStop ---
+
+/**
+ * Classify a thrown error into a normalized outcome string.
+ * Returns { outcome, abort, error } where:
+ *   outcome: "error" | "stop" | "runtimeError"
+ *   abort:   the RixAbort event map, or undefined
+ *   error:   JS error message string, or null
+ */
+function classifyError(err) {
+    if (err instanceof RixAbort) {
+        const kind = err.event?.entries?.get("kind")?.value;
+        if (kind === "stop") return { outcome: "stop", abort: err.event, error: null };
+        return { outcome: "error", abort: err.event, error: null };
+    }
+    return { outcome: "runtimeError", abort: undefined, error: err.message };
+}
+
+function buildAbortTestResult({ label, testKind, filePath, expected,
+    setupPassed, setupOutcome, setupValue, setupAbort, setupError,
+    exprOutcome, exprValue, exprAbort, exprError, passed }) {
+
+    const setupEntries = new Map();
+    setupEntries.set("passed", setupPassed ? toRixInt(1) : null);
+    setupEntries.set("outcome", toRixString(setupOutcome));
+    if (setupValue !== undefined) setupEntries.set("value", setupValue);
+    if (setupAbort !== undefined) setupEntries.set("abort", setupAbort);
+    if (setupError !== null && setupError !== undefined) setupEntries.set("error", toRixString(setupError));
+
+    const exprEntries = new Map();
+    exprEntries.set("passed", passed ? toRixInt(1) : null);
+    exprEntries.set("outcome", toRixString(exprOutcome));
+    if (exprValue !== undefined) exprEntries.set("value", exprValue);
+    if (exprAbort !== undefined) exprEntries.set("abort", exprAbort);
+    if (exprError !== null && exprError !== undefined) exprEntries.set("error", toRixString(exprError));
+
+    const summaryEntries = new Map();
+    summaryEntries.set("expected", toRixString(expected));
+    summaryEntries.set("setupPassed", setupPassed ? toRixInt(1) : null);
+    summaryEntries.set("exprOutcome", toRixString(exprOutcome));
+
+    const resultEntries = new Map();
+    resultEntries.set("kind", toRixString("test"));
+    resultEntries.set("testKind", toRixString(testKind));
+    resultEntries.set("label", toRixString(label));
+    resultEntries.set("file", toRixString(filePath));
+    resultEntries.set("passed", passed ? toRixInt(1) : null);
+    resultEntries.set("expected", toRixString(expected));
+    resultEntries.set("setup", { type: "map", entries: setupEntries });
+    resultEntries.set("expr", { type: "map", entries: exprEntries });
+    resultEntries.set("summary", { type: "map", entries: summaryEntries });
+
+    return { type: "map", entries: resultEntries };
+}
+
+function runAbortTest(testKind, args, context, evaluate) {
+    const capName = testKind === "error" ? ".TestError" : ".TestStop";
+    const label = requireString(evaluate(args[0]), `${capName} label`);
+    const setupNode = args[1];
+    const exprNode = args[2];
+    const filePath = getCurrentFilePath(context);
+    const diag = getDiagnostics(context);
+
+    let setupPassed = true;
+    let setupOutcome = "returned";
+    let setupValue;
+    let setupAbort;
+    let setupError = null;
+
+    let exprOutcome = "returned";
+    let exprValue;
+    let exprAbort;
+    let exprError = null;
+    let passed = false;
+
+    context.push(undefined, { isolated: true });
+    try {
+        // Run setup
+        try {
+            setupValue = context.withSharedBody(setupNode, () => evaluate(setupNode));
+        } catch (err) {
+            setupPassed = false;
+            const c = classifyError(err);
+            setupOutcome = c.outcome;
+            setupAbort = c.abort;
+            setupError = c.error;
+        }
+
+        // Only run expr if setup passed
+        if (setupPassed) {
+            try {
+                let val;
+                if (exprNode && exprNode.fn === "BLOCK") {
+                    val = context.withSharedBody(exprNode, () => evaluate(exprNode));
+                } else {
+                    val = evaluate(exprNode);
+                }
+                // Returned normally — always a failure for abort tests
+                exprOutcome = "returned";
+                exprValue = val;
+                passed = false;
+            } catch (err) {
+                const c = classifyError(err);
+                exprOutcome = c.outcome;
+                exprAbort = c.abort;
+                exprError = c.error;
+                if (testKind === "error") {
+                    passed = exprOutcome === "error" || exprOutcome === "runtimeError";
+                } else {
+                    passed = exprOutcome === "stop";
+                }
+            }
+        }
+    } finally {
+        context.pop();
+    }
+
+    const overallPassed = setupPassed && passed;
+    const result = buildAbortTestResult({
+        label, testKind, filePath,
+        expected: testKind === "error" ? "error" : "stop",
+        setupPassed, setupOutcome, setupValue, setupAbort, setupError,
+        exprOutcome, exprValue, exprAbort, exprError, passed: overallPassed,
+    });
+
+    diag.addEvent(result);
+    diag.registerTestResult(filePath, label, result);
+    return result;
+}
+
+// --- .TestError ---
+
+export const TEST_ERROR = {
+    lazy: true,
+    impl(args, context, evaluate) {
+        return runAbortTest("error", args, context, evaluate);
+    },
+    doc: "Abort test: .TestError(label, setup, expr) — passes if expr aborts with .Error() or a runtime error",
+};
+
+// --- .TestStop ---
+
+export const TEST_STOP = {
+    lazy: true,
+    impl(args, context, evaluate) {
+        return runAbortTest("stop", args, context, evaluate);
+    },
+    doc: "Abort test: .TestStop(label, setup, expr) — passes if expr aborts via .Stop()",
+};
+
 export const diagnosticFunctions = {
     WARN,
     INFO,
     ERROR,
     STOP,
     TEST,
+    TESTERROR: TEST_ERROR,
+    TESTSTOP: TEST_STOP,
     DEBUG,
     TRACE,
 };

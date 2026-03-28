@@ -1,0 +1,14 @@
+.TestError("division by zero", {;
+    x := 10;
+    y := 0
+}, x / y);
+
+.TestError("explicit error", {;
+    x := 5
+}, .Error("bad input", {= x = x }));
+
+.TestStop("negative guard", {;
+    x := -3
+}, .Stop("negative", x < 0, {= x = x }));
+
+.TestStop("condition stop", {; }, .Stop("halt", 1))

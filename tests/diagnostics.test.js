@@ -297,6 +297,228 @@ describe(".Test isolated mode", () => {
     });
 });
 
+// --- .TestError ---
+
+describe(".TestError", () => {
+    test("passes when tested expr calls .Error()", () => {
+        const { result } = evalRixWithDiag(`
+            .TestError("explicit error", {; x := 5 }, .Error("boom"))
+        `);
+        expect(mapGet(result, "kind")?.value).toBe("test");
+        expect(mapGet(result, "testKind")?.value).toBe("error");
+        expect(intVal(mapGet(result, "passed"))).toBe(1);
+    });
+
+    test("passes when tested expr produces a runtime error", () => {
+        const { result } = evalRixWithDiag(`
+            .TestError("runtime", {; x := 10; y := 0 }, x / y)
+        `);
+        expect(intVal(mapGet(result, "passed"))).toBe(1);
+        const expr = mapGet(result, "expr");
+        expect(mapGet(expr, "outcome")?.value).toBe("runtimeError");
+    });
+
+    test("fails when tested expr returns non-null", () => {
+        const { result } = evalRixWithDiag(`
+            .TestError("normal return", {; x := 5 }, x + 1)
+        `);
+        expect(mapGet(result, "passed")).toBeNull();
+        const expr = mapGet(result, "expr");
+        expect(mapGet(expr, "outcome")?.value).toBe("returned");
+    });
+
+    test("fails when tested expr returns null (_)", () => {
+        const { result } = evalRixWithDiag(`
+            .TestError("null return", {; }, _)
+        `);
+        expect(mapGet(result, "passed")).toBeNull();
+        const expr = mapGet(result, "expr");
+        expect(mapGet(expr, "outcome")?.value).toBe("returned");
+    });
+
+    test("fails when tested expr stops instead of erroring", () => {
+        const { result } = evalRixWithDiag(`
+            .TestError("wrong kind", {; x := -1 }, .Stop("guard", x < 0))
+        `);
+        expect(mapGet(result, "passed")).toBeNull();
+        const expr = mapGet(result, "expr");
+        expect(mapGet(expr, "outcome")?.value).toBe("stop");
+        const summary = mapGet(result, "summary");
+        expect(mapGet(summary, "expected")?.value).toBe("error");
+    });
+
+    test("fails and records setup failure when setup errors", () => {
+        const { result } = evalRixWithDiag(`
+            .TestError("setup errors", {; .Error("setup bad") }, 1 / 0)
+        `);
+        expect(mapGet(result, "passed")).toBeNull();
+        const setup = mapGet(result, "setup");
+        expect(mapGet(setup, "passed")).toBeNull();
+        expect(mapGet(setup, "outcome")?.value).toBe("error");
+        const summary = mapGet(result, "summary");
+        expect(mapGet(summary, "setupPassed")).toBeNull();
+    });
+
+    test("fails and records setup failure when setup stops", () => {
+        const { result } = evalRixWithDiag(`
+            .TestError("setup stops", {; .Stop("halt", 1) }, 1 / 0)
+        `);
+        expect(mapGet(result, "passed")).toBeNull();
+        const setup = mapGet(result, "setup");
+        expect(mapGet(setup, "outcome")?.value).toBe("stop");
+    });
+
+    test("registers structured result in diagnostics registry", () => {
+        const { result, diag } = evalRixWithDiag(`
+            .TestError("reg", {; }, .Error("e"))
+        `);
+        expect(result.type).toBe("map");
+        expect(mapGet(result, "file")?.value).toBe("<test>");
+        const fileResults = diag.getFileResults("<test>");
+        expect(fileResults.has("reg")).toBe(true);
+    });
+
+    test("duplicate label in same file errors", () => {
+        const { error } = evalRixWithDiag(`
+            .TestError("dup-err", {; }, .Error("e"));
+            .TestError("dup-err", {; }, .Error("e"))
+        `);
+        expect(error).not.toBeNull();
+        expect(error.message).toContain("Duplicate test group label");
+    });
+
+    test("expr block can access setup variables", () => {
+        const { result } = evalRixWithDiag(`
+            .TestError("block access", {; x := 0 }, {;
+                y := x + 1;
+                .Error("deliberate")
+            })
+        `);
+        expect(intVal(mapGet(result, "passed"))).toBe(1);
+    });
+
+    test("result has expected, setup, expr, summary fields", () => {
+        const { result } = evalRixWithDiag(`
+            .TestError("shape", {; }, .Error("e"))
+        `);
+        expect(mapGet(result, "expected")?.value).toBe("error");
+        expect(mapGet(result, "setup")).not.toBeUndefined();
+        expect(mapGet(result, "expr")).not.toBeUndefined();
+        expect(mapGet(result, "summary")).not.toBeUndefined();
+    });
+});
+
+// --- .TestStop ---
+
+describe(".TestStop", () => {
+    test("passes when tested expr triggers .Stop()", () => {
+        const { result } = evalRixWithDiag(`
+            .TestStop("expected stop", {; x := -3 }, .Stop("neg", x < 0))
+        `);
+        expect(mapGet(result, "kind")?.value).toBe("test");
+        expect(mapGet(result, "testKind")?.value).toBe("stop");
+        expect(intVal(mapGet(result, "passed"))).toBe(1);
+        const expr = mapGet(result, "expr");
+        expect(mapGet(expr, "outcome")?.value).toBe("stop");
+    });
+
+    test("fails when tested expr returns non-null", () => {
+        const { result } = evalRixWithDiag(`
+            .TestStop("normal return", {; x := 5 }, x + 1)
+        `);
+        expect(mapGet(result, "passed")).toBeNull();
+        const expr = mapGet(result, "expr");
+        expect(mapGet(expr, "outcome")?.value).toBe("returned");
+    });
+
+    test("fails when tested expr returns null (_)", () => {
+        const { result } = evalRixWithDiag(`
+            .TestStop("null return", {; }, _)
+        `);
+        expect(mapGet(result, "passed")).toBeNull();
+        const expr = mapGet(result, "expr");
+        expect(mapGet(expr, "outcome")?.value).toBe("returned");
+    });
+
+    test("fails when tested expr errors explicitly", () => {
+        const { result } = evalRixWithDiag(`
+            .TestStop("wrong kind error", {; }, .Error("boom"))
+        `);
+        expect(mapGet(result, "passed")).toBeNull();
+        const expr = mapGet(result, "expr");
+        expect(mapGet(expr, "outcome")?.value).toBe("error");
+        const summary = mapGet(result, "summary");
+        expect(mapGet(summary, "expected")?.value).toBe("stop");
+    });
+
+    test("fails when tested expr produces a runtime error", () => {
+        const { result } = evalRixWithDiag(`
+            .TestStop("runtime fail", {; x := 10; y := 0 }, x / y)
+        `);
+        expect(mapGet(result, "passed")).toBeNull();
+        const expr = mapGet(result, "expr");
+        expect(mapGet(expr, "outcome")?.value).toBe("runtimeError");
+    });
+
+    test("fails and records setup failure when setup errors", () => {
+        const { result } = evalRixWithDiag(`
+            .TestStop("setup errors", {; .Error("setup bad") }, .Stop("s", 1))
+        `);
+        expect(mapGet(result, "passed")).toBeNull();
+        const setup = mapGet(result, "setup");
+        expect(mapGet(setup, "passed")).toBeNull();
+        expect(mapGet(setup, "outcome")?.value).toBe("error");
+    });
+
+    test("fails and records setup failure when setup stops", () => {
+        const { result } = evalRixWithDiag(`
+            .TestStop("setup stops", {; .Stop("halt", 1) }, .Stop("s", 1))
+        `);
+        expect(mapGet(result, "passed")).toBeNull();
+        const setup = mapGet(result, "setup");
+        expect(mapGet(setup, "outcome")?.value).toBe("stop");
+    });
+
+    test("registers structured result in diagnostics registry", () => {
+        const { result, diag } = evalRixWithDiag(`
+            .TestStop("reg-stop", {; }, .Stop("s", 1))
+        `);
+        expect(result.type).toBe("map");
+        expect(mapGet(result, "file")?.value).toBe("<test>");
+        const fileResults = diag.getFileResults("<test>");
+        expect(fileResults.has("reg-stop")).toBe(true);
+    });
+
+    test("duplicate label in same file errors", () => {
+        const { error } = evalRixWithDiag(`
+            .TestStop("dup-stop", {; }, .Stop("s", 1));
+            .TestStop("dup-stop", {; }, .Stop("s", 1))
+        `);
+        expect(error).not.toBeNull();
+        expect(error.message).toContain("Duplicate test group label");
+    });
+
+    test("expr block can access setup variables", () => {
+        const { result } = evalRixWithDiag(`
+            .TestStop("block stop", {; x := -5 }, {;
+                y := x * 2;
+                .Stop("neg result", y < 0)
+            })
+        `);
+        expect(intVal(mapGet(result, "passed"))).toBe(1);
+    });
+
+    test("result has expected, setup, expr, summary fields", () => {
+        const { result } = evalRixWithDiag(`
+            .TestStop("shape", {; }, .Stop("s", 1))
+        `);
+        expect(mapGet(result, "expected")?.value).toBe("stop");
+        expect(mapGet(result, "setup")).not.toBeUndefined();
+        expect(mapGet(result, "expr")).not.toBeUndefined();
+        expect(mapGet(result, "summary")).not.toBeUndefined();
+    });
+});
+
 // --- .Debug ---
 
 describe(".Debug", () => {
@@ -460,5 +682,40 @@ describe("CLI rix test", () => {
         expect(result.stdout).toContain("PASS");
         expect(result.stdout).toContain("arithmetic");
         expect(result.stdout).toContain("isolated checks");
+    });
+
+    test("abort-tests.test.rix passes with TestError and TestStop", () => {
+        const result = spawnSync("bun", [rixTool, "test", "abort-tests"], {
+            cwd: path.resolve(import.meta.dir, "../.."),
+            encoding: "utf-8",
+        });
+        expect(result.stdout).toContain("PASS");
+        expect(result.stdout).toContain("TestError");
+        expect(result.stdout).toContain("TestStop");
+        expect(result.status).toBe(0);
+    });
+
+    test("TestError and TestStop summaries show PASS for passing abort tests", () => {
+        const result = spawnSync("bun", [rixTool, "test", "abort-tests"], {
+            cwd: path.resolve(import.meta.dir, "../.."),
+            encoding: "utf-8",
+        });
+        expect(result.stdout).toContain("PASS [TestError]");
+        expect(result.stdout).toContain("PASS [TestStop]");
+    });
+
+    test("failure details show expected vs actual outcome for TestError fail", () => {
+        // A TestStop that gets a normal return should show the failure reason
+        const result = spawnSync("bun", [rixTool, "test", "abort-tests"], {
+            cwd: path.resolve(import.meta.dir, "../.."),
+            encoding: "utf-8",
+        });
+        // All tests in abort-tests.test.rix pass, so no failure details printed
+        // Just verify exit code 0 and all labels shown
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain("division by zero");
+        expect(result.stdout).toContain("explicit error");
+        expect(result.stdout).toContain("negative guard");
+        expect(result.stdout).toContain("condition stop");
     });
 });

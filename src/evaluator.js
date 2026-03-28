@@ -26,6 +26,7 @@ import { methodFunctions } from "./functions/methods.js";
 import { propertyFunctions } from "./functions/properties.js";
 import { advancedFunctions } from "./functions/advanced.js";
 import { stdlibFunctions } from "./functions/stdlib.js";
+import { diagnosticFunctions } from "./functions/diagnostics.js";
 import { installSymbolicBindings, symbolicFunctions } from "./functions/symbolic.js";
 import { parse } from "../../parser/src/parser.js";
 import { tokenize } from "../../parser/src/tokenizer.js";
@@ -79,6 +80,8 @@ export function createDefaultSystemContext(options = {}) {
     for (const name of OPERATOR_ALIAS_NAMES) {
         if (opSources[name]) ctx.register(name, opSources[name]);
     }
+    // Diagnostic system capabilities (.Warn, .Info, .Error, .Stop, .Test, .Debug, .Trace)
+    ctx.registerAll(diagnosticFunctions);
     if (frozen) ctx.freeze();
     return ctx;
 }

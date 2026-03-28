@@ -1,0 +1,14 @@
+.Test("arithmetic", {; x = 7 }, [
+    x += 1,
+    x + 1 == 9,
+    3 * 4 == 12,
+    10 - 7 == 3
+]);
+
+b = 5; 
+
+.Test("isolated checks", {; x := 5 }, {=
+    add = { y = @b; y + 1 == 6},
+    mul = { x * 2 == 10 },
+    sub = x - 3 == 2
+})

@@ -1163,3 +1163,129 @@ REPL-specific commands use all-lowercase dot notation. They are not part of the 
 **Ctrl-C Behavior:**
 - If the current line is non-empty, Ctrl-C clears the line.
 - If the current line is empty, Ctrl-C exits the REPL.
+
+## Part 4: Diagnostics, Testing, and Debugging
+
+All diagnostic system capabilities produce structured RiX map values with at minimum: `kind`, `label`, `file`, `time`, `data`.
+
+### `.Warn(label, dataMap ?= {=})`
+
+Emits a `kind="warn"` event. Returns the event object.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `label` | string | required | Warning label |
+| `dataMap` | map | `{=}` | Structured payload |
+
+### `.Info(label, level ?= 1, dataMap ?= {=})`
+
+Emits a `kind="info"` event with a severity level. Returns the event object.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `label` | string | required | Info label |
+| `level` | integer | `1` | Severity/verbosity level |
+| `dataMap` | map | `{=}` | Structured payload |
+
+### `.Error(label, dataMap ?= {=})`
+
+Emits a `kind="error"` event and **aborts** evaluation. Does not return normally.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `label` | string | required | Error label |
+| `dataMap` | map | `{=}` | Structured payload |
+
+### `.Stop(label, condition, dataMap ?= {=})`
+
+Conditional abort. If `condition` is null (`_`), returns null and emits nothing. If `condition` is non-null, emits a `kind="stop"` event and aborts.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `label` | string | required | Stop label |
+| `condition` | any | required | Abort if non-null |
+| `dataMap` | map | `{=}` | Structured payload |
+
+### `.Test(label, setup, tests)`
+
+Runs a test group. Returns a rich result map. Two modes:
+
+**Sequential mode** (third arg is array `[...]`):
+- Setup runs once; tests run in order in shared state
+- Null result = failure; stops remaining tests
+- Runtime error = error; stops remaining tests
+
+```rix
+.Test("group", {; x := 1 }, [
+    x == 1,
+    {; x ~= x + 1; x == 2 }
+])
+```
+
+**Isolated mode** (third arg is map `{= ... }`):
+- Setup reruns fresh for each labeled test
+- All tests are attempted regardless of individual failures
+
+```rix
+.Test("group", {; x := 5 }, {=
+    add = x + 1 == 6,
+    mul = x * 2 == 10
+})
+```
+
+**Result shape** (both modes):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `kind` | `"test"` | Event kind |
+| `label` | string | Test group label |
+| `mode` | `"sequential"` or `"isolated"` | Test mode |
+| `file` | string | Source file path |
+| `passed` | `1` or `_` | Overall pass/fail |
+| `results` | array or map | Per-test outcomes |
+| `summary` | map | `{= total, passed, failed, errored, skipped }` |
+
+**Pass/fail semantics:** null (`_`) = failure, any non-null = pass.
+
+**Duplicate labels:** Two `.Test(...)` calls with the same label in the same file produce an error.
+
+### `.Debug(label, expr)`
+
+AST-aware debug inspection. Captures the expression's IR/source structure, evaluates it once, and **returns the evaluated value** (not the event). Also emits a `kind="debug"` event.
+
+```rix
+x := .Debug("check", a + b)   ## x gets the value of a + b
+```
+
+Debug data payload includes `exprSource`, `ast`, and `final`.
+
+### `.Trace(label, depth, trackedVars ?= [], thunkOrCallable)`
+
+Execution tracing wrapper. Establishes a trace context, invokes the callable, and **returns the callable's result**. Emits a `kind="trace"` event.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `label` | string | required | Trace label |
+| `depth` | integer | required | Max call depth to trace |
+| `trackedVars` | array of strings | `[]` | Variable names to track |
+| `thunkOrCallable` | callable | required | Code to trace |
+
+```rix
+.Trace("fib", 3, ["n", "acc"], () -> Fib(10))
+```
+
+Trace data payload includes `depth`, `trackedVars`, `calls` (array of enter/exit/write events), and `final`.
+
+### CLI: `rix test`
+
+Test discovery and execution from the command line.
+
+```
+bun rix/tools/rix.js test [filters...]
+```
+
+- **No filters:** recursively discovers all `*.test.rix` files from the current directory
+- **With filters:** only runs files whose path contains one of the filter strings (case-insensitive)
+- Each file runs in a fresh runtime context
+- **Exit code 0** if all test files pass; **nonzero** if any fail or error
+- Output includes per-file pass/fail status, per-test-group summaries, and diagnostic event counts

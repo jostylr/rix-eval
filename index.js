@@ -8,3 +8,4 @@ export { Context } from "./src/context.js";
 export { evaluate, createDefaultRegistry, createDefaultSystemContext, parseAndEvaluate } from "./src/evaluator.js";
 export { irToText, irListToText } from "./src/ir-to-text.js";
 export { HOLE, isHole } from "./src/hole.js";
+export { DiagnosticsRegistry, getDiagnostics, RixAbort, isRixAbort, createEvent } from "./src/diagnostics.js";

@@ -369,6 +369,33 @@ describe(".Trace", () => {
         const { result } = evalRixWithDiag('.Trace("no-vars", 1, () -> 7)');
         expect(intVal(result)).toBe(7);
     });
+
+    test("tracks function enter and exit", () => {
+        const { diag } = evalRixWithDiag('.Trace("t", 1, [], () -> 42)');
+        const calls = mapGet(diag.events[0], "data").entries.get("calls").values;
+        expect(calls.length).toBe(2);
+        expect(mapGet(calls[0], "event")?.value).toBe("enter");
+        expect(mapGet(calls[1], "event")?.value).toBe("exit");
+        expect(intVal(mapGet(calls[1], "value"))).toBe(42);
+    });
+
+    test("tracks variable assignments when tracked", () => {
+        const { diag } = evalRixWithDiag('.Trace("t", 1, ["x"], () -> {; x = 1; x += 2; })');
+        const calls = mapGet(diag.events[0], "data").entries.get("calls").values;
+        // enter lambda, x=1, x+=2, exit lambda
+        expect(calls.length).toBe(4);
+        
+        const write1 = calls[1];
+        expect(mapGet(write1, "event")?.value).toBe("write");
+        expect(mapGet(write1, "var")?.value).toBe("x");
+        expect(intVal(mapGet(write1, "new"))).toBe(1);
+
+        const write2 = calls[2];
+        expect(mapGet(write2, "event")?.value).toBe("write");
+        expect(mapGet(write2, "var")?.value).toBe("x");
+        expect(intVal(mapGet(write2, "old"))).toBe(1);
+        expect(intVal(mapGet(write2, "new"))).toBe(3);
+    });
 });
 
 // --- Uppercase alias tests ---

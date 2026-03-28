@@ -752,6 +752,21 @@ function parseRepeatingDecimalLiteral(str) {
 
 // ─── Assignment helpers ──────────────────────────────────────────────
 
+function recordTraceWrite(context, name, oldVal, newVal) {
+    const tc = context.getEnv("__trace_context__");
+    if (tc && tc.active && tc.currentDepth <= tc.depth) {
+        if (tc.trackedVars.size === 0 || tc.trackedVars.has(name)) {
+            tc.log.push({
+                event: "write",
+                var: name,
+                old: oldVal,
+                new: newVal,
+                depth: tc.currentDepth
+            });
+        }
+    }
+}
+
 /**
  * Resolve an assignment target name from IR args[0].
  * Handles raw strings, IR nodes that evaluate to strings, and RiX string objects.
@@ -803,6 +818,7 @@ function performUpdate(name, rhsValue, context, depth) {
         checkFrozenImmutable(oldValue);
         const newValue = copyFn(rhsValue);
         transferMetaForUpdate(oldValue, newValue, rhsValue, depth);
+        recordTraceWrite(context, name, oldValue, newValue);
         cell.value = newValue;
         return newValue;
     }
@@ -813,6 +829,7 @@ function performUpdate(name, rhsValue, context, depth) {
     // with oldValue=null handles this correctly.
     const newValue = copyFn(rhsValue);
     transferMetaForUpdate(null, newValue, rhsValue, depth);
+    recordTraceWrite(context, name, null, newValue);
     context.setFresh(name, newValue);
     return newValue;
 }
@@ -830,6 +847,7 @@ function performOuterUpdate(name, rhsValue, context, depth) {
         checkFrozenImmutable(oldValue);
         const newValue = copyFn(rhsValue);
         transferMetaForUpdate(oldValue, newValue, rhsValue, depth);
+        recordTraceWrite(context, name, oldValue, newValue);
         cell.value = newValue;
         return newValue;
     }
@@ -1255,6 +1273,7 @@ export const coreFunctions = {
                 const rhsName = rhsIR.args[0];
                 const cell = context.getCell(rhsName);
                 if (cell) {
+                    recordTraceWrite(context, name, context.get(name) ?? null, cell.value);
                     context.setCell(name, cell);
                     return cell.value;
                 }
@@ -1263,6 +1282,7 @@ export const coreFunctions = {
                 const rhsName = rhsIR.args[0];
                 const cell = context.getOuterCell(rhsName);
                 if (cell) {
+                    recordTraceWrite(context, name, context.get(name) ?? null, cell.value);
                     context.setCell(name, cell);
                     return cell.value;
                 }
@@ -1270,6 +1290,7 @@ export const coreFunctions = {
 
             // Otherwise evaluate and create a fresh Cell
             const value = evaluate(rhsIR);
+            recordTraceWrite(context, name, context.get(name) ?? null, value);
             context.setFresh(name, value);
             return value;
         },
@@ -1283,6 +1304,7 @@ export const coreFunctions = {
             const rhsValue = evaluate(args[1]);
             const newValue = shallowCopyValue(rhsValue);
             copyAllMeta(rhsValue, newValue, "shallow");
+            recordTraceWrite(context, name, context.get(name) ?? null, newValue);
             context.setFresh(name, newValue);
             return newValue;
         },
@@ -1306,6 +1328,7 @@ export const coreFunctions = {
             const rhsValue = evaluate(args[1]);
             const newValue = deepCopyValue(rhsValue);
             copyAllMeta(rhsValue, newValue, "deep");
+            recordTraceWrite(context, name, context.get(name) ?? null, newValue);
             context.setFresh(name, newValue);
             return newValue;
         },
@@ -1327,6 +1350,7 @@ export const coreFunctions = {
         impl(args, context, evaluate) {
             const name = resolveAssignName(args[0], evaluate);
             const value = evaluate(args[1]);
+            recordTraceWrite(context, name, context.getOuter(name) ?? null, value);
             context.setOuter(name, value);
             return value;
         },
@@ -1349,6 +1373,7 @@ export const coreFunctions = {
         impl(args, context, evaluate) {
             const name = resolveAssignName(args[0], evaluate);
             const value = evaluate(args[1]);
+            recordTraceWrite(context, name, context.globalScope.get(name)?.value ?? null, value);
             context.setGlobal(name, value);
             return value;
         },
@@ -1387,6 +1412,7 @@ export const coreFunctions = {
             }
             // If target is a string (variable name), assign it
             if (typeof target === "string") {
+                recordTraceWrite(context, target, context.get(target) ?? null, value);
                 context.set(target, value);
             }
             return value;

@@ -102,6 +102,29 @@ function invokeUserCallable(fn, callArgs, context, evaluate, options = {}) {
     const shareBody = options.shareBody !== false;
     let scopeActive = false;
 
+    const tc = context.getEnv("__trace_context__");
+    let traceActive = false;
+
+    const doTraceEnter = (args) => {
+        if (tc && tc.active && tc.currentDepth < tc.depth) {
+            tc.log.push({ event: "enter", fn: callName || "<lambda>", depth: tc.currentDepth, args: args });
+            tc.currentDepth++;
+            return true;
+        }
+        return false;
+    };
+
+    const doTraceExit = (val, threw) => {
+        if (traceActive && tc) {
+            tc.currentDepth--;
+            if (!threw) {
+                tc.log.push({ event: "exit", fn: callName || "<lambda>", depth: tc.currentDepth, value: val });
+            }
+        }
+    };
+
+    traceActive = doTraceEnter(callArgs);
+
     context.push(bindCallScope(fn.params, callArgs, evaluate));
     scopeActive = true;
     if (callName) context.pushCall(callName);
@@ -119,8 +142,13 @@ function invokeUserCallable(fn, callArgs, context, evaluate, options = {}) {
             }
 
             if (!isTailSelfCall(result)) {
+                doTraceExit(result, false);
+                traceActive = false;
                 return result;
             }
+
+            doTraceExit(result.args, false);
+            traceActive = doTraceEnter(result.args);
 
             context.pop();
             scopeActive = false;
@@ -128,6 +156,9 @@ function invokeUserCallable(fn, callArgs, context, evaluate, options = {}) {
             scopeActive = true;
         }
     } finally {
+        if (traceActive && tc) {
+            tc.currentDepth--;
+        }
         if (callName) context.popCall();
         if (scopeActive) context.pop();
     }

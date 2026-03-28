@@ -140,14 +140,14 @@ describe("?| hole-coalescing operator", () => {
 
 // --- Parameter defaults with ?| ---
 
-describe("Parameter holeDefault (?|)", () => {
+describe("Parameter holeDefault (?=)", () => {
     test("F(,7) uses holeDefault for first param", () => {
-        const result = evalRiX("F := (x ?| 2, a) -> a ^ x; F(,7)");
+        const result = evalRiX("F := (x ?= 2, a) -> a ^ x; F(,7)");
         expect(unboxInt(result)).toBe(49); // 7^2
     });
 
     test("F(3,7) uses explicit arg, ignores holeDefault", () => {
-        const result = evalRiX("F := (x ?| 2, a) -> a ^ x; F(3,7)");
+        const result = evalRiX("F := (x ?= 2, a) -> a ^ x; F(3,7)");
         expect(unboxInt(result)).toBe(343); // 7^3
     });
 
@@ -159,7 +159,7 @@ describe("Parameter holeDefault (?|)", () => {
 
     test("holeDefault does not apply for regular args", () => {
         // Passing 0 (not a hole) should use 0, not the holeDefault
-        const result = evalRiX("F := (x ?| 2, a) -> a ^ x; F(0, 7)");
+        const result = evalRiX("F := (x ?= 2, a) -> a ^ x; F(0, 7)");
         expect(unboxInt(result)).toBe(1); // 7^0 = 1
     });
 });
@@ -209,22 +209,22 @@ describe("Pipes with holes", () => {
 
 describe("Omitted call args in function calls", () => {
     test("F(,7) passes hole as first arg", () => {
-        const result = evalRiX("F := (x ?| 2, a) -> a ^ x; F(,7)");
+        const result = evalRiX("F := (x ?= 2, a) -> a ^ x; F(,7)");
         expect(unboxInt(result)).toBe(49);
     });
 
     test("F(1,,3) passes hole as second arg", () => {
-        const result = evalRiX("F := (a, b ?| 10, c) -> a + b + c; F(1,,3)");
+        const result = evalRiX("F := (a, b ?= 10, c) -> a + b + c; F(1,,3)");
         expect(unboxInt(result)).toBe(14); // 1 + 10 + 3
     });
 
     test("F(,) passes two holes", () => {
-        const result = evalRiX("F := (a ?| 2, b ?| 3) -> a + b; F(,)");
+        const result = evalRiX("F := (a ?= 2, b ?= 3) -> a + b; F(,)");
         expect(unboxInt(result)).toBe(5); // 2 + 3
     });
 
-    test("single-param lambda with holeDefault: (x ?| 2) -> 5 ^ x", () => {
-        const result = evalRiX("F := (x ?| 2) -> 5 ^ x; F(,7)");
+    test("single-param lambda with holeDefault: (x ?= 2) -> 5 ^ x", () => {
+        const result = evalRiX("F := (x ?= 2) -> 5 ^ x; F(,7)");
         expect(unboxInt(result)).toBe(25); // hole → x=2, 5^2
     });
 });

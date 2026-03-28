@@ -1,5 +1,5 @@
 /**
- * Comparison system functions: EQ, NEQ, LT, GT, LTE, GTE
+ * Comparison system functions: EQ, NEQ, LT, GT, LTE, GTE, SAME_CELL
  *
  * Return Integer(1) for true, null for false.
  * (In RiX, only null is falsy; 0 is truthy.)
@@ -32,6 +32,21 @@ function classifyMinMaxType(val) {
     if (typeof val === "string") return "string";
     if (val && typeof val === "object" && val.type === "string") return "string";
     return "invalid";
+}
+
+/**
+ * Resolve an IR node to its Cell reference (if it names a variable).
+ * Returns the Cell object or null if the node is not a simple variable reference.
+ */
+function resolveCell(irNode, context) {
+    if (!irNode || typeof irNode !== "object") return null;
+    if (irNode.fn === "RETRIEVE") {
+        return context.getCell(irNode.args[0]);
+    }
+    if (irNode.fn === "OUTER_RETRIEVE") {
+        return context.getOuterCell(irNode.args[0]);
+    }
+    return null;
 }
 
 function minMaxImpl(args, mode) {
@@ -116,6 +131,20 @@ export const comparisonFunctions = {
         },
         pure: true,
         doc: "Greater than or equal — returns 1 or null",
+    },
+
+    SAME_CELL: {
+        lazy: true,
+        impl(args, context, evalFn) {
+            // Resolve Cell references for both sides
+            const leftCell = resolveCell(args[0], context);
+            const rightCell = resolveCell(args[1], context);
+            if (leftCell && rightCell && leftCell === rightCell) {
+                return new Integer(1);
+            }
+            return null;
+        },
+        doc: "Identity comparison (===) — returns 1 if both sides refer to the same cell, null otherwise",
     },
 
     MIN: {

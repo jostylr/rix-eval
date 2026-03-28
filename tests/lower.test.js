@@ -405,7 +405,7 @@ describe("Lowering Pass", () => {
     });
 
     test("function with hole-default params", () => {
-      const ir = L("f(x, n ?| 5) :-> x^n;");
+      const ir = L("f(x, n ?= 5) :-> x^n;");
       expect(ir.fn).toBe("FUNCDEF");
       const params = ir.args[1];
       expect(params.positional[1].holeDefault.fn).toBe("LITERAL");

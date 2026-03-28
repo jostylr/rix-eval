@@ -24,11 +24,7 @@ const BINARY_OP_MAP = {
   ">": "GT",
   "<=": "LTE",
   ">=": "GTE",
-  "?=": "EQ",
-  "?<": "LT",
-  "?>": "GT",
-  "?<=": "LTE",
-  "?>=": "GTE",
+  "===": "SAME_CELL",
   "AND": "AND",
   "&&": "AND",
   "OR": "OR",
@@ -315,6 +311,13 @@ const LOWERERS = {
     }
     if (op === "<_") {
       return ir("FROMBASE", lowerNode(node.left), lowerNode(node.right));
+    }
+
+    // ?= is only valid in parameter default positions, not as a general operator
+    if (op === "?=") {
+      throw new Error(
+        `'?=' is not a comparison operator — use '==' for equality comparison, or use '?=' only in parameter default position (e.g., (x ?= 2) -> ...)`
+      );
     }
 
     // Standard binary ops

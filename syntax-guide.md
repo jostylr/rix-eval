@@ -13,12 +13,13 @@
 | `//` | `INTDIV` | `7 // 2` → `3` |
 | `%` | `MOD` | `10 % 3` → `1` |
 | `^` or `**` | `POW` | `2 ^ 10` → `1024` |
-| `==` or `?=` | `EQ` | `x == 5` |
+| `==` | `EQ` | `x == 5` (value equality) |
+| `===` | `SAME_CELL` | `x === y` (identity — same cell) |
 | `!=` | `NEQ` | `x != 0` |
-| `<` or `?<` | `LT` | `a < b` |
-| `>` or `?>` | `GT` | `a > b` |
-| `<=` or `?<=` | `LTE` | `x <= 10` |
-| `>=` or `?>=` | `GTE` | `x >= 0` |
+| `<` | `LT` | `a < b` |
+| `>` | `GT` | `a > b` |
+| `<=` | `LTE` | `x <= 10` |
+| `>=` | `GTE` | `x >= 0` |
 | `&&` | `AND` | `a > 0 && b > 0` |
 | `||` | `OR` | `x == 0 || y == 0` |
 | `?|` | `HOLE_COALESCE` | `a[2] ?| 9` — returns left if not a hole, else right |
@@ -850,12 +851,13 @@ Map literals reject duplicate keys after canonicalization:
 
 | Function | Description | Syntax Aliases |
 |----------|-------------|----------------|
-| `EQ(a, b)` | Equal (returns 1 or null _ ) | `a == b`, `a ?= b` |
+| `EQ(a, b)` | Value equality (returns 1 or null) | `a == b` |
+| `SAME_CELL(a, b)` | Identity — same cell (returns 1 or null) | `a === b` |
 | `NEQ(a, b)` | Not equal | `a != b` |
-| `LT(a, b)` | Less than | `a < b`, `a ?< b` |
-| `GT(a, b)` | Greater than | `a > b`, `a ?> b` |
-| `LTE(a, b)` | Less or equal | `a <= b`, `a ?<= b` |
-| `GTE(a, b)` | Greater or equal | `a >= b`, `a ?>= b` |
+| `LT(a, b)` | Less than | `a < b` |
+| `GT(a, b)` | Greater than | `a > b` |
+| `LTE(a, b)` | Less or equal | `a <= b` |
+| `GTE(a, b)` | Greater or equal | `a >= b` |
 | `MIN(args...)` | N-ary minimum (numbers or strings; null args ignored) | `{<< a, b, c }` |
 | `MAX(args...)` | N-ary maximum (numbers or strings; null args ignored) | `{>> a, b, c }` |
 
@@ -1133,8 +1135,8 @@ Scope note:
 | `[,]` | Two holes |
 | `F(,7)` | Call F with hole as first arg, 7 as second |
 | `F(1,,3)` | Call F with hole as second arg |
-| `a ?| b` | Hole-coalesce: returns `a` if non-hole, else `b` |
-| `(x ?| 2, a) -> ...` | Param `x` defaults to `2` only when caller passes a hole |
+| `a ?| b` | Hole-coalesce: returns `a` if non-hole, else `b` (expression-level) |
+| `(x ?= 2, a) -> ...` | Param `x` defaults to `2` when caller omits it or passes a hole |
 
 **Key rules:**
 - Holes are **not assignable** — they arise from syntax only.

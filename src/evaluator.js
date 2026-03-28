@@ -54,7 +54,7 @@ export function createDefaultRegistry() {
 
 // Operator alias names exposed in the system context (accessible as .ADD, .SUB, @+, @*, etc.)
 const OPERATOR_ALIAS_NAMES = ["ADD", "SUB", "MUL", "DIV", "INTDIV", "MOD", "POW",
-    "EQ", "NEQ", "LT", "GT", "LTE", "GTE", "AND", "OR", "NOT"];
+    "EQ", "NEQ", "LT", "GT", "LTE", "GTE", "SAME_CELL", "AND", "OR", "NOT"];
 const SCRIPT_RUNTIME_ENV_KEY = "__script_runtime__";
 
 /**

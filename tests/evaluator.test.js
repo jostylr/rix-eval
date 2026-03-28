@@ -884,7 +884,7 @@ describe("RiX Evaluator", () => {
         });
 
         test("tail self call optimization works for accumulator recursion", () => {
-            const result = evalRix("SumDown = (n, acc ?| 0) -> n > 0 ?? $(n - 1, acc + n) ?: acc; SumDown(5);");
+            const result = evalRix("SumDown = (n, acc ?= 0) -> n > 0 ?? $(n - 1, acc + n) ?: acc; SumDown(5);");
             expect(result).toBeInstanceOf(Integer);
             expect(result.value).toBe(15n);
         });
@@ -908,13 +908,13 @@ describe("RiX Evaluator", () => {
         });
 
         test("tail self calls keep defaulted accumulator parameters working", () => {
-            const result = evalRix("Fact = (n, acc ?| 1) -> n > 1 ?? $(n - 1, acc * n) ?: acc; Fact(5);");
+            const result = evalRix("Fact = (n, acc ?= 1) -> n > 1 ?? $(n - 1, acc * n) ?: acc; Fact(5);");
             expect(result).toBeInstanceOf(Integer);
             expect(result.value).toBe(120n);
         });
 
         test.skip("deep tail self recursion can run without proportional stack growth", () => {
-            const result = evalRix("Loop = (n, acc ?| 0) -> n > 0 ?? $(n - 1, acc + 1) ?: acc; Loop(20000);");
+            const result = evalRix("Loop = (n, acc ?= 0) -> n > 0 ?? $(n - 1, acc + 1) ?: acc; Loop(20000);");
             expect(result).toBeInstanceOf(Integer);
             expect(result.value).toBe(20000n);
         });

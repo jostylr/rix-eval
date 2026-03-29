@@ -268,6 +268,27 @@ Scoping inside a break block is intentionally asymmetric:
 - Plain reads can see the immediate surrounding scope without `@`.
 - Writes stay local unless you use `@name` to write to that surrounding scope explicitly.
 
+### Code Blocks in Construct Positions (Scope Sharing)
+
+When a scope-creating construct (loop, `.Test`, etc.) evaluates a sub-part that is itself a code block, that block **shares the construct's scope** rather than creating an additional isolated scope. This means code blocks in these positions act as grouping (for multi-statement parts) without introducing a scope boundary.
+
+```rix
+## These are equivalent — the init block shares the loop's scope:
+{@ x = 1; x < 4; x; x += 1 }          ## => 3
+{@ {; x = 1 }; x < 4; x; x += 1 }     ## => 3
+
+## All four loop parts can be code blocks:
+{@ {; i = 0; j = 10 }; {; i < 3 }; {; i + j }; {; i += 1 } }  ## => 12
+```
+
+To get a genuinely isolated block inside a construct position, use nested braces. The outer block shares the construct's scope, but the inner block creates its own:
+
+```rix
+{@ { { x = 1 } }; x < 4; x; x += 1 }   ## Error: x is undefined in loop scope
+```
+
+This scope-sharing applies to any lazy construct that manages its own scope and evaluates sub-parts within it. Currently this includes loop sub-parts (init, condition, body, update) and `.Test` setup/test expressions.
+
 ### Scoped Block Import Headers
 
 Scoped execution blocks may begin with one optional import header immediately after the opening brace form:

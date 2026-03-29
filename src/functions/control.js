@@ -92,6 +92,16 @@ function evaluateBreakValue(valueNode, context, evaluate) {
     }
 }
 
+/**
+ * Evaluate a node in the current scope, sharing scope if it's a BLOCK/LOOP/SYSTEM.
+ * Used by constructs that create their own scope (like LOOP) so that code-block
+ * sub-parts act as grouping rather than creating an extra isolation boundary.
+ * Nested blocks (e.g. { { ... } }) still get their own scope as usual.
+ */
+function evaluateShared(node, context, evaluate) {
+    return context.withSharedBody(node, () => evaluate(node));
+}
+
 function applyImports(imports, context) {
     for (const spec of imports) {
         if (spec.mode === "alias") {
@@ -101,6 +111,8 @@ function applyImports(imports, context) {
         }
     }
 }
+
+export { evaluateShared };
 
 export const controlFunctions = {
     BLOCK: {
@@ -178,9 +190,9 @@ export const controlFunctions = {
             if (!shareCurrentScope) context.push(undefined, { isolated: true });
             try {
                 applyImports(imports, context);
-                // Init
+                // Init — code blocks in loop positions share the loop's scope
                 try {
-                    if (initNode) evaluate(initNode);
+                    if (initNode) evaluateShared(initNode, context, evaluate);
 
                     let result = null;
                     let iterations = 0;
@@ -190,7 +202,7 @@ export const controlFunctions = {
 
                     while (true) {
                         if (condNode) {
-                            const condResult = evaluate(condNode);
+                            const condResult = evaluateShared(condNode, context, evaluate);
                             if (!isTruthy(condResult)) break;
                         }
 
@@ -200,11 +212,11 @@ export const controlFunctions = {
                         }
 
                         if (bodyNode) {
-                            result = evaluate(bodyNode);
+                            result = evaluateShared(bodyNode, context, evaluate);
                         }
 
                         if (updateNode) {
-                            evaluate(updateNode);
+                            evaluateShared(updateNode, context, evaluate);
                         }
 
                         iterations++;

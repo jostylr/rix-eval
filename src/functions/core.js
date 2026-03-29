@@ -9,6 +9,9 @@ import {
     copyAllMeta, transferMetaForUpdate,
 } from "../cell.js";
 import { isTensor } from "../tensor.js";
+import { parse } from "../../../parser/src/parser.js";
+import { tokenize } from "../../../parser/src/tokenizer.js";
+import { lower } from "../lower.js";
 
 const BASE_RESERVED_CHARS = new Set([".", "/", "#", "~", "_", "^", "+", "-"]);
 const BASE_MODE_ALIASES = new Map([
@@ -1440,11 +1443,32 @@ export const coreFunctions = {
             // 1. Evaluate the first argument to get the AST node
             const astNode = evaluate(args[0]);
             
-            // It must be a deferred AST value
-            if (!astNode || typeof astNode !== "object" || astNode.fn !== "DEFER") {
-                throw new Error("Eval expects a deferred AST value");
+            // It must be a deferred AST value or a string
+            let evalTarget;
+            if (astNode && typeof astNode === "object" && astNode.fn === "DEFER") {
+                evalTarget = astNode.args[0];
+            } else if (astNode && typeof astNode === "object" && astNode.type === "string") {
+                const source = astNode.value;
+                const runtime = context.getEnv("__script_runtime__");
+                const systemLookup = runtime ? runtime.systemLookup : undefined;
+                try {
+                    const tokens = tokenize(source);
+                    const ast = parse(tokens, systemLookup);
+                    const irNodes = lower(ast);
+                    if (irNodes.length === 0) {
+                        return null; // Empty string
+                    } else if (irNodes.length === 1) {
+                        evalTarget = irNodes[0];
+                    } else {
+                        // In case of multiple statements, wrap them in a BLOCK IR node
+                        evalTarget = { fn: "BLOCK", args: [{ name: null, unlimited: false }, ...irNodes] };
+                    }
+                } catch (e) {
+                    throw new Error(`Eval string parse error: ${e.message}`);
+                }
+            } else {
+                throw new Error("Eval expects a deferred AST value or a string of RiX code");
             }
-            const evalTarget = astNode.args[0];
 
             let bindings = null;
             if (args.length >= 2) {

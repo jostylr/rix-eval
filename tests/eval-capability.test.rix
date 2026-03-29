@@ -33,3 +33,24 @@
 .TestError("Eval errors on invalid bindings", {; }, [
     .Eval(@{; 5 }, 5)
 ]);
+
+.Test("Eval Capability String Evaluation", {; }, [
+    .Eval("1 + 2") == 3,
+    .Eval("x := 10; x * 2") == 20
+]);
+
+.Test("Eval Capability String Inherit", {;
+    y := 100
+}, [
+    .Eval("y + 5") == 105
+]);
+
+.Test("Eval Capability String Bindings", {;
+    y := 100
+}, [
+    .Eval("y + z", {= z=50 }) == 150
+]);
+
+.TestError("Eval Capability String Fresh throws on missing var", {;
+    y := 100
+}, .Eval("y", _, :fresh));

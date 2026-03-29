@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { Integer } from "@ratmath/core";
 import { tokenize } from "../../parser/src/tokenizer.js";
 import { parse } from "../../parser/src/parser.js";
@@ -10,7 +10,7 @@ import { createDefaultRegistry, createDefaultSystemContext, evaluate } from "../
 import { installSymbolicBindings } from "../src/functions/symbolic.js";
 import { runtimeDefaults } from "../src/runtime-config.js";
 
-const TMP_ROOT = path.resolve(process.cwd(), "tmp", "script-import-tests");
+const TMP_ROOT = path.resolve(process.cwd(), ".test-tmp", `script-import-tests-${Date.now()}`);
 
 function writeScripts(files) {
     fs.mkdirSync(TMP_ROOT, { recursive: true });
@@ -63,7 +63,7 @@ function makeSystemContext(extraDefs = {}) {
     return ctx;
 }
 
-afterEach(() => {
+afterAll(() => {
     fs.rmSync(TMP_ROOT, { recursive: true, force: true });
 });
 

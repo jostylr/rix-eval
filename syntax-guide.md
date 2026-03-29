@@ -188,6 +188,28 @@ System context meta-methods (called via dot syntax):
 | `@@expr` | Evaluate a deferred AST node or code string at runtime directly in the caller's scope (sugar for `.Eval(expr)`) | `f = @{; x = 2 }; @@f` → sets `x=2` locally |
 | `@+, @*, @<`, etc | Retrieve operator's system capability (alias for `.ADD`, `.MUL`, etc.) | `f = @+; f(10, 20)` → `30` |
 
+#### Built-in methods on deferred values
+
+Deferred values (`@{...}`) have built-in methods for evaluation, introspection, and debugging:
+
+| Method | Description |
+|--------|-------------|
+| `d.Eval()` | Evaluate the deferred block in the current (caller's) scope. Identical to `.Eval(d)`. |
+| `d.Eval(bindings)` | Evaluate with extra variable bindings injected into the scope. |
+| `d.Eval(bindings, :fresh)` | Evaluate in a fresh isolated scope (no access to outer variables). |
+| `d.Desugar()` | Return a string showing the full raw IR tree. `BLOCK` nodes and complex children are rendered with each argument on its own indented line. |
+| `d.Desugar(n)` | Return the IR tree up to depth `n`; nodes beyond that depth render as `FN(...)`. `n = -1` (default) is unlimited. `n = 0` gives just `DEFER(...)`. |
+| `d.Inspect()` | Run in a fresh isolated scope and return a report: inputs, a full execution trace, and the final output. |
+| `d.Inspect(bindings)` | Same but inject `bindings` as the input variables. |
+| `d.Inspect(bindings, depth)` | Control trace depth: `depth = -1` (default) traces everything; `depth = 0` disables the trace (inputs + output only); `depth = n` traces `n` levels into the call tree. |
+
+**Notes:**
+- `d.Eval()` inherits the surrounding scope and can read/write outer variables (same as `@@d`).
+- `d.Eval(_, :fresh)` creates an isolated scope — outer variables are inaccessible and assignments do not escape.
+- `d.Inspect()` always runs in a fresh isolated scope regardless of bindings; outer variables are never visible.
+- `d.Desugar()` shows the underlying IR (e.g. `ADD`, `RETRIEVE`, `LITERAL`, `BLOCK`) — useful for understanding how expressions are lowered.
+- The trace in `d.Inspect()` evaluates `BLOCK` statements once each (no double-evaluation). For other node types, tracing sub-expressions involves a second evaluation of those sub-expressions, which is safe for pure arithmetic and variable reads but may produce duplicate entries for side-effectful operations (mutations, `.Warn`, etc.). Use `depth = 0` to suppress the trace for such code.
+
 Operator alias mapping:
 
 | Operator Alias | System Capability |

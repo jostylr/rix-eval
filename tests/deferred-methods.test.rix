@@ -1,0 +1,110 @@
+.Test("deferred.Eval basic evaluation", {; }, [
+    {; a := @{; 1 + 2 }; a.Eval() == 3 },
+    {; a := @{; 5 * 4 }; a.Eval() == 20 }
+]);
+
+.Test("deferred.Eval inherits outer scope", {; }, [
+    {; x := 10; a := @{; x + 5 }; a.Eval() == 15 },
+    {; x := 7; y := 3; a := @{; x * y }; a.Eval() == 21 }
+]);
+
+.Test("deferred.Eval with bindings", {; }, [
+    {; a := @{; y + 1 }; a.Eval({= y = 9 }) == 10 },
+    {; a := @{; x + y }; a.Eval({= x = 2, y = 3 }, :fresh) == 5 }
+]);
+
+.Test("deferred.Eval fresh mode can run isolated block", {; x := 42 }, [
+    {; a := @{; 99 }; a.Eval(_, :fresh) == 99 }
+]);
+
+.TestError("deferred.Eval fresh mode cannot see outer vars", {; x := 42 }, [
+    {; a := @{; x }; a.Eval(_, :fresh) }
+]);
+
+.Test("deferred.Eval same result as system Eval", {; }, [
+    {; a := @{; 3 + 3 }; a.Eval() == .Eval(a) }
+]);
+
+.Test("deferred.Eval inherit mode can mutate outer scope", {;
+    x := 0
+}, [
+    {; a := @{; x = 7 }; a.Eval(); x == 7 }
+]);
+
+.Test("deferred.Desugar returns a non-null value", {; }, [
+    {; a := @{; 1 + 2 }; a.Desugar() != _ }
+]);
+
+.Test("deferred.Desugar depth 0 shows only top node", {; }, [
+    {; a := @{; 1 + 2 }; a.Desugar(0) == "DEFER(...)" }
+]);
+
+.Test("deferred.Desugar depth 1 shows DEFER with one child", {; }, [
+    {; a := @{; 1 + 2 }; s := a.Desugar(1);
+       s.StartsWith("DEFER(") && s.Includes("(...)") }
+]);
+
+.Test("deferred.Desugar unlimited depth contains inner nodes", {; }, [
+    {; a := @{; 1 + 2 }; s := a.Desugar();
+       s.Includes("ADD") && s.Includes("LITERAL") }
+]);
+
+.Test("deferred.Desugar default equals explicit -1", {; }, [
+    {; a := @{; x }; a.Desugar() == a.Desugar(-1) }
+]);
+
+.Test("deferred.Desugar contains RETRIEVE for variable reference", {; }, [
+    {; a := @{; x + y }; s := a.Desugar();
+       s.Includes("RETRIEVE") }
+]);
+
+.Test("deferred.Desugar BLOCK uses newlines", {; }, [
+    {; a := @{; x := 1; y := 2 }; s := a.Desugar();
+       s.Includes("BLOCK") }
+]);
+
+.Test("deferred.Inspect returns a string with header", {; }, [
+    {; a := @{; 1 + 2 }; s := a.Inspect();
+       s.Includes("Inspection") }
+]);
+
+.Test("deferred.Inspect with no bindings shows (none)", {; }, [
+    {; a := @{; 1 + 2 }; s := a.Inspect();
+       s.Includes("(none)") && s.Includes("Output:") }
+]);
+
+.Test("deferred.Inspect shows injected bindings in report", {; }, [
+    {; a := @{; x + y }; s := a.Inspect({= x = 3, y = 4 });
+       s.Includes("x = 3") && s.Includes("y = 4") && s.Includes("Output: 7") }
+]);
+
+.Test("deferred.Inspect runs in fresh scope — outer vars inaccessible", {; x := 999 }, [
+    {; a := @{; x }; s := a.Inspect();
+       s.Includes("Error:") }
+]);
+
+.Test("deferred.Inspect does not mutate outer scope", {;
+    x := 0
+}, [
+    {; a := @{; x = 42 }; a.Inspect({= x = 0 }); x == 0 }
+]);
+
+.Test("deferred.Inspect depth 0 shows no trace section", {; }, [
+    {; a := @{; 1 + 2 }; s := a.Inspect({= }, 0);
+       s.Includes("Output: 3") && .NOT(s.Includes("Trace:")) }
+]);
+
+.Test("deferred.Inspect default depth includes trace", {; }, [
+    {; a := @{; 1 + 2 }; s := a.Inspect();
+       s.Includes("Trace:") }
+]);
+
+.Test("deferred.Inspect trace shows function calls and results", {; }, [
+    {; a := @{; x + y }; s := a.Inspect({= x = 3, y = 4 });
+       s.Includes("→") && s.Includes("7") }
+]);
+
+.Test("deferred.Inspect with empty map bindings shows output", {; }, [
+    {; a := @{; 5 }; s := a.Inspect({= });
+       s.Includes("Output: 5") }
+]);

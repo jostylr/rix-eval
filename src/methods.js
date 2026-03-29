@@ -1,6 +1,7 @@
 import { Integer } from "@ratmath/core";
 import { HOLE, isHole } from "./hole.js";
 import { keyOf } from "./functions/keyof.js";
+import { deferredMethods } from "./functions/deferred.js";
 import { shallowCopyValue } from "./cell.js";
 import { arithmeticFunctions } from "./functions/arithmetic.js";
 import { collectionFunctions } from "./functions/collections.js";
@@ -1163,6 +1164,7 @@ const PROTOS = new Map([
     ["string", createBuiltinProto(Object.entries(stringMethods))],
     ["tuple", createBuiltinProto(Object.entries(tupleMethods))],
     ["tensor", createBuiltinProto(Object.entries(tensorMethods))],
+    ["deferred", createBuiltinProto(Object.entries(deferredMethods))],
 ]);
 
 export function isCallableValue(value) {
@@ -1187,6 +1189,7 @@ function ensureCallableMethod(value, name) {
 
 function builtinProtoFor(target) {
     if (isTensor(target)) return PROTOS.get("tensor");
+    if (target && typeof target === "object" && target.fn === "DEFER") return PROTOS.get("deferred");
     return PROTOS.get(target?.type) ?? null;
 }
 

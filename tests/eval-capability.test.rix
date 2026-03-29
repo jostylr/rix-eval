@@ -51,6 +51,22 @@
     .Eval("y + z", {= z=50 }) == 150
 ]);
 
+.Test("Eval Capability Caller Scope Mutation (String)", {;
+    x := 0
+}, [
+    .Eval("x = 99; y := 50"),
+    x == 99,
+    y == 50
+]);
+
+.Test("Eval Capability Caller Scope Mutation (AST)", {;
+    x := 0
+}, [
+    @@@{; x = 77; z := 10 },
+    x == 77,
+    z == 10
+]);
+
 .TestError("Eval Capability String Fresh throws on missing var", {;
     y := 100
 }, .Eval("y", _, :fresh));

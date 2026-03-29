@@ -1444,9 +1444,9 @@ export const coreFunctions = {
             const astNode = evaluate(args[0]);
             
             // It must be a deferred AST value or a string
-            let evalTarget;
+            let evalNodes = [];
             if (astNode && typeof astNode === "object" && astNode.fn === "DEFER") {
-                evalTarget = astNode.args[0];
+                evalNodes = [astNode.args[0]];
             } else if (astNode && typeof astNode === "object" && astNode.type === "string") {
                 const source = astNode.value;
                 const runtime = context.getEnv("__script_runtime__");
@@ -1454,15 +1454,7 @@ export const coreFunctions = {
                 try {
                     const tokens = tokenize(source);
                     const ast = parse(tokens, systemLookup);
-                    const irNodes = lower(ast);
-                    if (irNodes.length === 0) {
-                        return null; // Empty string
-                    } else if (irNodes.length === 1) {
-                        evalTarget = irNodes[0];
-                    } else {
-                        // In case of multiple statements, wrap them in a BLOCK IR node
-                        evalTarget = { fn: "BLOCK", args: [{ name: null, unlimited: false }, ...irNodes] };
-                    }
+                    evalNodes = lower(ast);
                 } catch (e) {
                     throw new Error(`Eval string parse error: ${e.message}`);
                 }
@@ -1496,10 +1488,28 @@ export const coreFunctions = {
                 throw new Error("Eval bindings must be a map or null");
             }
 
-            const isolated = (mode === "fresh");
-            
-            // Push a new scope. If isolated is true, it replaces local scope lookup for the eval frame.
-            context.push(undefined, { isolated });
+            // If no bindings and inherit mode, we run directly in current caller scope.
+            // This mirrors having written the equivalent code directly inline without wrappers.
+            if (mode === "inherit" && (!bindings || bindings.entries.size === 0)) {
+                let res = null;
+                const runBody = () => {
+                    for (const irNode of evalNodes) {
+                        res = evaluate(irNode);
+                    }
+                    return res;
+                };
+                
+                // If there's only one node and it might be a block, share the current scope.
+                // This ensures @@@{ x = 9 } behaves exactly like x = 9.
+                if (evalNodes.length === 1) {
+                    return context.withSharedBody(evalNodes[0], runBody);
+                } else {
+                    return runBody();
+                }
+            }
+
+            // Otherwise, Eval acts as a scope-creating construct (providing fresh or bound scopes)
+            context.push(undefined, { isolated: mode === "fresh" });
             try {
                 if (bindings && bindings.entries) {
                     for (const [k, v] of bindings.entries) {
@@ -1509,7 +1519,24 @@ export const coreFunctions = {
                         context.setFresh(k, v);
                     }
                 }
-                return context.withSharedBody(evalTarget, () => evaluate(evalTarget));
+                
+                let res = null;
+                // If the user provided a deferred AST block, it should share the Eval context.
+                // If it's a string producing multiple statements, they just execute nicely in the pushed scope.
+                const runBody = () => {
+                    for (const irNode of evalNodes) {
+                        res = evaluate(irNode);
+                    }
+                    return res;
+                };
+
+                // Apply withSharedBody over the single evaluated node if there's only one and it might be a block.
+                if (evalNodes.length === 1) {
+                    return context.withSharedBody(evalNodes[0], runBody);
+                } else {
+                    return runBody();
+                }
+
             } finally {
                 context.pop();
             }

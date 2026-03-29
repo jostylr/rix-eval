@@ -7,6 +7,7 @@
 
 import { Integer, Rational } from "@ratmath/core";
 import { createTensor, createTensorView, isTensor, tensorRank } from "../tensor.js";
+import { captureIrValue, constructorDefaultCaptureMode } from "../constructor-capture.js";
 
 function toNumber(val) {
     if (val instanceof Integer) return Number(val.value);
@@ -154,16 +155,22 @@ export const advancedFunctions = {
     },
 
     TENSOR: {
-        impl(args) {
-            return createTensor([args.length], args);
+        lazy: true,
+        impl(args, context, evaluate) {
+            const defaultMode = constructorDefaultCaptureMode(context);
+            return createTensor([args.length], args.map((arg) => captureIrValue(arg, defaultMode, context, evaluate)));
         },
         pure: true,
         doc: "Tensor literal",
     },
 
     TENSOR_LITERAL: {
-        impl(args) {
-            const [shape, ...values] = args;
+        lazy: true,
+        impl(args, context, evaluate) {
+            const hasMeta = args[0] && typeof args[0] === "object" && !Array.isArray(args[0]) && args[0].defaultCaptureMode;
+            const defaultMode = hasMeta ? args[0].defaultCaptureMode : constructorDefaultCaptureMode(context);
+            const shape = hasMeta ? args[1] : args[0];
+            const values = (hasMeta ? args.slice(2) : args.slice(1)).map((arg) => captureIrValue(arg, defaultMode, context, evaluate));
             return createTensor(shape, values.length === 0 ? null : values);
         },
         pure: true,

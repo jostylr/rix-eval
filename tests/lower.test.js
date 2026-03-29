@@ -504,6 +504,20 @@ describe("Lowering Pass", () => {
     test("{= 1=2 } is rejected (expression keys must be parenthesized)", () => {
       expect(() => L("{= 1=2 };")).toThrow("Map key expressions must be parenthesized");
     });
+
+    test("{.. 1, 2, 3 } lowers to ARRAY_CAPTURE", () => {
+      const ir = L("{.. 1, 2, 3 };");
+      expect(ir.fn).toBe("ARRAY_CAPTURE");
+      expect(ir.args).toHaveLength(3);
+    });
+
+    test("{::= a = x, b == y } carries constructor capture metadata", () => {
+      const ir = L("{::= a = x, b == y };");
+      expect(ir.fn).toBe("MAP_OBJ");
+      expect(ir.args[0]).toEqual({ defaultCaptureMode: "deep_copy" });
+      expect(ir.args[1].args).toEqual(["identifier", "a", { fn: "RETRIEVE", args: ["x"] }, null]);
+      expect(ir.args[2].args).toEqual(["identifier", "b", { fn: "RETRIEVE", args: ["y"] }, "alias"]);
+    });
   });
 
   describe("Control Flow", () => {

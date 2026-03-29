@@ -117,6 +117,48 @@ Variables name **cells** — mutable containers holding a value and meta propert
 - `~=` replaces the value inside an existing cell, so aliases see the change. `=` rebinds to a different cell.
 - Combo operators (`+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `^=`, `++=`, `\/=`, `/\=`, `\=`, `**=`, `/^=`, `/~=`) use `~=` semantics — they preserve cell identity.
 
+### Constructor Capture Modes
+
+Container construction follows the same cell/copy model as assignment. Every inserted entry uses one effective capture mode, chosen in this order:
+
+1. Per-entry override
+2. Constructor default
+3. Runtime default (`defaultConstructorCaptureMode`, currently `deep_copy`)
+
+The five constructor capture modes are assignment-analogues:
+
+| Constructor mode | Meaning in constructors |
+|------------------|-------------------------|
+| `==` | Alias capture — keep the source value live like `=` on an existing cell source |
+| `:=` | Fresh shallow copy |
+| `~=` | Fresh "refreshing" shallow copy — same meta transfer rules as `x ~= rhs` when `x` is undefined |
+| `::=` | Fresh deep copy |
+| `~~=` | Fresh "refreshing" deep copy — same meta transfer rules as `x ~~= rhs` when `x` is undefined |
+
+Maps can override capture per entry:
+
+```rix
+{::= a = x, b == y, c ~= z}
+```
+
+For non-map advanced brace constructors, an entry-level override uses prefix form:
+
+```rix
+{.. 1, == x, := y}
+```
+
+Advanced brace constructors can set a constructor-wide default:
+
+```rix
+{.. 1, 2, 3}
+{:=.. x, y}
+{::=: a, b, c}
+{==| item1, item2 |}
+{::=:2x2: a, b; c, d}
+```
+
+`[...]`, `{= ...}`, `{: ...}`, `{| ...}`, and tensor literals without an explicit constructor header still participate in this model; they simply fall back to the runtime default capture mode.
+
 Examples:
 ```rix
 xs := [1, 2]
@@ -148,6 +190,7 @@ u \= {| 2 |}
 | `{! expr }` | `BREAK` | Break the nearest matching block/case/loop and use `expr` as that target's final value |
 | `{#x,y:z# p = x + y }` | `SYSTEM_SPEC` | Symbolic system spec literal. Optional top-of-block import header: `{#x,y:z# <...> ... }` |
 | `{= k1=v1, (expr)=v2 }` | `MAP` | Map/object literal (`k1` identifier sugar or parenthesized key expression) |
+| `{.. a, b, c }` | `ARRAY_CAPTURE` | Brace-form array literal with constructor capture controls |
 | `{\| a, b, c }` | `SET` | Set literal |
 | `{: a, b, c }` | `TUPLE` | Tuple literal |
 | `{+ a, b, c }` | `ADD` | N-ary addition or concatenation |
@@ -1010,6 +1053,7 @@ Constraint forms such as `:=:`, `:<:`, and `:>:` remain separate and are not par
 | `TUPLE(elems...)` | Create tuple | `{: a, b, c }` |
 | `MAP(pairs...)` | Create map/object | `{= k=v, ... }` |
 | `TENSOR_LITERAL(shape, elems...)` | Create tensor with explicit shape | `{:2x3: 1, 2, 3; 4, 5, 6 }` |
+| `ARRAY_CAPTURE(elems...)` | Create array with brace-form constructor capture controls | `{.. 1, 2, 3 }`, `{:=.. x, y }` |
 | `INTERVAL(args...)` | Create interval or check n-ary betweenness (unpacks nested intervals/sets) | `a:b` or `a:b:c...` |
 | `UNION(a, b)` | Binary set union / interval hull | `A \/ B` |
 | `INTERSECT(a, b)` | Binary set intersection / interval overlap | `A /\ B` |

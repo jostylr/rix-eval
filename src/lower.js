@@ -502,6 +502,22 @@ const LOWERERS = {
     return ir("SPREAD", lowerNode(node.expression));
   },
 
+  CapturedEntry(node) {
+    return {
+      captureMode: node.captureMode,
+      expression: lowerNode(node.expression),
+    };
+  },
+
+  MapEntry(node) {
+    return {
+      key: lowerNode(node.key),
+      value: lowerNode(node.value),
+      captureMode: node.captureMode || null,
+      keyType: node.key?.type || null,
+    };
+  },
+
   Array(node) {
     return ir("ARRAY", ...node.elements.map(lowerNode));
   },
@@ -516,29 +532,43 @@ const LOWERERS = {
   },
 
   TensorLiteral(node) {
-    return ir("TENSOR_LITERAL", node.shape, ...node.elements.map(lowerNode));
+    const meta = node.defaultCaptureMode ? { defaultCaptureMode: node.defaultCaptureMode } : null;
+    return meta
+      ? ir("TENSOR_LITERAL", meta, node.shape, ...node.elements.map(lowerNode))
+      : ir("TENSOR_LITERAL", node.shape, ...node.elements.map(lowerNode));
   },
 
   // === Brace Sigil Containers ===
 
   MapContainer(node) {
+    const constructorMeta = node.defaultCaptureMode ? { defaultCaptureMode: node.defaultCaptureMode } : null;
     const loweredElements = node.elements.map((el) => {
+      if (el?.type === "MapEntry") {
+        const keyNode = el.key;
+        if (keyNode?.type === "UserIdentifier" || keyNode?.type === "SystemIdentifier") {
+          return ir("MAP_PAIR", "identifier", keyNode.name, lowerNode(el.value), el.captureMode || null);
+        }
+        if (keyNode?.type === "Grouping") {
+          return ir("MAP_PAIR", "expression", lowerNode(keyNode.expression), lowerNode(el.value), el.captureMode || null);
+        }
+        throw new Error("Map key expressions must be parenthesized in literals: use {= (expr)=value }");
+      }
       if (
         el &&
         el.type === "BinaryOperation" &&
         (el.operator === "=" || el.operator === ":=")
       ) {
         if (el.left?.type === "UserIdentifier" || el.left?.type === "SystemIdentifier") {
-          return ir("MAP_PAIR", "identifier", el.left.name, lowerNode(el.right));
+          return ir("MAP_PAIR", "identifier", el.left.name, lowerNode(el.right), el.operator === ":=" ? "copy" : null);
         }
         if (el.left?.type === "Grouping") {
-          return ir("MAP_PAIR", "expression", lowerNode(el.left.expression), lowerNode(el.right));
+          return ir("MAP_PAIR", "expression", lowerNode(el.left.expression), lowerNode(el.right), el.operator === ":=" ? "copy" : null);
         }
         throw new Error("Map key expressions must be parenthesized in literals: use {= (expr)=value }");
       }
       return lowerNode(el);
     });
-    return ir("MAP_OBJ", ...loweredElements);
+    return constructorMeta ? ir("MAP_OBJ", constructorMeta, ...loweredElements) : ir("MAP_OBJ", ...loweredElements);
   },
 
   CaseContainer(node) {
@@ -567,11 +597,18 @@ const LOWERERS = {
   },
 
   SetContainer(node) {
-    return ir("SET", ...node.elements.map(lowerNode));
+    const meta = node.defaultCaptureMode ? { defaultCaptureMode: node.defaultCaptureMode } : null;
+    return meta ? ir("SET", meta, ...node.elements.map(lowerNode)) : ir("SET", ...node.elements.map(lowerNode));
   },
 
   TupleContainer(node) {
-    return ir("TUPLE", ...node.elements.map(lowerNode));
+    const meta = node.defaultCaptureMode ? { defaultCaptureMode: node.defaultCaptureMode } : null;
+    return meta ? ir("TUPLE", meta, ...node.elements.map(lowerNode)) : ir("TUPLE", ...node.elements.map(lowerNode));
+  },
+
+  ArrayContainer(node) {
+    const meta = node.defaultCaptureMode ? { defaultCaptureMode: node.defaultCaptureMode } : null;
+    return meta ? ir("ARRAY_CAPTURE", meta, ...node.elements.map(lowerNode)) : ir("ARRAY_CAPTURE", ...node.elements.map(lowerNode));
   },
 
   LoopContainer(node) {

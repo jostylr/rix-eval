@@ -1,5 +1,6 @@
 export const runtimeDefaults = Object.freeze({
   defaultLoopMax: 10000,
+  defaultConstructorCaptureMode: "deep_copy",
   scriptPermissionNames: Object.freeze(["IMPORTS", "NET", "FILES"]),
   defaultScriptCapabilityPolicy: Object.freeze({
     includeAllFunctions: true,

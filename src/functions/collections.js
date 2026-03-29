@@ -6,6 +6,7 @@ import { Integer, Rational, RationalInterval } from "@ratmath/core";
 import { keyOf } from "./keyof.js";
 import { HOLE } from "../hole.js";
 import { attachBuiltinProto } from "../methods.js";
+import { captureIrValue, captureResolvedValue, constructorDefaultCaptureMode } from "../constructor-capture.js";
 
 function isTruthy(val) {
     return val !== null && val !== undefined;
@@ -86,6 +87,7 @@ export const collectionFunctions = {
     ARRAY: {
         lazy: true,
         impl(args, ctx, evaluate) {
+            const defaultMode = constructorDefaultCaptureMode(ctx);
             const values = [];
             let i = 0;
             while (i < args.length) {
@@ -93,7 +95,7 @@ export const collectionFunctions = {
                 if (arg && arg.fn === "GENERATOR") {
                     let current = arg.args[0] ? evaluate(arg.args[0]) : values[values.length - 1];
                     if (current === undefined) throw new Error("Sequence generator missing start value");
-                    if (arg.args[0]) values.push(current);
+                    if (arg.args[0]) values.push(captureResolvedValue(current, defaultMode));
 
                     const ops = [...arg.args.slice(1)];
                     // Consume subsequent GENERATOR nodes
@@ -123,7 +125,7 @@ export const collectionFunctions = {
                             }
                         }
                         if (stop) break;
-                        values.push(next);
+                        values.push(captureResolvedValue(next, defaultMode));
                         current = next;
                     }
                 } else if (arg && arg.fn === "HOLE") {
@@ -132,12 +134,12 @@ export const collectionFunctions = {
                     const spreadVal = evaluate(arg.args[0]);
                     if (spreadVal && (spreadVal.type === "tuple" || spreadVal.type === "sequence" || spreadVal.type === "array" || spreadVal.type === "set")) {
                         const items = spreadVal.values || spreadVal.elements || [];
-                        values.push(...items);
+                        values.push(...items.map((item) => captureResolvedValue(item, defaultMode)));
                     } else {
                         throw new Error("Spread operator requires an iterable collection (array, tuple, sequence, set)");
                     }
                 } else {
-                    values.push(evaluate(arg));
+                    values.push(captureIrValue(arg, defaultMode, ctx, evaluate));
                 }
                 i++;
             }
@@ -152,19 +154,26 @@ export const collectionFunctions = {
     },
 
     TUPLE: {
-        impl(args) {
-            return { type: "tuple", values: args };
+        lazy: true,
+        impl(args, ctx, evaluate) {
+            const defaultMode = args[0]?.defaultCaptureMode || constructorDefaultCaptureMode(ctx);
+            const start = args[0]?.defaultCaptureMode ? 1 : 0;
+            return { type: "tuple", values: args.slice(start).map((arg) => captureIrValue(arg.expression || arg, arg.captureMode || defaultMode, ctx, evaluate)) };
         },
         pure: true,
         doc: "Create a tuple",
     },
 
     SET: {
-        impl(args) {
+        lazy: true,
+        impl(args, ctx, evaluate) {
+            const defaultMode = args[0]?.defaultCaptureMode || constructorDefaultCaptureMode(ctx);
+            const start = args[0]?.defaultCaptureMode ? 1 : 0;
             // Deduplicate (using toString for comparison)
             const seen = new Set();
             const values = [];
-            for (const val of args) {
+            for (const arg of args.slice(start)) {
+                const val = captureIrValue(arg.expression || arg, arg.captureMode || defaultMode, ctx, evaluate);
                 const key = valueKey(val);
                 if (!seen.has(key)) {
                     seen.add(key);
@@ -184,25 +193,27 @@ export const collectionFunctions = {
     MAP_OBJ: {
         lazy: true,
         impl(args, context, evaluate) {
+            const defaultMode = args[0]?.defaultCaptureMode || constructorDefaultCaptureMode(context);
+            const actualArgs = args[0]?.defaultCaptureMode ? args.slice(1) : args;
             // MAP args come in as lowered elements
             // For {= a=3, b=6 }, the lowered form has assignment IR nodes
             // We store as key-value pairs
             const entries = new Map();
             const seenKeys = new Set();
-            for (const arg of args) {
+            for (const arg of actualArgs) {
                 if (arg && arg.fn === "ASSIGN") {
                     // Extract name and evaluate the value
                     const name = arg.args[0];
-                    const val = evaluate(arg.args[1]);
+                    const val = captureIrValue(arg.args[1], defaultMode, context, evaluate);
                     if (seenKeys.has(name)) {
                         throw new Error(`Duplicate key in map literal: "${name}"`);
                     }
                     seenKeys.add(name);
                     entries.set(name, val);
                 } else if (arg && arg.fn === "MAP_PAIR") {
-                    const [kind, keyExpr, valueExpr] = arg.args;
+                    const [kind, keyExpr, valueExpr, entryMode] = arg.args;
                     const keyStr = kind === "identifier" ? keyExpr : keyOf(evaluate(keyExpr));
-                    const val = evaluate(valueExpr);
+                    const val = captureIrValue(valueExpr, entryMode || defaultMode, context, evaluate);
                     if (seenKeys.has(keyStr)) {
                         throw new Error(`Duplicate key in map literal: "${keyStr}"`);
                     }
@@ -211,7 +222,7 @@ export const collectionFunctions = {
                 } else if (arg && arg.fn === "ASSIGN_EXPR") {
                     // Backward compatibility path: expression-key map entries
                     const keyVal = evaluate(arg.args[0]);
-                    const val = evaluate(arg.args[1]);
+                    const val = captureIrValue(arg.args[1], defaultMode, context, evaluate);
                     const keyStr = keyOf(keyVal);
                     if (seenKeys.has(keyStr)) {
                         throw new Error(`Duplicate key in map literal: "${keyStr}"`);
@@ -221,7 +232,7 @@ export const collectionFunctions = {
                 } else if (arg && arg.fn === "KWARG") {
                     // Keyword args also used in MAP literals sometimes
                     const name = arg.args[0];
-                    const val = evaluate(arg.args[1]);
+                    const val = captureIrValue(arg.args[1], defaultMode, context, evaluate);
                     if (seenKeys.has(name)) {
                         throw new Error(`Duplicate key in map literal: "${name}"`);
                     }
@@ -229,7 +240,7 @@ export const collectionFunctions = {
                     entries.set(name, val);
                 } else {
                     // Single-value entry: evaluate and use index/value as key
-                    const val = evaluate(arg);
+                    const val = captureIrValue(arg, defaultMode, context, evaluate);
                     const keyStr = keyOf(val);
                     if (seenKeys.has(keyStr)) {
                         throw new Error(`Duplicate key in map literal: "${keyStr}"`);
@@ -246,6 +257,22 @@ export const collectionFunctions = {
         },
         pure: true, // It might not be pure if evaluate calls non-pure functions, but usually for literals it's okay.
         doc: "Create a map/object",
+    },
+
+    ARRAY_CAPTURE: {
+        lazy: true,
+        impl(args, ctx, evaluate) {
+            const defaultMode = args[0]?.defaultCaptureMode || constructorDefaultCaptureMode(ctx);
+            const start = args[0]?.defaultCaptureMode ? 1 : 0;
+            const values = args.slice(start).map((arg) => captureIrValue(arg.expression || arg, arg.captureMode || defaultMode, ctx, evaluate));
+            return attachBuiltinProto({
+                type: "sequence",
+                values,
+                _ext: new Map([["_mutable", new Integer(1n)]])
+            });
+        },
+        pure: true,
+        doc: "Create an array/sequence with constructor capture controls",
     },
 
     INTERVAL: {

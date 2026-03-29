@@ -430,6 +430,11 @@ const LOWERERS = {
     return ir("SYS_CALL", node.name, ...args);
   },
 
+  SystemCapabilityCall(node) {
+    const args = lowerCallArgs(node.arguments);
+    return ir("SYS_CALL", node.property, ...args);
+  },
+
   // SystemObject: bare . → SYS_OBJ (returns a copy of the system context)
   SystemObject(_node) {
     return ir("SYS_OBJ");

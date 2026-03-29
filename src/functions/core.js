@@ -1429,4 +1429,67 @@ export const coreFunctions = {
         pure: true,
         doc: "Fallback for unrecognized binary operators",
     },
+
+    EVAL: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            if (args.length === 0) {
+                throw new Error("Eval expects at least 1 argument");
+            }
+            
+            // 1. Evaluate the first argument to get the AST node
+            const astNode = evaluate(args[0]);
+            
+            // It must be a deferred AST value
+            if (!astNode || typeof astNode !== "object" || astNode.fn !== "DEFER") {
+                throw new Error("Eval expects a deferred AST value");
+            }
+            const evalTarget = astNode.args[0];
+
+            let bindings = null;
+            if (args.length >= 2) {
+                bindings = evaluate(args[1]);
+            }
+
+            let mode = "inherit";
+            if (args.length >= 3) {
+                const modeVal = evaluate(args[2]);
+                if (modeVal && modeVal.type === "string" && modeVal.kind === "colon") {
+                    mode = modeVal.value;
+                } else if (modeVal && modeVal.type === "string") {
+                    mode = modeVal.value;
+                } else if (modeVal !== null && modeVal !== undefined) {
+                    throw new Error("Eval mode must be a string or colon-string like :fresh or :inherit");
+                }
+            }
+
+            if (mode !== "inherit" && mode !== "fresh") {
+                throw new Error(`Eval mode must be 'inherit' or 'fresh', got '${mode}'`);
+            }
+
+            // Validate bindings
+            if (bindings !== null && bindings !== undefined && (!bindings.type || bindings.type !== "map")) {
+                throw new Error("Eval bindings must be a map or null");
+            }
+
+            const isolated = (mode === "fresh");
+            
+            // Push a new scope. If isolated is true, it replaces local scope lookup for the eval frame.
+            context.push(undefined, { isolated });
+            try {
+                if (bindings && bindings.entries) {
+                    for (const [k, v] of bindings.entries) {
+                        if (typeof k !== 'string') {
+                            throw new Error(`Eval binding key must be string, got ${String(k)}`);
+                        }
+                        context.setFresh(k, v);
+                    }
+                }
+                return context.withSharedBody(evalTarget, () => evaluate(evalTarget));
+            } finally {
+                context.pop();
+            }
+        },
+        doc: "Evaluate a deferred AST node or expression: .Eval(ast, bindings ?= _, mode ?= :inherit)",
+    },
 };

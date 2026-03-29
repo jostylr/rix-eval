@@ -170,6 +170,7 @@ The leading `.` refers to the **system capability object** — a frozen, sandbox
 | `.` | `SYS_OBJ` | The system context as a RiX value (copy) | `sys := .` |
 | `.Name` | `SYS_GET` | Get a system capability reference | `fn := .ADD` |
 | `.Name(args)` | `SYS_CALL` | Call a system capability | `.ADD(3, 4)` → `7` |
+| `.Eval(ast, b?, m?)`| `SYS_CALL` | Evaluates a deferred AST at runtime with optional bindings map and mode (`:inherit` or `:fresh`) | `.Eval(f, {= x=1 })` |
 | `.FREEZE = 1` | `SYS_SET` | Freeze the system context | `.FREEZE = 1` |
 | `@_Name(args)` | `SYS_CALL` | Alternative call syntax (identical to `.Name(args)`) | `@_ADD(3, 4)` → `7` |
 
@@ -184,6 +185,7 @@ System context meta-methods (called via dot syntax):
 | `@{; ... }` | Deferred block (returns AST tree, does not evaluate) | `f = @{; x + 1 }` |
 | `@{= ... }` | Deferred map | `lazyMap = @{= a=1 }` |
 | `@{#x:p# p = x + 1 }` | Deferred symbolic system spec | `lazySpec = @{#x:p# p = x + 1 }` |
+| `@@expr` | Evaluate a deferred AST node at runtime (sugar for `.Eval(expr)`) | `f = @{; 1 + 2 }; @@f` → `3` |
 | `@+, @*, @<`, etc | Retrieve operator's system capability (alias for `.ADD`, `.MUL`, etc.) | `f = @+; f(10, 20)` → `30` |
 
 Operator alias mapping:

@@ -70,6 +70,7 @@ export function createDefaultSystemContext(options = {}) {
     const frozen = options.frozen !== false; // default true
     const ctx = new SystemContext(new Map(), false); // always build unfrozen
     ctx.registerAll(stdlibFunctions);
+    ctx.register("EVAL", coreFunctions.EVAL);
     // User-callable property functions (KEYOF, KEYS, VALUES)
     const userPropertyNames = ["KEYOF", "KEYS", "VALUES"];
     for (const name of userPropertyNames) {

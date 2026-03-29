@@ -131,6 +131,11 @@ export function formatValue(val) {
         if (val.type === "interval") {
             return `${val.start || val.lo}:${val.end || val.hi}`;
         }
+        if (val.fn === "DEFER") {
+            const inner = val.args && val.args[0];
+            const kind = inner ? (inner.fn || inner.type || "AST") : "AST";
+            return `[Deferred ${kind}]`;
+        }
     }
 
     if (val instanceof Rational) return val.toMixedString();

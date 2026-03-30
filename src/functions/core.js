@@ -13,6 +13,7 @@ import { applySemanticHeader, applyUpdateSemantics, mergeStickyHeader, readStick
 import { attachBuiltinProto } from "../methods.js";
 import { captureIrValue, constructorDefaultCaptureMode } from "../constructor-capture.js";
 import { keyOf } from "./keyof.js";
+import { bracketGetResolved } from "./properties.js";
 import { parse } from "../../../parser/src/parser.js";
 import { tokenize } from "../../../parser/src/tokenizer.js";
 import { lower } from "../lower.js";
@@ -1007,6 +1008,29 @@ function evaluatePatternKey(spec, evaluate) {
     return keyOf(evaluate(spec));
 }
 
+function evaluateIndexedSpecs(specs, evaluate) {
+    return (specs || []).map((spec) => {
+        if (spec.kind === "full") {
+            return { kind: "full" };
+        }
+        if (spec.kind === "slice") {
+            return {
+                kind: "slice",
+                start: evaluate(spec.start),
+                end: evaluate(spec.end),
+            };
+        }
+        return {
+            kind: "index",
+            value: evaluate(spec.value),
+        };
+    });
+}
+
+function isIndexedDestructurePattern(target, outerMode) {
+    return unwrapDestructureTarget(target, outerMode).base?.type === "DestructureIndexedTarget";
+}
+
 function missingSimpleBind(pattern, outerMode, context) {
     bindDestructureTarget(pattern, makeSourceRef(HOLE), outerMode, context);
 }
@@ -1026,14 +1050,36 @@ function destructureInto(pattern, sourceRef, outerMode, context, evaluate) {
         return;
     }
 
+    if (base?.type === "DestructureIndexedTarget") {
+        const selection = bracketGetResolved(sourceRef.value, evaluateIndexedSpecs(base.specs, evaluate));
+        const selectedRef = makeSourceRef(selection);
+        if (base.wholeTarget) {
+            bindDestructureTarget(base.wholeTarget, selectedRef, resolved.bindingMode, context);
+        }
+        if (base.nestedTarget) {
+            destructureInto(base.nestedTarget, selectedRef, resolved.bindingMode, context, evaluate);
+        }
+        if (!base.wholeTarget && !base.nestedTarget) {
+            throw new Error("Malformed indexed destructuring syntax");
+        }
+        return;
+    }
+
     if (base?.type === "DestructureArrayPattern") {
         const value = sourceRef.value;
-        if (!isSequenceLike(value)) {
+        const needsPositional = base.entries.some((entry) => !isIndexedDestructurePattern(entry, resolved.bindingMode));
+        if (needsPositional && !isSequenceLike(value)) {
             throw new Error("Wrong rhs kind for array destructuring pattern");
         }
+        let positionalIndex = 0;
         for (let i = 0; i < base.entries.length; i++) {
             const entryTarget = base.entries[i];
-            const item = i < value.values.length ? makeSourceRef(value.values[i]) : null;
+            if (isIndexedDestructurePattern(entryTarget, resolved.bindingMode)) {
+                destructureInto(entryTarget, sourceRef, resolved.bindingMode, context, evaluate);
+                continue;
+            }
+            const item = positionalIndex < value.values.length ? makeSourceRef(value.values[positionalIndex]) : null;
+            positionalIndex += 1;
             const simple = unwrapDestructureTarget(entryTarget, resolved.bindingMode).base?.type === "DestructureVariableTarget";
             if (!item) {
                 if (simple) {
@@ -1046,7 +1092,7 @@ function destructureInto(pattern, sourceRef, outerMode, context, evaluate) {
             }
         }
         if (base.rest) {
-            const restValues = value.values.slice(base.entries.length);
+            const restValues = value.values.slice(positionalIndex);
             bindDestructureTarget(base.rest.target, makeSourceRef(createMutableSequence(restValues)), resolved.bindingMode, context);
         }
         return;
@@ -1054,12 +1100,19 @@ function destructureInto(pattern, sourceRef, outerMode, context, evaluate) {
 
     if (base?.type === "DestructureTuplePattern") {
         const value = sourceRef.value;
-        if (!isTupleLike(value)) {
+        const needsPositional = base.entries.some((entry) => !isIndexedDestructurePattern(entry, resolved.bindingMode));
+        if (needsPositional && !isTupleLike(value)) {
             throw new Error("Wrong rhs kind for tuple destructuring pattern");
         }
+        let positionalIndex = 0;
         for (let i = 0; i < base.entries.length; i++) {
             const entryTarget = base.entries[i];
-            const item = i < value.values.length ? makeSourceRef(value.values[i]) : null;
+            if (isIndexedDestructurePattern(entryTarget, resolved.bindingMode)) {
+                destructureInto(entryTarget, sourceRef, resolved.bindingMode, context, evaluate);
+                continue;
+            }
+            const item = positionalIndex < value.values.length ? makeSourceRef(value.values[positionalIndex]) : null;
+            positionalIndex += 1;
             const simple = unwrapDestructureTarget(entryTarget, resolved.bindingMode).base?.type === "DestructureVariableTarget";
             if (!item) {
                 if (simple) {
@@ -1072,7 +1125,7 @@ function destructureInto(pattern, sourceRef, outerMode, context, evaluate) {
             }
         }
         if (base.rest) {
-            const restValues = value.values.slice(base.entries.length);
+            const restValues = value.values.slice(positionalIndex);
             bindDestructureTarget(base.rest.target, makeSourceRef(createTupleValue(restValues)), resolved.bindingMode, context);
         }
         return;

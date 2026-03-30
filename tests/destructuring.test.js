@@ -6,6 +6,7 @@ import { evaluate, createDefaultRegistry, createDefaultSystemContext } from "../
 import { Context } from "../src/context.js";
 import { Integer, Rational } from "@ratmath/core";
 import { isHole } from "../src/hole.js";
+import { forEachTensorCell, isTensor } from "../src/tensor.js";
 
 const defaultSystemContext = createDefaultSystemContext();
 
@@ -33,6 +34,15 @@ function unbox(value) {
         return Object.fromEntries(Array.from(value.entries.entries(), ([k, v]) => [k, unbox(v)]));
     }
     return value;
+}
+
+function tensorFlat(value) {
+    if (!isTensor(value)) {
+        throw new Error("Expected tensor");
+    }
+    const flat = [];
+    forEachTensorCell(value, (entry) => flat.push(unbox(entry)));
+    return flat;
 }
 
 describe("RiX destructuring assignment", () => {
@@ -98,5 +108,63 @@ describe("RiX destructuring assignment", () => {
         expect(unbox(context.get("a"))).toBe(1);
         expect(unbox(context.get("d"))).toBe(4);
         expect(() => evalRiX("{:2x2: [a, b], [c, d]} = {:2x3: 1, 2, 3; 4, 5, 6};")).toThrow(/shape mismatch/);
+    });
+
+    test("indexed array destructuring performs overlapping extraction from the same source", () => {
+        const { context } = evalRiX("{.. a[1:3], b[2:4], c[3], d[3] } = [10, 20, 30, 40, 50];");
+        expect(unbox(context.get("a"))).toEqual([10, 20, 30]);
+        expect(unbox(context.get("b"))).toEqual([20, 30, 40]);
+        expect(unbox(context.get("c"))).toBe(30);
+        expect(unbox(context.get("d"))).toBe(30);
+    });
+
+    test("indexed array alias syntax {=.. ...} works", () => {
+        const { context } = evalRiX("{=.. b[1:2], c[-1:1]} = [1, 2, 3];");
+        expect(unbox(context.get("b"))).toEqual([1, 2]);
+        expect(unbox(context.get("c"))).toEqual([3, 2, 1]);
+    });
+
+    test("indexed nested destructuring can destructure a selected slice without binding the whole result", () => {
+        const { context } = evalRiX("{.. [2:4] = [x, y, ...z] } = [10, 20, 30, 40, 50];");
+        expect(unbox(context.get("x"))).toBe(20);
+        expect(unbox(context.get("y"))).toBe(30);
+        expect(unbox(context.get("z"))).toEqual([40]);
+    });
+
+    test("indexed nested destructuring can also preserve the whole extracted value", () => {
+        const { context } = evalRiX("{.. d[-1:1] = [e, f, ...g] } = [1, 2, 3, 4];");
+        expect(unbox(context.get("d"))).toEqual([4, 3, 2, 1]);
+        expect(unbox(context.get("e"))).toBe(4);
+        expect(unbox(context.get("f"))).toBe(3);
+        expect(unbox(context.get("g"))).toEqual([2, 1]);
+    });
+
+    test("indexed tuple destructuring returns tuples for slices", () => {
+        const { context } = evalRiX("{: a[1:2], b[3] } = {: 5, 6, 7, 8 };");
+        expect(unbox(context.get("a"))).toEqual([5, 6]);
+        expect(context.get("a")?.type).toBe("tuple");
+        expect(unbox(context.get("b"))).toBe(7);
+    });
+
+    test("indexed tensor destructuring reuses ordinary tensor slicing rules", () => {
+        const { context } = evalRiX("{.. row2[2, 1:3], block[1:2, 1:2] } = {:3x3: 1, 2, 3; 4, 5, 6; 7, 8, 9};");
+        expect(tensorFlat(context.get("row2"))).toEqual([4, 5, 6]);
+        expect(context.get("row2")?.type).toBe("tensor");
+        expect(context.get("block")?.type).toBe("tensor");
+    });
+
+    test("tensor alias syntax {=:shape: ...} works", () => {
+        const { context } = evalRiX("{=:2x3: row2[2,1:3]} = {:2x3: 1,2,3; 4,5,6};");
+        expect(tensorFlat(context.get("row2"))).toEqual([4, 5, 6]);
+    });
+
+    test("indexed binding overrides still use ordinary assignment modes", () => {
+        const ctx = new Context();
+        evalRiX("arr := [[10, 20, 30, 40], [10, 20, 30, 40]];", ctx);
+        evalRiX("{.. ==a[1], :=b[1], ~=c[1] } = arr;", ctx);
+        evalRiX("arr[1][1] = 99;", ctx);
+        expect(unbox(ctx.get("a"))).toEqual([99, 20, 30, 40]);
+        expect(unbox(ctx.get("b"))).toEqual([10, 20, 30, 40]);
+        expect(unbox(ctx.get("c"))).toEqual([10, 20, 30, 40]);
     });
 });

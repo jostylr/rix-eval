@@ -1072,6 +1072,28 @@ function lowerDestructureTarget(node) {
       return { type: node.type, header: node.header ? lowerNode(node.header) : null, target: lowerDestructureTarget(node.target) };
     case "DestructureRestTarget":
       return { type: node.type, target: lowerDestructureTarget(node.target) };
+    case "DestructureIndexedTarget":
+      return {
+        type: node.type,
+        wholeTarget: node.wholeTarget ? lowerDestructureTarget(node.wholeTarget) : null,
+        specs: (node.specs || []).map((spec) => {
+          if (spec?.type === "FullSlice") {
+            return { kind: "full" };
+          }
+          if (spec?.type === "SliceSpec") {
+            return {
+              kind: "slice",
+              start: lowerNode(spec.start),
+              end: lowerNode(spec.end),
+            };
+          }
+          return {
+            kind: "index",
+            value: lowerNode(spec),
+          };
+        }),
+        nestedTarget: node.nestedTarget ? lowerDestructureTarget(node.nestedTarget) : null,
+      };
     case "DestructureArrayPattern":
     case "DestructureTuplePattern":
       return {

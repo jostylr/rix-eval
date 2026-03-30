@@ -177,6 +177,39 @@ Target-side semantic wrapping uses `{^ /.../ target}` inside patterns:
 
 In destructuring headers, `:trait` is a required source-side check. The extracted source value must already satisfy that trait or evaluation fails.
 
+Indexed destructuring extends the same system:
+
+```rix
+{.. a[1:3], b[2:4], c[3] } = [10, 20, 30, 40, 50]
+{.. picked[-1:1] = [x, y, ...z] } = arr
+{.. [2:4] = [u, v, ...w] } = arr
+{.. row2[2, 1:3], block[1:2, 1:2] } = tensor
+```
+
+Rules:
+
+- indexing applies to the source object being destructured, not to the target
+- each indexed entry extracts independently from the same source object
+- overlapping and repeated extraction is allowed
+- per-entry binding overrides still apply after extraction
+- nested `= pattern` forms destructure the extracted subobject, not the original source
+
+Supported entry forms:
+
+- `target[indexSpec]`
+- `target[indexSpec] = pattern`
+- `[indexSpec] = pattern`
+
+Examples:
+
+```rix
+{.. ==a[1:3], ~=b[2:4], :=c[3] } = arr
+{= x[:a], y[:b] } = {= a = 1, b = 2 }
+{.. row2[2, 1:3], col2[::, 2] } = tensor
+```
+
+Tuple bracket slices now produce tuples; sequence bracket slices produce sequences.
+
 ### Headered Outfitting And Constructor Capture
 
 RiX now uses a shared `/ ... /` header zone for value outfitting and constructor defaults:

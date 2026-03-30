@@ -95,7 +95,60 @@ function assertMutableIndexTarget(obj) {
     }
 }
 
-function indexGetResolved(obj, key) {
+function clampSequenceIndex(raw, length) {
+    const idx = toInteger(raw);
+    let normalized = idx;
+    if (normalized < 0) {
+        normalized = length + 1 + normalized;
+    }
+    if (normalized < 1) normalized = 1;
+    if (normalized > length) normalized = length;
+    return normalized;
+}
+
+function sliceSequenceLike(obj, spec) {
+    if (obj && (obj.type === "sequence" || obj.type === "tuple")) {
+        const values = obj.values || [];
+        if (values.length === 0) {
+            return obj.type === "tuple"
+                ? { type: "tuple", values: [] }
+                : { type: "sequence", values: [], _ext: new Map([["_mutable", new Integer(1n)]]) };
+        }
+        const startRaw = spec.kind === "full" ? 1 : spec.start;
+        const endRaw = spec.kind === "full" ? values.length : spec.end;
+        const start = clampSequenceIndex(startRaw, values.length);
+        const end = clampSequenceIndex(endRaw, values.length);
+        const out = [];
+        const step = start <= end ? 1 : -1;
+        for (let i = start; step > 0 ? i <= end : i >= end; i += step) {
+            out.push(values[i - 1]);
+        }
+        return obj.type === "tuple"
+            ? { type: "tuple", values: out }
+            : { type: "sequence", values: out, _ext: new Map([["_mutable", new Integer(1n)]]) };
+    }
+
+    if (obj && obj.type === "string") {
+        const chars = Array.from(obj.value);
+        if (chars.length === 0) {
+            return { type: "string", value: "" };
+        }
+        const startRaw = spec.kind === "full" ? 1 : spec.start;
+        const endRaw = spec.kind === "full" ? chars.length : spec.end;
+        const start = clampSequenceIndex(startRaw, chars.length);
+        const end = clampSequenceIndex(endRaw, chars.length);
+        let out = "";
+        const step = start <= end ? 1 : -1;
+        for (let i = start; step > 0 ? i <= end : i >= end; i += step) {
+            out += chars[i - 1];
+        }
+        return { type: "string", value: out };
+    }
+
+    throw new Error(`Type "${obj?.type || typeof obj}" does not support slice indexing`);
+}
+
+export function indexGetResolved(obj, key) {
     if (isTensor(obj)) {
         return tensorGetBySelectors(obj, [{ kind: "index", value: key }]);
     }
@@ -143,6 +196,22 @@ function indexGetResolved(obj, key) {
     }
 
     throw new Error(`Type "${obj?.type || typeof obj}" is not indexable`);
+}
+
+export function bracketGetResolved(obj, specs) {
+    if (isTensor(obj)) {
+        return tensorGetBySelectors(obj, specs);
+    }
+
+    if (specs.length === 1 && specs[0].kind === "index") {
+        return indexGetResolved(obj, specs[0].value);
+    }
+
+    if (specs.length === 1 && (specs[0].kind === "slice" || specs[0].kind === "full")) {
+        return sliceSequenceLike(obj, specs[0]);
+    }
+
+    throw new Error("Bracket slicing is only supported for tensors and sequence-like values");
 }
 
 function indexSetResolved(obj, key, value) {
@@ -345,16 +414,7 @@ export const propertyFunctions = {
             const specCount = args[1];
             const specNodes = args.slice(2, 2 + specCount);
             const specs = specNodes.map((specNode) => decodeBracketSpec(specNode, evaluate));
-
-            if (isTensor(obj)) {
-                return tensorGetBySelectors(obj, specs);
-            }
-
-            if (specs.length === 1 && specs[0].kind === "index") {
-                return indexGetResolved(obj, specs[0].value);
-            }
-
-            throw new Error("Bracket slicing is only supported for tensors");
+            return bracketGetResolved(obj, specs);
         },
         doc: "Tensor-aware bracket indexing and slicing",
     },

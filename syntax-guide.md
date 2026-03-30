@@ -24,6 +24,9 @@
 | `||` | `OR` | `x == 0 || y == 0` |
 | `?|` | `HOLE_COALESCE` | `a[2] ?| 9` — returns left if not a hole, else right |
 | `!` | `NOT` | `!(x == 0)` |
+| `x ? :name` | `SEMANTIC_HAS` | Checks `.__type`, `._type`, and `.__traits` |
+| `x ~: :type` | `SEMANTIC_CONVERT_SOFT` | Convert or return `_` |
+| `x ~!: :type` | `SEMANTIC_CONVERT_STRICT` | Convert or throw |
 | `=` | `ASSIGN` | `y = x` (alias/rebind) |
 | `:=` | `ASSIGN_COPY` | `x := 5` (fresh copy) |
 | `~=` | `ASSIGN_UPDATE` | `x ~= 9` (in-place) |
@@ -218,6 +221,37 @@ RiX now uses a shared `/ ... /` header zone for value outfitting and constructor
 {^ 7}
 {^ /#len ::Length :meters/ 7}
 {= /:= #pt ::Point :cartesian/ x = 3, y = 4}
+
+### Semantic Inquiry And Conversion
+
+RiX also has lightweight expression forms for semantic inquiry and explicit conversion:
+
+```rix
+x ? :rational
+x ~: :rational
+x ~!: :rational
+```
+
+Rules:
+
+- `x ? :name` succeeds if any of these are true: `x.__type == :name`, `x._type == :name`, or `:name` is contained in `x.__traits`
+- successful inquiry returns a non-null truthy value; failure returns `_`
+- no trait inheritance or group expansion is applied here
+- `x ~: :type` reuses the same semantic type conversion/canonicalization path as `{^ /::type/ x}`
+- `x ~: :type` returns the converted value on success, otherwise `_`
+- `x ~!: :type` returns the converted value on success and throws on failure
+- conversion targets are semantic types, not traits
+- these operators return new outfitted values; they do not mutate the original binding unless assigned back
+
+Soft conversion warnings are controlled by runtime config:
+
+```js
+warnings: {
+  conversion: true
+}
+```
+
+When `warnings.conversion === true`, failed `~:` emits a structured warning before returning `_`.
 {.. /::=/ a, ==b, ~=c}
 {: /#pair/ a, b}
 {:2x2: /#M ::Matrix :square/ 1, 2; 3, 4}

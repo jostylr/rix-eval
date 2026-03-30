@@ -248,6 +248,37 @@ describe("Lowering Pass", () => {
       const fromIr = L('"101" <_ 0b;');
       expect(fromIr.fn).toBe("FROMBASE");
     });
+
+    test("semantic inquiry lowers correctly", () => {
+      const ir = L("x ? :rational;");
+      expect(ir).toEqual({
+        fn: "SEMANTIC_HAS",
+        args: [
+          { fn: "RETRIEVE", args: ["x"] },
+          "rational",
+        ],
+      });
+    });
+
+    test("semantic conversion operators lower correctly", () => {
+      const soft = L("x ~: :rational;");
+      expect(soft).toEqual({
+        fn: "SEMANTIC_CONVERT_SOFT",
+        args: [
+          { fn: "RETRIEVE", args: ["x"] },
+          "rational",
+        ],
+      });
+
+      const strict = L("x ~!: :rational;");
+      expect(strict).toEqual({
+        fn: "SEMANTIC_CONVERT_STRICT",
+        args: [
+          { fn: "RETRIEVE", args: ["x"] },
+          "rational",
+        ],
+      });
+    });
   });
 
   describe("Comparison & Logic", () => {

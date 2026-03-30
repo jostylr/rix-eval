@@ -9,7 +9,7 @@ import {
     copyAllMeta, transferMetaForUpdate,
 } from "../cell.js";
 import { isTensor } from "../tensor.js";
-import { applySemanticHeader, applyUpdateSemantics, mergeStickyHeader, readStickyHeader, rebuildSemanticMetadata, refreshRuntimeMetadata, valueSatisfiesTrait } from "../semantic.js";
+import { applySemanticHeader, applyUpdateSemantics, convertSemanticType, mergeStickyHeader, readStickyHeader, rebuildSemanticMetadata, refreshRuntimeMetadata, valueHasSemanticMembership, valueSatisfiesTrait } from "../semantic.js";
 import { attachBuiltinProto } from "../methods.js";
 import { captureIrValue, constructorDefaultCaptureMode } from "../constructor-capture.js";
 import { keyOf } from "./keyof.js";
@@ -17,6 +17,7 @@ import { bracketGetResolved } from "./properties.js";
 import { parse } from "../../../parser/src/parser.js";
 import { tokenize } from "../../../parser/src/tokenizer.js";
 import { lower } from "../lower.js";
+import { runtimeDefaults } from "../runtime-config.js";
 
 const BASE_RESERVED_CHARS = new Set([".", "/", "#", "~", "_", "^", "+", "-"]);
 const BASE_MODE_ALIASES = new Map([
@@ -45,6 +46,29 @@ function toRationalValue(value) {
         throw new Error("Expected a single numeric value, not an interval");
     }
     throw new Error("Expected a numeric value");
+}
+
+function conversionWarningsEnabled(context) {
+    const warnings = context?.getEnv?.("warnings", runtimeDefaults.warnings) ?? runtimeDefaults.warnings;
+    return warnings?.conversion === true;
+}
+
+function finalizeSemanticValue(value, context) {
+    attachBuiltinProto(value);
+    rebuildSemanticMetadata(value, context);
+    refreshRuntimeMetadata(value, value?._ext?.get("_proto") ?? null);
+    return value;
+}
+
+function evaluateOutfitValue(header, valueNode, context, evaluate) {
+    const captureMode = header?.captureMode || constructorDefaultCaptureMode(context);
+    const value = captureIrValue(valueNode, captureMode, context, evaluate);
+    const effectiveHeader = mergeStickyHeader(readStickyHeader(value), header);
+    const next = applySemanticHeader(value, effectiveHeader, context, {
+        inheritMissing: true,
+        warnOnTypeChange: true,
+    });
+    return finalizeSemanticValue(next, context);
 }
 
 function groupDigits(intStr) {
@@ -1263,19 +1287,51 @@ export const coreFunctions = {
         lazy: true,
         impl(args, context, evaluate) {
             const header = args[0] || null;
-            const captureMode = header?.captureMode || constructorDefaultCaptureMode(context);
-            const value = captureIrValue(args[1], captureMode, context, evaluate);
-            const effectiveHeader = mergeStickyHeader(readStickyHeader(value), header);
-            const next = applySemanticHeader(value, effectiveHeader, context, {
-                inheritMissing: true,
-                warnOnTypeChange: true,
-            });
-            attachBuiltinProto(next);
-            rebuildSemanticMetadata(next, context);
-            refreshRuntimeMetadata(next, next?._ext?.get("_proto") ?? null);
-            return next;
+            return evaluateOutfitValue(header, args[1], context, evaluate);
         },
         doc: "Apply semantic/value outfitting metadata to a value",
+    },
+
+    SEMANTIC_HAS: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const value = evaluate(args[0]);
+            const name = args[1];
+            return valueHasSemanticMembership(value, name) ? new Integer(1n) : null;
+        },
+        doc: "Check semantic type/trait membership against __type, _type, and __traits",
+    },
+
+    SEMANTIC_CONVERT_SOFT: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const typeName = args[1];
+            if (typeof typeName !== "string" || typeName.length === 0) {
+                throw new Error("Soft semantic conversion requires a colon-string target like :rational");
+            }
+            const value = captureIrValue(args[0], constructorDefaultCaptureMode(context), context, evaluate);
+            const converted = convertSemanticType(value, typeName, context, {
+                strict: false,
+                warnOnFailure: conversionWarningsEnabled(context),
+            });
+            return converted === null ? null : finalizeSemanticValue(converted, context);
+        },
+        doc: "Convert a value to a semantic type, returning null on failure",
+    },
+
+    SEMANTIC_CONVERT_STRICT: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const typeName = args[1];
+            if (typeof typeName !== "string" || typeName.length === 0) {
+                throw new Error("Strict semantic conversion requires a colon-string target like :rational");
+            }
+            const value = captureIrValue(args[0], constructorDefaultCaptureMode(context), context, evaluate);
+            return finalizeSemanticValue(convertSemanticType(value, typeName, context, {
+                strict: true,
+            }), context);
+        },
+        doc: "Convert a value to a semantic type, throwing on failure",
     },
 
     DEFINEBASE: {

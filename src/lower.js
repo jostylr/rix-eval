@@ -187,6 +187,18 @@ const LOWERERS = {
     return ir("HOLE");
   },
 
+  SemanticHas(node) {
+    return ir("SEMANTIC_HAS", lowerNode(node.expression), node.name);
+  },
+
+  SemanticConvertSoft(node) {
+    return ir("SEMANTIC_CONVERT_SOFT", lowerNode(node.expression), node.typeName);
+  },
+
+  SemanticConvertStrict(node) {
+    return ir("SEMANTIC_CONVERT_STRICT", lowerNode(node.expression), node.typeName);
+  },
+
   SelfRef() {
     return ir("SELF");
   },

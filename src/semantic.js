@@ -61,6 +61,16 @@ function getLabel(value) {
     return String(value);
 }
 
+function summarizeValue(value) {
+    if (value === null) return "_";
+    if (value instanceof Integer || value instanceof Rational || value instanceof RationalInterval) {
+        return value.toString();
+    }
+    if (value?.type === "string") return JSON.stringify(value.value);
+    if (value?.type) return `<${value.type}>`;
+    return getLabel(value);
+}
+
 function emitWarning(context, label, data = new Map()) {
     if (!context?.getEnv) return;
     const diagnostics = getDiagnostics(context);
@@ -277,6 +287,62 @@ function applyType(header, value) {
         throw new Error(`Cannot convert value to semantic type ${typeName}`);
     }
     return nextValue;
+}
+
+export function valueHasSemanticMembership(value, name) {
+    const ext = value?._ext;
+    if (!(ext instanceof Map) || !name) {
+        return false;
+    }
+
+    if (ext.get("__type")?.value === name) {
+        return true;
+    }
+    if (ext.get("_type")?.value === name) {
+        return true;
+    }
+    return traitNamesFromSet(ext.get("__traits")).includes(name);
+}
+
+export function convertSemanticType(value, typeName, context, { strict = true, warnOnFailure = false } = {}) {
+    const header = {
+        captureMode: null,
+        name: null,
+        typeName,
+        traits: [],
+    };
+    const effectiveHeader = mergeStickyHeader(readStickyHeader(value), header);
+
+    try {
+        return applySemanticHeader(value, effectiveHeader, context, {
+            inheritMissing: true,
+            warnOnTypeChange: true,
+        });
+    } catch (error) {
+        if (error.message === `Unknown semantic type: ${typeName}`) {
+            throw error;
+        }
+        if (strict) {
+            throw error;
+        }
+        if (warnOnFailure) {
+            const ext = value?._ext instanceof Map ? value._ext : null;
+            const data = new Map([
+                ["requestedType", stringObj(typeName)],
+                ["sourceSummary", stringObj(summarizeValue(value))],
+            ]);
+
+            const runtimeType = ext?.get("_type");
+            if (runtimeType) data.set("sourceType", runtimeType);
+            const semanticType = ext?.get("__type");
+            if (semanticType) data.set("sourceSemanticType", semanticType);
+            const traits = ext?.get("__traits");
+            if (traits) data.set("sourceTraits", traits);
+
+            emitWarning(context, "conversion failed", data);
+        }
+        return null;
+    }
 }
 
 export function valueSatisfiesTrait(value, traitName) {

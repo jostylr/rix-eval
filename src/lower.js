@@ -509,6 +509,19 @@ const LOWERERS = {
     };
   },
 
+  SemanticHeader(node) {
+    return {
+      captureMode: node.captureMode || null,
+      name: node.name || null,
+      typeName: node.typeName || null,
+      traits: (node.traits || []).map((trait) => ({
+        name: trait.name,
+        checkMode: trait.checkMode || null,
+        order: trait.order ?? null,
+      })),
+    };
+  },
+
   MapEntry(node) {
     return {
       key: lowerNode(node.key),
@@ -532,16 +545,23 @@ const LOWERERS = {
   },
 
   TensorLiteral(node) {
-    const meta = node.defaultCaptureMode ? { defaultCaptureMode: node.defaultCaptureMode } : null;
+    const meta = node.header ? { header: lowerNode(node.header) } : null;
     return meta
       ? ir("TENSOR_LITERAL", meta, node.shape, ...node.elements.map(lowerNode))
       : ir("TENSOR_LITERAL", node.shape, ...node.elements.map(lowerNode));
   },
 
+  ValueOutfit(node) {
+    const header = node.header ? lowerNode(node.header) : null;
+    return header
+      ? ir("VALUE_OUTFIT", header, lowerNode(node.expression))
+      : ir("VALUE_OUTFIT", null, lowerNode(node.expression));
+  },
+
   // === Brace Sigil Containers ===
 
   MapContainer(node) {
-    const constructorMeta = node.defaultCaptureMode ? { defaultCaptureMode: node.defaultCaptureMode } : null;
+    const constructorMeta = node.header ? { header: lowerNode(node.header) } : null;
     const loweredElements = node.elements.map((el) => {
       if (el?.type === "MapEntry") {
         const keyNode = el.key;
@@ -597,17 +617,17 @@ const LOWERERS = {
   },
 
   SetContainer(node) {
-    const meta = node.defaultCaptureMode ? { defaultCaptureMode: node.defaultCaptureMode } : null;
+    const meta = node.header ? { header: lowerNode(node.header) } : null;
     return meta ? ir("SET", meta, ...node.elements.map(lowerNode)) : ir("SET", ...node.elements.map(lowerNode));
   },
 
   TupleContainer(node) {
-    const meta = node.defaultCaptureMode ? { defaultCaptureMode: node.defaultCaptureMode } : null;
+    const meta = node.header ? { header: lowerNode(node.header) } : null;
     return meta ? ir("TUPLE", meta, ...node.elements.map(lowerNode)) : ir("TUPLE", ...node.elements.map(lowerNode));
   },
 
   ArrayContainer(node) {
-    const meta = node.defaultCaptureMode ? { defaultCaptureMode: node.defaultCaptureMode } : null;
+    const meta = node.header ? { header: lowerNode(node.header) } : null;
     return meta ? ir("ARRAY_CAPTURE", meta, ...node.elements.map(lowerNode)) : ir("ARRAY_CAPTURE", ...node.elements.map(lowerNode));
   },
 

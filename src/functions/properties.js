@@ -12,6 +12,7 @@ import { keyOf, canonicalizeMetaKey } from "./keyof.js";
 import { Cell } from "../cell.js";
 import { isTensor, tensorAssignBySelectors, tensorGetBySelectors } from "../tensor.js";
 import { getBuiltinProto } from "../methods.js";
+import { createTraitSet, rebuildSemanticMetadata } from "../semantic.js";
 
 /**
  * Convert a key value to a numeric index.
@@ -222,6 +223,9 @@ export const propertyFunctions = {
             if (prop === "_proto" && value !== null && (value?.type !== "map" || !(value.entries instanceof Map))) {
                 throw new Error('Meta property "_proto" must be a map or null');
             }
+            if (prop === "__proto" && value !== null && (value?.type !== "map" || !(value.entries instanceof Map))) {
+                throw new Error('Meta property "__proto" must be a map or null');
+            }
 
             // Immutability checks
             const ext = obj?._ext;
@@ -255,7 +259,17 @@ export const propertyFunctions = {
             if (value === null) {
                 metaMap.delete(prop);  // null = delete
             } else {
-                metaMap.set(prop, value);
+                if (prop === "__traits") {
+                    const traitNames = value?.type === "set"
+                        ? Array.from(value.values || [], (entry) => entry?.type === "string" ? entry.value : String(entry))
+                        : [];
+                    metaMap.set(prop, createTraitSet(traitNames, traitNames));
+                } else {
+                    metaMap.set(prop, value);
+                }
+            }
+            if (prop === "__type" || prop === "__traits" || prop === "__name" || prop === "__proto") {
+                rebuildSemanticMetadata(obj, context);
             }
             return value;
         },

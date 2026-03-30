@@ -8,6 +8,8 @@
 import { Integer, Rational } from "@ratmath/core";
 import { createTensor, createTensorView, isTensor, tensorRank } from "../tensor.js";
 import { captureIrValue, constructorDefaultCaptureMode } from "../constructor-capture.js";
+import { applySemanticHeader } from "../semantic.js";
+import { attachBuiltinProto } from "../methods.js";
 
 function toNumber(val) {
     if (val instanceof Integer) return Number(val.value);
@@ -167,11 +169,12 @@ export const advancedFunctions = {
     TENSOR_LITERAL: {
         lazy: true,
         impl(args, context, evaluate) {
-            const hasMeta = args[0] && typeof args[0] === "object" && !Array.isArray(args[0]) && args[0].defaultCaptureMode;
-            const defaultMode = hasMeta ? args[0].defaultCaptureMode : constructorDefaultCaptureMode(context);
+            const hasMeta = args[0] && typeof args[0] === "object" && !Array.isArray(args[0]) && args[0].header;
+            const header = hasMeta ? args[0].header : null;
+            const defaultMode = header?.captureMode || constructorDefaultCaptureMode(context);
             const shape = hasMeta ? args[1] : args[0];
             const values = (hasMeta ? args.slice(2) : args.slice(1)).map((arg) => captureIrValue(arg, defaultMode, context, evaluate));
-            return createTensor(shape, values.length === 0 ? null : values);
+            return applySemanticHeader(attachBuiltinProto(createTensor(shape, values.length === 0 ? null : values)), header, context);
         },
         pure: true,
         doc: "Tensor literal with explicit shape",

@@ -9,6 +9,9 @@ import {
     copyAllMeta, transferMetaForUpdate,
 } from "../cell.js";
 import { isTensor } from "../tensor.js";
+import { applySemanticHeader, applyUpdateSemantics, mergeStickyHeader, readStickyHeader, rebuildSemanticMetadata, refreshRuntimeMetadata } from "../semantic.js";
+import { attachBuiltinProto } from "../methods.js";
+import { captureIrValue, constructorDefaultCaptureMode } from "../constructor-capture.js";
 import { parse } from "../../../parser/src/parser.js";
 import { tokenize } from "../../../parser/src/tokenizer.js";
 import { lower } from "../lower.js";
@@ -819,8 +822,11 @@ function performUpdate(name, rhsValue, context, depth) {
         const oldValue = cell.value;
         checkLocked(oldValue);
         checkFrozenImmutable(oldValue);
-        const newValue = copyFn(rhsValue);
+        let newValue = copyFn(rhsValue);
         transferMetaForUpdate(oldValue, newValue, rhsValue, depth);
+        newValue = applyUpdateSemantics(oldValue, newValue, context);
+        attachBuiltinProto(newValue);
+        refreshRuntimeMetadata(newValue, newValue?._ext?.get("_proto") ?? null);
         recordTraceWrite(context, name, oldValue, newValue);
         cell.value = newValue;
         return newValue;
@@ -832,6 +838,8 @@ function performUpdate(name, rhsValue, context, depth) {
     // with oldValue=null handles this correctly.
     const newValue = copyFn(rhsValue);
     transferMetaForUpdate(null, newValue, rhsValue, depth);
+    attachBuiltinProto(newValue);
+    refreshRuntimeMetadata(newValue, newValue?._ext?.get("_proto") ?? null);
     recordTraceWrite(context, name, null, newValue);
     context.setFresh(name, newValue);
     return newValue;
@@ -848,8 +856,11 @@ function performOuterUpdate(name, rhsValue, context, depth) {
         const oldValue = cell.value;
         checkLocked(oldValue);
         checkFrozenImmutable(oldValue);
-        const newValue = copyFn(rhsValue);
+        let newValue = copyFn(rhsValue);
         transferMetaForUpdate(oldValue, newValue, rhsValue, depth);
+        newValue = applyUpdateSemantics(oldValue, newValue, context);
+        attachBuiltinProto(newValue);
+        refreshRuntimeMetadata(newValue, newValue?._ext?.get("_proto") ?? null);
         recordTraceWrite(context, name, oldValue, newValue);
         cell.value = newValue;
         return newValue;
@@ -918,6 +929,25 @@ export const coreFunctions = {
         },
         pure: true,
         doc: "Parse a number literal string into a ratmath type",
+    },
+
+    VALUE_OUTFIT: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const header = args[0] || null;
+            const captureMode = header?.captureMode || constructorDefaultCaptureMode(context);
+            const value = captureIrValue(args[1], captureMode, context, evaluate);
+            const effectiveHeader = mergeStickyHeader(readStickyHeader(value), header);
+            const next = applySemanticHeader(value, effectiveHeader, context, {
+                inheritMissing: true,
+                warnOnTypeChange: true,
+            });
+            attachBuiltinProto(next);
+            rebuildSemanticMetadata(next, context);
+            refreshRuntimeMetadata(next, next?._ext?.get("_proto") ?? null);
+            return next;
+        },
+        doc: "Apply semantic/value outfitting metadata to a value",
     },
 
     DEFINEBASE: {

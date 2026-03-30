@@ -511,12 +511,24 @@ describe("Lowering Pass", () => {
       expect(ir.args).toHaveLength(3);
     });
 
-    test("{::= a = x, b == y } carries constructor capture metadata", () => {
-      const ir = L("{::= a = x, b == y };");
+    test("{= /::=/ a = x, b == y } carries constructor capture metadata", () => {
+      const ir = L("{= /::=/ a = x, b == y };");
       expect(ir.fn).toBe("MAP_OBJ");
-      expect(ir.args[0]).toEqual({ defaultCaptureMode: "deep_copy" });
+      expect(ir.args[0]).toEqual({ header: { captureMode: "deep_copy", name: null, typeName: null, traits: [] } });
       expect(ir.args[1].args).toEqual(["identifier", "a", { fn: "RETRIEVE", args: ["x"] }, null]);
       expect(ir.args[2].args).toEqual(["identifier", "b", { fn: "RETRIEVE", args: ["y"] }, "alias"]);
+    });
+
+    test("{^ /#x ::Length :meters/ 7 } lowers to VALUE_OUTFIT", () => {
+      const ir = L("{^ /#x ::Length :meters/ 7 };");
+      expect(ir.fn).toBe("VALUE_OUTFIT");
+      expect(ir.args[0]).toEqual({
+        captureMode: null,
+        name: "x",
+        typeName: "Length",
+        traits: [{ name: "meters", checkMode: null, order: 0 }],
+      });
+      expect(ir.args[1]).toEqual({ fn: "LITERAL", args: ["7"] });
     });
   });
 

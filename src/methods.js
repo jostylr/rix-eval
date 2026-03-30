@@ -17,6 +17,7 @@ import {
     tensorShape,
     tensorSize,
 } from "./tensor.js";
+import { checkTraits, refreshRuntimeMetadata } from "./semantic.js";
 
 function int(value) {
     return new Integer(BigInt(value));
@@ -66,6 +67,11 @@ function mutableExt() {
 function ensureMutableExt(value) {
     if (!value._ext) value._ext = mutableExt();
     if (!value._ext.get("_mutable")) value._ext.set("_mutable", int(1));
+    return value._ext;
+}
+
+function ensureExt(value) {
+    if (!value._ext) value._ext = new Map();
     return value._ext;
 }
 
@@ -1157,14 +1163,19 @@ const tensorMethods = {
         reduceEntries(target, iterator, initial, context, evaluate, invoke)),
 };
 
+const commonMethods = {
+    CHECKTRAITS: method("CHECKTRAITS", ([target], context) => checkTraits(target, context, { warnOnly: true })),
+    CheckTraits: method("CheckTraits", ([target], context) => checkTraits(target, context, { warnOnly: true })),
+};
+
 const PROTOS = new Map([
-    ["sequence", createBuiltinProto(Object.entries(arrayMethods))],
-    ["map", createBuiltinProto(Object.entries(mapMethods))],
-    ["set", createBuiltinProto(Object.entries(setMethods))],
-    ["string", createBuiltinProto(Object.entries(stringMethods))],
-    ["tuple", createBuiltinProto(Object.entries(tupleMethods))],
-    ["tensor", createBuiltinProto(Object.entries(tensorMethods))],
-    ["deferred", createBuiltinProto(Object.entries(deferredMethods))],
+    ["sequence", createBuiltinProto([...Object.entries(commonMethods), ...Object.entries(arrayMethods)])],
+    ["map", createBuiltinProto([...Object.entries(commonMethods), ...Object.entries(mapMethods)])],
+    ["set", createBuiltinProto([...Object.entries(commonMethods), ...Object.entries(setMethods)])],
+    ["string", createBuiltinProto([...Object.entries(commonMethods), ...Object.entries(stringMethods)])],
+    ["tuple", createBuiltinProto([...Object.entries(commonMethods), ...Object.entries(tupleMethods)])],
+    ["tensor", createBuiltinProto([...Object.entries(commonMethods), ...Object.entries(tensorMethods)])],
+    ["deferred", createBuiltinProto([...Object.entries(commonMethods), ...Object.entries(deferredMethods)])],
 ]);
 
 export function isCallableValue(value) {
@@ -1185,6 +1196,11 @@ function ensureCallableMethod(value, name) {
         throw new Error(`Method "${name}" is not callable`);
     }
     return value;
+}
+
+function checkTraitsMethod(name) {
+    if (name !== "CHECKTRAITS" && name !== "CheckTraits") return null;
+    return method(name, ([target], context) => checkTraits(target, context, { warnOnly: true }));
 }
 
 function builtinProtoFor(target) {
@@ -1222,6 +1238,10 @@ export function getBuiltinProto(target) {
 export function resolveMethod(target, name) {
     const ext = target?._ext;
     const candidates = [name, `__${name}`, `_${name}`];
+    const special = checkTraitsMethod(name);
+    if (special) {
+        return special;
+    }
 
     if (ext instanceof Map) {
         for (const candidate of candidates) {
@@ -1229,6 +1249,15 @@ export function resolveMethod(target, name) {
                 return ensureCallableMethod(ext.get(candidate), name);
             }
         }
+    }
+
+    const semanticProto = ext instanceof Map ? ext.get("__proto") : null;
+    const traitProto = semanticProto?.type === "map" ? semanticProto.entries?.get("traits") : null;
+    const typeProto = semanticProto?.type === "map" ? semanticProto.entries?.get("type") : null;
+
+    const semanticResolved = resolveFromProto(traitProto, candidates, name) || resolveFromProto(typeProto, candidates, name);
+    if (semanticResolved) {
+        return semanticResolved;
     }
 
     const resolved = resolveFromProto(getBuiltinProto(target), candidates, name);
@@ -1250,9 +1279,10 @@ export function attachBuiltinProto(value) {
     if (!value || typeof value !== "object") return value;
     const proto = builtinProtoFor(value);
     if (!proto) return value;
-    ensureMutableExt(value);
+    ensureExt(value);
     if (!value._ext.has("_proto")) {
         value._ext.set("_proto", proto);
     }
+    refreshRuntimeMetadata(value, proto);
     return value;
 }

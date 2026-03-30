@@ -117,7 +117,25 @@ Variables name **cells** — mutable containers holding a value and meta propert
 - `~=` replaces the value inside an existing cell, so aliases see the change. `=` rebinds to a different cell.
 - Combo operators (`+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `^=`, `++=`, `\/=`, `/\=`, `\=`, `**=`, `/^=`, `/~=`) use `~=` semantics — they preserve cell identity.
 
-### Constructor Capture Modes
+### Headered Outfitting And Constructor Capture
+
+RiX now uses a shared `/ ... /` header zone for value outfitting and constructor defaults:
+
+```rix
+{^ 7}
+{^ /#len ::Length :meters/ 7}
+{= /:= #pt ::Point :cartesian/ x = 3, y = 4}
+{.. /::=/ a, ==b, ~=c}
+{: /#pair/ a, b}
+{:2x2: /#M ::Matrix :square/ 1, 2; 3, 4}
+```
+
+The header vocabulary is:
+
+- capture mode: `==`, `:=`, `~=`, `::=`, `~~=`
+- sticky name: `#name`
+- sticky semantic type: `::TypeName`
+- sticky traits: `:trait`
 
 Container construction follows the same cell/copy model as assignment. Every inserted entry uses one effective capture mode, chosen in this order:
 
@@ -147,17 +165,39 @@ For non-map advanced brace constructors, an entry-level override uses prefix for
 {.. 1, == x, := y}
 ```
 
-Advanced brace constructors can set a constructor-wide default:
+Advanced brace constructors set a constructor-wide default in the shared header:
 
 ```rix
 {.. 1, 2, 3}
-{:=.. x, y}
-{::=: a, b, c}
-{==| item1, item2 |}
-{::=:2x2: a, b; c, d}
+{.. /:=/ x, y}
+{: /::=/ a, b, c}
+{| /==/ item1, item2 |}
+{:2x2: /::=/ a, b; c, d}
 ```
 
 `[...]`, `{= ...}`, `{: ...}`, `{| ...}`, and tensor literals without an explicit constructor header still participate in this model; they simply fall back to the runtime default capture mode.
+
+Value outfitting uses the same header but applies to the resulting value itself after capture:
+
+1. evaluate the source expression
+2. apply capture mode (header or runtime default)
+3. assign sticky `.__name` if present
+4. apply semantic type processing / canonicalization
+5. apply traits in textual order
+6. build semantic `.__proto`
+7. rebuild ephemeral `._type` and `._proto`
+
+Sticky semantic metadata lives in `.__name`, `.__type`, `.__traits`, and `.__proto`. Ephemeral runtime metadata lives in `._type` and `._proto`.
+
+Semantic `.__proto` is layered:
+
+1. `.__proto[:traits]`
+2. `.__proto[:type]`
+3. `._proto`
+
+Method lookup therefore checks direct meta first, then semantic trait methods, then semantic type methods, then builtin/runtime methods. `x._proto` still exposes the builtin layer directly.
+
+On `~=` / `~~=` updates, sticky semantic metadata is preserved unless explicitly replaced. If a value has a sticky semantic type, the new raw rhs is processed through that type again before installation. Traits are sticky augmentations in this version; they do not transform values. Automatic trait validation only runs when enabled globally or when the sticky `:verify` trait is present.
 
 Examples:
 ```rix
@@ -1053,7 +1093,7 @@ Constraint forms such as `:=:`, `:<:`, and `:>:` remain separate and are not par
 | `TUPLE(elems...)` | Create tuple | `{: a, b, c }` |
 | `MAP(pairs...)` | Create map/object | `{= k=v, ... }` |
 | `TENSOR_LITERAL(shape, elems...)` | Create tensor with explicit shape | `{:2x3: 1, 2, 3; 4, 5, 6 }` |
-| `ARRAY_CAPTURE(elems...)` | Create array with brace-form constructor capture controls | `{.. 1, 2, 3 }`, `{:=.. x, y }` |
+| `ARRAY_CAPTURE(elems...)` | Create array with brace-form constructor capture controls | `{.. 1, 2, 3 }`, `{.. /:=/ x, y }` |
 | `INTERVAL(args...)` | Create interval or check n-ary betweenness (unpacks nested intervals/sets) | `a:b` or `a:b:c...` |
 | `UNION(a, b)` | Binary set union / interval hull | `A \/ B` |
 | `INTERSECT(a, b)` | Binary set intersection / interval overlap | `A /\ B` |
@@ -1125,8 +1165,8 @@ Meta properties are classified by key prefix, which controls how they behave dur
 | Prefix | Category | Examples | Survives `~=`? |
 |--------|----------|----------|----------------|
 | *(none)* | **Ordinary** | `.key`, `.lock`, `.frozen`, `.immutable` | Yes — preserved from lhs |
-| `_` | **Ephemeral** (value-linked) | `._mutable`, `._spec`, `._deriv` | Replaced wholesale from rhs |
-| `__` | **Sticky** (value-interpretation) | `.__units`, `.__format` | Preserved unless rhs supplies same key |
+| `_` | **Ephemeral** (runtime facts) | `._mutable`, `._spec`, `._deriv`, `._type`, `._proto` | Replaced/rebuilt from the concrete rhs |
+| `__` | **Sticky** (semantic interpretation) | `.__units`, `.__format`, `.__name`, `.__type`, `.__traits`, `.__proto` | Preserved unless rhs supplies same key |
 
 - `:=` / `::=` copy **all** meta categories into the new cell.
 - `~=` / `~~=` preserve ordinary, replace ephemeral, merge sticky (lhs wins unless rhs overrides).

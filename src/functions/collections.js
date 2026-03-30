@@ -7,6 +7,7 @@ import { keyOf } from "./keyof.js";
 import { HOLE } from "../hole.js";
 import { attachBuiltinProto } from "../methods.js";
 import { captureIrValue, captureResolvedValue, constructorDefaultCaptureMode } from "../constructor-capture.js";
+import { applySemanticHeader } from "../semantic.js";
 
 function isTruthy(val) {
     return val !== null && val !== undefined;
@@ -156,9 +157,11 @@ export const collectionFunctions = {
     TUPLE: {
         lazy: true,
         impl(args, ctx, evaluate) {
-            const defaultMode = args[0]?.defaultCaptureMode || constructorDefaultCaptureMode(ctx);
-            const start = args[0]?.defaultCaptureMode ? 1 : 0;
-            return { type: "tuple", values: args.slice(start).map((arg) => captureIrValue(arg.expression || arg, arg.captureMode || defaultMode, ctx, evaluate)) };
+            const header = args[0]?.header || null;
+            const defaultMode = header?.captureMode || constructorDefaultCaptureMode(ctx);
+            const start = header ? 1 : 0;
+            const value = { type: "tuple", values: args.slice(start).map((arg) => captureIrValue(arg.expression || arg, arg.captureMode || defaultMode, ctx, evaluate)) };
+            return applySemanticHeader(attachBuiltinProto(value), header, ctx);
         },
         pure: true,
         doc: "Create a tuple",
@@ -167,8 +170,9 @@ export const collectionFunctions = {
     SET: {
         lazy: true,
         impl(args, ctx, evaluate) {
-            const defaultMode = args[0]?.defaultCaptureMode || constructorDefaultCaptureMode(ctx);
-            const start = args[0]?.defaultCaptureMode ? 1 : 0;
+            const header = args[0]?.header || null;
+            const defaultMode = header?.captureMode || constructorDefaultCaptureMode(ctx);
+            const start = header ? 1 : 0;
             // Deduplicate (using toString for comparison)
             const seen = new Set();
             const values = [];
@@ -180,11 +184,12 @@ export const collectionFunctions = {
                     values.push(val);
                 }
             }
-            return {
+            const value = {
                 type: "set",
                 values,
                 _ext: new Map([["_mutable", new Integer(1n)]])
             };
+            return applySemanticHeader(attachBuiltinProto(value), header, ctx);
         },
         pure: true,
         doc: "Create a set (unique values)",
@@ -193,8 +198,9 @@ export const collectionFunctions = {
     MAP_OBJ: {
         lazy: true,
         impl(args, context, evaluate) {
-            const defaultMode = args[0]?.defaultCaptureMode || constructorDefaultCaptureMode(context);
-            const actualArgs = args[0]?.defaultCaptureMode ? args.slice(1) : args;
+            const header = args[0]?.header || null;
+            const defaultMode = header?.captureMode || constructorDefaultCaptureMode(context);
+            const actualArgs = header ? args.slice(1) : args;
             // MAP args come in as lowered elements
             // For {= a=3, b=6 }, the lowered form has assignment IR nodes
             // We store as key-value pairs
@@ -249,11 +255,12 @@ export const collectionFunctions = {
                     entries.set(keyStr, val);
                 }
             }
-            return {
+            const value = {
                 type: "map",
                 entries,
                 _ext: new Map([["_mutable", new Integer(1n)]])
             };
+            return applySemanticHeader(attachBuiltinProto(value), header, context);
         },
         pure: true, // It might not be pure if evaluate calls non-pure functions, but usually for literals it's okay.
         doc: "Create a map/object",
@@ -262,14 +269,15 @@ export const collectionFunctions = {
     ARRAY_CAPTURE: {
         lazy: true,
         impl(args, ctx, evaluate) {
-            const defaultMode = args[0]?.defaultCaptureMode || constructorDefaultCaptureMode(ctx);
-            const start = args[0]?.defaultCaptureMode ? 1 : 0;
+            const header = args[0]?.header || null;
+            const defaultMode = header?.captureMode || constructorDefaultCaptureMode(ctx);
+            const start = header ? 1 : 0;
             const values = args.slice(start).map((arg) => captureIrValue(arg.expression || arg, arg.captureMode || defaultMode, ctx, evaluate));
-            return attachBuiltinProto({
+            return applySemanticHeader(attachBuiltinProto({
                 type: "sequence",
                 values,
                 _ext: new Map([["_mutable", new Integer(1n)]])
-            });
+            }), header, ctx);
         },
         pure: true,
         doc: "Create an array/sequence with constructor capture controls",

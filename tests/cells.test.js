@@ -325,7 +325,7 @@ describe("Cell Assignment Semantics", () => {
         test(":= shallow copies — inner mutation shared when the source container aliases its nested values", () => {
             const result = evalRix(`
                 inner := [10, 20];
-                x = {==.. inner, 2};
+                x = {.. /==/ inner, 2};
                 y := x;
                 inner[1] = 99;
                 y[1][1];
@@ -849,7 +849,7 @@ describe("Cell Assignment Semantics", () => {
             // Use alias capture so the set retains the same nested array cell.
             const result = evalRix(`
                 inner := [1,2];
-                s := {==| inner |};
+                s := {| /==/ inner |};
                 .DeepMutable(s, _);
                 inner._mutable;
             `);
@@ -949,7 +949,7 @@ describe("Cell Assignment Semantics", () => {
             // Shallow assignment still shares nested references when the source container aliases them.
             const shallow = evalRix(`
                 inner := [10, 20];
-                x = {==.. inner, 2};
+                x = {.. /==/ inner, 2};
                 y := x;
                 inner[1] = 99;
                 y[1][1];

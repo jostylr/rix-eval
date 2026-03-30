@@ -9,9 +9,10 @@ import {
     copyAllMeta, transferMetaForUpdate,
 } from "../cell.js";
 import { isTensor } from "../tensor.js";
-import { applySemanticHeader, applyUpdateSemantics, mergeStickyHeader, readStickyHeader, rebuildSemanticMetadata, refreshRuntimeMetadata } from "../semantic.js";
+import { applySemanticHeader, applyUpdateSemantics, mergeStickyHeader, readStickyHeader, rebuildSemanticMetadata, refreshRuntimeMetadata, valueSatisfiesTrait } from "../semantic.js";
 import { attachBuiltinProto } from "../methods.js";
 import { captureIrValue, constructorDefaultCaptureMode } from "../constructor-capture.js";
+import { keyOf } from "./keyof.js";
 import { parse } from "../../../parser/src/parser.js";
 import { tokenize } from "../../../parser/src/tokenizer.js";
 import { lower } from "../lower.js";
@@ -869,6 +870,280 @@ function performOuterUpdate(name, rhsValue, context, depth) {
     throw new Error(`Cannot update outer variable '@${name}' because it does not exist in any outer scope.`);
 }
 
+function assignmentOpToBindingMode(op) {
+    if (op === "=") return "alias";
+    if (op === ":=") return "copy";
+    if (op === "~=") return "refresh";
+    if (op === "::=") return "deep_copy";
+    if (op === "~~=") return "deep_refresh";
+    throw new Error(`Unsupported destructuring assignment operator: ${op}`);
+}
+
+function createMutableSequence(values) {
+    return attachBuiltinProto({
+        type: "sequence",
+        values,
+        _ext: new Map([["_mutable", new Integer(1n)]]),
+    });
+}
+
+function createMutableMap(entries) {
+    return attachBuiltinProto({
+        type: "map",
+        entries: new Map(entries),
+        _ext: new Map([["_mutable", new Integer(1n)]]),
+    });
+}
+
+function createTupleValue(values) {
+    return attachBuiltinProto({ type: "tuple", values });
+}
+
+function isSequenceLike(value) {
+    return value && (value.type === "sequence" || value.type === "array");
+}
+
+function isTupleLike(value) {
+    return value && value.type === "tuple";
+}
+
+function isMapLike(value) {
+    return value && (value.type === "map" || value.type === "export_bundle");
+}
+
+function makeSourceRef(value, cell = null) {
+    return { value, cell };
+}
+
+function unwrapDestructureTarget(target, outerMode) {
+    let current = target;
+    let bindingMode = null;
+    let semanticHeader = null;
+
+    while (current?.type === "DestructureBindingModeTarget" || current?.type === "DestructureSemanticTarget") {
+      if (current.type === "DestructureBindingModeTarget") {
+        bindingMode = current.bindingMode;
+        current = current.target;
+      } else {
+        semanticHeader = current.header || semanticHeader;
+        if (!bindingMode && current.header?.captureMode) {
+            bindingMode = current.header.captureMode;
+        }
+        current = current.target;
+      }
+    }
+
+    return {
+        base: current,
+        bindingMode: bindingMode || outerMode,
+        semanticHeader,
+    };
+}
+
+function applyDestructureSemanticHeader(value, header, context) {
+    if (isHole(value) || !header) {
+        return value;
+    }
+    for (const trait of header.traits || []) {
+        if (!valueSatisfiesTrait(value, trait.name)) {
+            throw new Error(`Trait required by destructuring header not satisfied: ${trait.name}`);
+        }
+    }
+    return applySemanticHeader(value, header, context);
+}
+
+function bindDestructuredName(name, sourceRef, bindingMode, context) {
+    const value = sourceRef.value;
+    if (bindingMode === "alias") {
+        recordTraceWrite(context, name, context.get(name) ?? null, value);
+        if (sourceRef.cell) {
+            context.setCell(name, sourceRef.cell);
+        } else {
+            context.setFresh(name, value);
+        }
+        return value;
+    }
+    if (bindingMode === "copy") {
+        const newValue = shallowCopyValue(value);
+        copyAllMeta(value, newValue, "shallow");
+        recordTraceWrite(context, name, context.get(name) ?? null, newValue);
+        context.setFresh(name, newValue);
+        return newValue;
+    }
+    if (bindingMode === "deep_copy") {
+        const newValue = deepCopyValue(value);
+        copyAllMeta(value, newValue, "deep");
+        recordTraceWrite(context, name, context.get(name) ?? null, newValue);
+        context.setFresh(name, newValue);
+        return newValue;
+    }
+    if (bindingMode === "refresh") {
+        return performUpdate(name, value, context, "shallow");
+    }
+    if (bindingMode === "deep_refresh") {
+        return performUpdate(name, value, context, "deep");
+    }
+    throw new Error(`Unknown destructuring binding mode: ${bindingMode}`);
+}
+
+function bindDestructureTarget(target, sourceRef, outerMode, context) {
+    const resolved = unwrapDestructureTarget(target, outerMode);
+    const preparedValue = applyDestructureSemanticHeader(sourceRef.value, resolved.semanticHeader, context);
+    const preparedRef = makeSourceRef(preparedValue, sourceRef.cell);
+
+    if (resolved.base?.type !== "DestructureVariableTarget") {
+        throw new Error("Rest capture target must resolve to a variable");
+    }
+
+    return bindDestructuredName(resolved.base.name, preparedRef, resolved.bindingMode, context);
+}
+
+function evaluatePatternKey(spec, evaluate) {
+    if (typeof spec === "string") return spec;
+    if (spec?.type === "MapKeyIdentifier") return spec.value;
+    if (spec && typeof spec === "object" && !spec.fn && spec.type === "String") {
+        return keyOf({ type: "string", value: spec.value });
+    }
+    return keyOf(evaluate(spec));
+}
+
+function missingSimpleBind(pattern, outerMode, context) {
+    bindDestructureTarget(pattern, makeSourceRef(HOLE), outerMode, context);
+}
+
+function ensureNestedSource(sourceRef, label) {
+    if (!sourceRef || isHole(sourceRef.value) || sourceRef.value === null || sourceRef.value === undefined) {
+        throw new Error(`Missing required nested structure${label ? ` for ${label}` : ""}`);
+    }
+}
+
+function destructureInto(pattern, sourceRef, outerMode, context, evaluate) {
+    const resolved = unwrapDestructureTarget(pattern, outerMode);
+    const base = resolved.base;
+
+    if (base?.type === "DestructureVariableTarget") {
+        bindDestructureTarget(pattern, sourceRef, outerMode, context);
+        return;
+    }
+
+    if (base?.type === "DestructureArrayPattern") {
+        const value = sourceRef.value;
+        if (!isSequenceLike(value)) {
+            throw new Error("Wrong rhs kind for array destructuring pattern");
+        }
+        for (let i = 0; i < base.entries.length; i++) {
+            const entryTarget = base.entries[i];
+            const item = i < value.values.length ? makeSourceRef(value.values[i]) : null;
+            const simple = unwrapDestructureTarget(entryTarget, resolved.bindingMode).base?.type === "DestructureVariableTarget";
+            if (!item) {
+                if (simple) {
+                    missingSimpleBind(entryTarget, resolved.bindingMode, context);
+                } else {
+                    throw new Error("Missing required nested structure");
+                }
+            } else {
+                destructureInto(entryTarget, item, resolved.bindingMode, context, evaluate);
+            }
+        }
+        if (base.rest) {
+            const restValues = value.values.slice(base.entries.length);
+            bindDestructureTarget(base.rest.target, makeSourceRef(createMutableSequence(restValues)), resolved.bindingMode, context);
+        }
+        return;
+    }
+
+    if (base?.type === "DestructureTuplePattern") {
+        const value = sourceRef.value;
+        if (!isTupleLike(value)) {
+            throw new Error("Wrong rhs kind for tuple destructuring pattern");
+        }
+        for (let i = 0; i < base.entries.length; i++) {
+            const entryTarget = base.entries[i];
+            const item = i < value.values.length ? makeSourceRef(value.values[i]) : null;
+            const simple = unwrapDestructureTarget(entryTarget, resolved.bindingMode).base?.type === "DestructureVariableTarget";
+            if (!item) {
+                if (simple) {
+                    missingSimpleBind(entryTarget, resolved.bindingMode, context);
+                } else {
+                    throw new Error("Missing required nested structure");
+                }
+            } else {
+                destructureInto(entryTarget, item, resolved.bindingMode, context, evaluate);
+            }
+        }
+        if (base.rest) {
+            const restValues = value.values.slice(base.entries.length);
+            bindDestructureTarget(base.rest.target, makeSourceRef(createTupleValue(restValues)), resolved.bindingMode, context);
+        }
+        return;
+    }
+
+    if (base?.type === "DestructureMapPattern") {
+        const value = sourceRef.value;
+        if (!isMapLike(value)) {
+            throw new Error("Wrong rhs kind for map destructuring pattern");
+        }
+        const seenKeys = new Set();
+        for (const entry of base.entries) {
+            const key = evaluatePatternKey(entry.sourceKey, evaluate);
+            seenKeys.add(key);
+            let itemRef = null;
+            if (value.type === "export_bundle" && value.entries instanceof Map && value.entries.has(key)) {
+                const cell = value.entries.get(key);
+                itemRef = makeSourceRef(cell?.value, cell || null);
+            } else if (value.entries instanceof Map && value.entries.has(key)) {
+                itemRef = makeSourceRef(value.entries.get(key));
+            }
+            const simpleOnly = Boolean(entry.wholeTarget) && !entry.nestedTarget;
+            if (!itemRef) {
+                if (simpleOnly) {
+                    missingSimpleBind(entry.wholeTarget, resolved.bindingMode, context);
+                    continue;
+                }
+                throw new Error("Missing required nested structure");
+            }
+            if (entry.wholeTarget) {
+                bindDestructureTarget(entry.wholeTarget, itemRef, resolved.bindingMode, context);
+            }
+            if (entry.nestedTarget) {
+                destructureInto(entry.nestedTarget, itemRef, resolved.bindingMode, context, evaluate);
+            }
+        }
+        if (base.rest) {
+            const restEntries = [];
+            if (value.entries instanceof Map) {
+                for (const [key, entryValue] of value.entries.entries()) {
+                    if (!seenKeys.has(key)) {
+                        restEntries.push([key, value.type === "export_bundle" ? entryValue.value : entryValue]);
+                    }
+                }
+            }
+            bindDestructureTarget(base.rest.target, makeSourceRef(createMutableMap(restEntries)), resolved.bindingMode, context);
+        }
+        return;
+    }
+
+    if (base?.type === "DestructureTensorPattern") {
+        const value = sourceRef.value;
+        if (!isTensor(value)) {
+            throw new Error("Wrong rhs kind for tensor destructuring pattern");
+        }
+        const shape = base.shape || [];
+        if (shape.length !== value.shape.length || shape.some((dim, idx) => dim !== value.shape[idx])) {
+            throw new Error("Tensor destructuring shape mismatch");
+        }
+        for (let row = 0; row < base.rows.length; row++) {
+            for (let col = 0; col < base.rows[row].length; col++) {
+                const offset = value.offset + row * value.strides[0] + col * value.strides[1];
+                destructureInto(base.rows[row][col], makeSourceRef(value.data[offset]), resolved.bindingMode, context, evaluate);
+            }
+        }
+        return;
+    }
+
+    throw new Error("Invalid destructuring target");
+}
+
 /**
  * Recursively set or remove `._mutable` (value-level mutability meta) on all
  * composite values within a value graph.
@@ -1376,6 +1651,18 @@ export const coreFunctions = {
             return performUpdate(name, rhsValue, context, "deep");
         },
         doc: "In-place deep value replacement (~~=) — like ~= but deep-copies rhs value",
+    },
+
+    DESTRUCTURE_ASSIGN: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const pattern = args[0];
+            const outerMode = assignmentOpToBindingMode(args[1]);
+            const rhsValue = evaluate(args[2]);
+            destructureInto(pattern, makeSourceRef(rhsValue), outerMode, context, evaluate);
+            return rhsValue;
+        },
+        doc: "General lhs destructuring assignment",
     },
 
     OUTER_ASSIGN: {

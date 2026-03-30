@@ -1,4 +1,4 @@
-import { Integer } from "@ratmath/core";
+import { Integer, Rational, RationalInterval } from "@ratmath/core";
 import { createEvent, getCurrentFilePath, getDiagnostics } from "./diagnostics.js";
 
 function int(value) {
@@ -93,6 +93,23 @@ function valueMethod(name, fn) {
 }
 
 const typeRegistry = new Map([
+    ["rational", {
+        apply(value) {
+            if (value instanceof Rational) return value;
+            if (value instanceof Integer) return new Rational(value.value, 1n);
+            if (value instanceof RationalInterval) {
+                if (value.low.equals(value.high)) return value.low;
+                return null;
+            }
+            return null;
+        },
+        proto() {
+            return makeProto([
+                ["Describe", valueMethod("Describe", () => stringObj("type:rational"))],
+                ["KIND", valueMethod("KIND", () => stringObj("type:rational"))],
+            ]);
+        },
+    }],
     ["oracle", {
         apply(value) {
             if (value?.type === "oracle") return value;
@@ -252,7 +269,25 @@ function applyType(header, value) {
     const typeName = header.typeName;
     if (!typeName) return value;
     const handler = typeRegistry.get(typeName);
-    return handler?.apply ? handler.apply(value) : value;
+    if (!handler?.apply) {
+        throw new Error(`Unknown semantic type: ${typeName}`);
+    }
+    const nextValue = handler.apply(value);
+    if (nextValue === null || nextValue === undefined) {
+        throw new Error(`Cannot convert value to semantic type ${typeName}`);
+    }
+    return nextValue;
+}
+
+export function valueSatisfiesTrait(value, traitName) {
+    if (traitOrderFromSet(value?._ext?.get("__traits")).includes(traitName)) {
+        return true;
+    }
+    const check = traitChecks.get(traitName);
+    if (!check) {
+        return false;
+    }
+    return Boolean(check(value));
 }
 
 export function readStickyHeader(value) {
@@ -341,4 +376,3 @@ export function rebuildSemanticMetadata(value, context) {
     }
     return value;
 }
-

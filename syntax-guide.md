@@ -29,6 +29,8 @@
 | `~=` | `ASSIGN_UPDATE` | `x ~= 9` (in-place) |
 | `::=` | `ASSIGN_DEEP_COPY` | `y ::= x` (deep copy) |
 | `~~=` | `ASSIGN_DEEP_UPDATE` | `x ~~= val` (deep in-place) |
+| `[a, b] = rhs` | `DESTRUCTURE_ASSIGN` | Destructure with outer `=` as the default per-entry binding mode |
+| `{= a, b[:x] } := rhs` | `DESTRUCTURE_ASSIGN` | Map destructuring with outer `:=` as the default per-entry binding mode |
 | `-` (unary) | `NEG` | `-x` |
 
 ### Implicit Multiplication & Callable Application
@@ -116,6 +118,64 @@ Variables name **cells** — mutable containers holding a value and meta propert
 - `=` shares a cell (aliases track mutations); `:=` creates an independent copy.
 - `~=` replaces the value inside an existing cell, so aliases see the change. `=` rebinds to a different cell.
 - Combo operators (`+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `^=`, `++=`, `\/=`, `/\=`, `\=`, `**=`, `/^=`, `/~=`) use `~=` semantics — they preserve cell identity.
+
+### Left-Hand Destructuring
+
+RiX supports left-hand destructuring for arrays, tuples, maps, and tensors. Destructuring:
+
+1. evaluates the rhs once
+2. extracts the actual stored entries from that source structure
+3. binds outward using ordinary RiX assignment semantics
+
+The outer operator sets the default binding mode for all bound targets unless an entry overrides it:
+
+```rix
+[a, b] = rhs
+[a, b] := rhs
+{= a, ~=b[:x] } ~= rhs
+```
+
+Patterns:
+
+```rix
+[a, b, ...rest]
+{: a, b, ...rest }
+(a, b, ...rest)
+{= a, b[:x], pair[:pt] = [u, v], [:meta] = {: p, q}, ...rest }
+{:2x2: [a, b], [c, d]}
+```
+
+Failure rules:
+
+- missing simple array/tuple positions bind a hole
+- missing simple map keys bind a hole
+- missing nested required structure is an error
+- extra source contents are ignored unless captured by final `...rest`
+
+Map forms:
+
+- `a` means key `a`, target `a`
+- `b[:a]` means key `a`, target `b`
+- `a = pattern` means bind whole selected value to `a`, then destructure it
+- `[:a] = pattern` means destructure key `a` without binding the whole selected value
+- `b[:a] = pattern` means bind the whole selected value to `b`, then destructure it
+
+Per-entry overrides reuse assignment semantics directly:
+
+```rix
+[==a, :=b, ~=c, ~~=d]
+{: ==a, b, :=c }
+{= ==a, b[:x], ~=c[:y] }
+```
+
+Target-side semantic wrapping uses `{^ /.../ target}` inside patterns:
+
+```rix
+[{^ /::rational/ x}] = [2]
+{= p[:pt] = {^ /:= #point ::Point :cartesian/ q} } = m
+```
+
+In destructuring headers, `:trait` is a required source-side check. The extracted source value must already satisfy that trait or evaluation fails.
 
 ### Headered Outfitting And Constructor Capture
 

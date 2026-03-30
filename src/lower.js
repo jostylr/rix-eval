@@ -230,6 +230,15 @@ const LOWERERS = {
     const op = node.operator;
 
     // Assignment operators — each produces a different IR node
+    if (
+      op === "=" || op === ":=" || op === "~=" || op === "::=" || op === "~~="
+    ) {
+      const leftType = node.left?.type || "";
+      if (leftType.startsWith("Destructure")) {
+        return ir("DESTRUCTURE_ASSIGN", lowerDestructureTarget(node.left), op, lowerNode(node.right));
+      }
+    }
+
     if (op === "=") return lowerAssignment(node, "ASSIGN");
     if (op === ":=") return lowerAssignment(node, "ASSIGN_COPY");
     if (op === "~=") return lowerAssignment(node, "ASSIGN_UPDATE");
@@ -1047,6 +1056,59 @@ function lowerAssignment(node, irFn) {
 
   // Fallback: generic assignment expression
   return ir("ASSIGN_EXPR", lowerNode(left), lowerNode(node.right));
+}
+
+function lowerDestructureTarget(node) {
+  if (!node || !node.type) {
+    throw new Error("Invalid destructure target");
+  }
+
+  switch (node.type) {
+    case "DestructureVariableTarget":
+      return { type: node.type, name: node.name };
+    case "DestructureBindingModeTarget":
+      return { type: node.type, bindingMode: node.bindingMode, target: lowerDestructureTarget(node.target) };
+    case "DestructureSemanticTarget":
+      return { type: node.type, header: node.header ? lowerNode(node.header) : null, target: lowerDestructureTarget(node.target) };
+    case "DestructureRestTarget":
+      return { type: node.type, target: lowerDestructureTarget(node.target) };
+    case "DestructureArrayPattern":
+    case "DestructureTuplePattern":
+      return {
+        type: node.type,
+        entries: (node.entries || []).map(lowerDestructureTarget),
+        rest: node.rest ? lowerDestructureTarget(node.rest) : null,
+      };
+    case "DestructureMapPattern":
+      return {
+        type: node.type,
+        entries: (node.entries || []).map(lowerDestructureTarget),
+        rest: node.rest ? lowerDestructureTarget(node.rest) : null,
+      };
+    case "DestructureMapEntry":
+      {
+        let loweredKey;
+        if (node.sourceKey?.type === "UserIdentifier" || node.sourceKey?.type === "SystemIdentifier") {
+          loweredKey = { type: "MapKeyIdentifier", value: node.sourceKey.name };
+        } else {
+          loweredKey = lowerNode(node.sourceKey);
+        }
+        return {
+          type: node.type,
+          sourceKey: loweredKey,
+          wholeTarget: node.wholeTarget ? lowerDestructureTarget(node.wholeTarget) : null,
+          nestedTarget: node.nestedTarget ? lowerDestructureTarget(node.nestedTarget) : null,
+        };
+      }
+    case "DestructureTensorPattern":
+      return {
+        type: node.type,
+        shape: [...(node.shape || [])],
+        rows: (node.rows || []).map((row) => row.map(lowerDestructureTarget)),
+      };
+    default:
+      throw new Error(`Unknown destructure target node type: ${node.type}`);
+  }
 }
 
 /**

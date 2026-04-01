@@ -116,11 +116,36 @@ Variables name **cells** — mutable containers holding a value and meta propert
 | `x /~= expr` | `ASSIGN_UPDATE` | Rounded-division assignment — delegates to `x /~ expr` then updates in place |
 | `F(x) -> body` | `FUNCDEF` | `Sq(x) -> x ^ 2` |
 | `(x) -> body` | `LAMBDA` | `(x) -> x + 1` |
+| `F(x) ?- [prep] -> body` | `FUNCDEF` | Soft prep phase before body |
+| `(x) ?!- [prep] -> body` | `LAMBDA` | Strict prep phase before body |
 
 **Key distinctions:**
 - `=` shares a cell (aliases track mutations); `:=` creates an independent copy.
 - `~=` replaces the value inside an existing cell, so aliases see the change. `=` rebinds to a different cell.
 - Combo operators (`+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `^=`, `++=`, `\/=`, `/\=`, `\=`, `**=`, `/^=`, `/~=`) use `~=` semantics — they preserve cell identity.
+
+#### Function Prep Phase
+
+Prep runs after parameter binding and before the function body:
+
+```rix
+(x, y) ?- [
+  xr = x ~: :rational,
+  yr = y ~: :rational,
+  sum = xr + yr,
+  sum > 0
+] -> sum
+```
+
+Rules:
+
+- Prep entries execute left-to-right.
+- Prep shares the function's local scope.
+- Prep-created bindings are visible to later prep entries and to the body.
+- In `?-`, a prep entry that returns `_` or throws makes the call return `_`.
+- In `?!-`, the same failures throw.
+
+Prep is meant for validation, conversion, destructuring, and local setup. RiX does not currently restrict mutation or IO in prep.
 
 ### Left-Hand Destructuring
 

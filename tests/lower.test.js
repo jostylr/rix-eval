@@ -435,6 +435,57 @@ describe("Lowering Pass", () => {
       expect(ir.args[1].fn).toBe("POW");
     });
 
+    test("lambda prep lowers into params metadata", () => {
+      const ir = L("(x, y) ?- [sum = x + y, sum > 0] -> sum;");
+      expect(ir.fn).toBe("LAMBDA");
+      expect(ir.args[0].prepStrict).toBe(false);
+      expect(ir.args[0].prep).toEqual([
+        {
+          fn: "ASSIGN",
+          args: [
+            "sum",
+            {
+              fn: "ADD",
+              args: [
+                { fn: "RETRIEVE", args: ["x"] },
+                { fn: "RETRIEVE", args: ["y"] },
+              ],
+            },
+          ],
+        },
+        {
+          fn: "GT",
+          args: [
+            { fn: "RETRIEVE", args: ["sum"] },
+            { fn: "LITERAL", args: ["0"] },
+          ],
+        },
+      ]);
+      expect(ir.args[1]).toEqual({ fn: "RETRIEVE", args: ["sum"] });
+    });
+
+    test("named function strict prep lowers into params metadata", () => {
+      const ir = L("F(x) ?!- [xr = x ~!: :rational] -> xr;");
+      expect(ir.fn).toBe("FUNCDEF");
+      expect(ir.args[0]).toBe("F");
+      expect(ir.args[1].prepStrict).toBe(true);
+      expect(ir.args[1].prep).toEqual([
+        {
+          fn: "ASSIGN",
+          args: [
+            "xr",
+            {
+              fn: "SEMANTIC_CONVERT_STRICT",
+              args: [
+                { fn: "RETRIEVE", args: ["x"] },
+                "rational",
+              ],
+            },
+          ],
+        },
+      ]);
+    });
+
     test("function with hole-default params", () => {
       const ir = L("f(x, n ?= 5) :-> x^n;");
       expect(ir.fn).toBe("FUNCDEF");

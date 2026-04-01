@@ -97,6 +97,42 @@ function bindCallScope(params, callArgs, evaluate) {
     return scope;
 }
 
+function prepFailureError(fn, entryIndex) {
+    const label = fn?.name || "<lambda>";
+    return new Error(`${label} prep failed at entry ${entryIndex + 1}`);
+}
+
+function runCallablePrep(fn, context, evaluate) {
+    const conditionals = Array.isArray(fn?.params?.conditionals) ? fn.params.conditionals : [];
+    const prep = Array.isArray(fn?.params?.prep) ? fn.params.prep : [];
+    const entries = [...conditionals, ...prep];
+
+    if (entries.length === 0) {
+        return { ok: true };
+    }
+
+    const strict = fn?.params?.prepStrict === true;
+
+    for (let i = 0; i < entries.length; i++) {
+        try {
+            const value = evaluate(entries[i]);
+            if (value === null) {
+                if (strict) {
+                    throw prepFailureError(fn, i);
+                }
+                return { ok: false };
+            }
+        } catch (error) {
+            if (strict) {
+                throw error;
+            }
+            return { ok: false };
+        }
+    }
+
+    return { ok: true };
+}
+
 function invokeUserCallable(fn, callArgs, context, evaluate, options = {}) {
     const callName = options.callName ?? fn.name ?? null;
     const shareBody = options.shareBody !== false;
@@ -131,6 +167,13 @@ function invokeUserCallable(fn, callArgs, context, evaluate, options = {}) {
 
     try {
         while (true) {
+            const prepResult = runCallablePrep(fn, context, evaluate);
+            if (!prepResult.ok) {
+                doTraceExit(null, false);
+                traceActive = false;
+                return null;
+            }
+
             let result;
             context.pushCurrentCallable(fn);
             try {

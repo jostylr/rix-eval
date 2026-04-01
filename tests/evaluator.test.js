@@ -918,6 +918,38 @@ describe("RiX Evaluator", () => {
             expect(result).toBeInstanceOf(Integer);
             expect(result.value).toBe(20000n);
         });
+
+        test("soft prep builds locals and exposes them to the body", () => {
+            const result = evalRix("F(x, y) ?- [sum = x + y, sum > 0] -> sum; F(2, 3);");
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(5n);
+        });
+
+        test("soft prep returns null when a prep entry returns _", () => {
+            const result = evalRix("F(x) ?- [x > 0] -> x; F(-1);");
+            expect(result).toBeNull();
+        });
+
+        test("soft prep returns null when a prep entry throws", () => {
+            const result = evalRix("F(x) ?- [y = x[9]] -> y; F([1, 2]);");
+            expect(result).toBeNull();
+        });
+
+        test("strict prep throws when a prep entry returns _", () => {
+            expect(() => evalRix("F(x) ?!- [x > 0] -> x; F(-1);")).toThrow(/prep failed/);
+        });
+
+        test("prep supports destructuring and local setup", () => {
+            const result = evalRix("F(pair) ?- [[a, b] = pair, total = a + b, total > 0] -> total; F([2, 5]);");
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(7n);
+        });
+
+        test("tail self calls rerun prep after each rebinding", () => {
+            const result = evalRix("F(n, acc ?= 0) ?- [n >= 0, acc >= 0] -> n > 0 ?? $(n - 1, acc + n) ?: acc; F(4);");
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(10n);
+        });
     });
 
     describe("Collections", () => {

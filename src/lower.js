@@ -480,13 +480,13 @@ const LOWERERS = {
 
   FunctionDefinition(node) {
     const name = node.name.name || node.name.value;
-    const params = lowerParams(node.parameters);
+    const params = lowerParams(node.parameters, node.prep, node.prepStrict);
     const body = lowerFunctionBody(node.body);
     return ir("FUNCDEF", name, params, body);
   },
 
   FunctionLambda(node) {
-    const params = lowerParams(node.parameters);
+    const params = lowerParams(node.parameters, node.prep, node.prepStrict);
     const body = lowerFunctionBody(node.body);
     return ir("LAMBDA", params, body);
   },
@@ -1174,7 +1174,7 @@ function lowerCallArgs(args) {
 /**
  * Lower parameter definitions into a serializable format.
  */
-function lowerParams(params) {
+function lowerParams(params, prep = null, prepStrict = false) {
   if (!params) return { positional: [], keyword: [], conditionals: [] };
 
   return {
@@ -1192,6 +1192,8 @@ function lowerParams(params) {
       name: p.name,
     })),
     conditionals: (params.conditionals || []).map(lowerNode),
+    prep: prep && prep.type === "Array" ? prep.elements.map(lowerNode) : [],
+    prepStrict: prepStrict === true,
     metadata: params.metadata || {},
   };
 }

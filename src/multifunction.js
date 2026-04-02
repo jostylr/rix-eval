@@ -76,7 +76,11 @@ export function maybeAutoMarkMultifunction(name, value) {
     if (!value || value.type !== "sequence" || !Array.isArray(value.values)) {
         return value;
     }
-    return markAsMultifunction(value);
+    const marked = markAsMultifunction(value);
+    if (!marked.__name) {
+        marked.__name = name;
+    }
+    return marked;
 }
 
 export function createMultifunctionValue(variants) {

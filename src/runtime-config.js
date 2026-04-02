@@ -3,6 +3,8 @@ export const runtimeDefaults = Object.freeze({
   defaultConstructorCaptureMode: "deep_copy",
   warnings: Object.freeze({
     conversion: false,
+    multifunctionConversion: false,
+    multifunctionNoPrep: false,
   }),
   scriptPermissionNames: Object.freeze(["IMPORTS", "NET", "FILES"]),
   defaultScriptCapabilityPolicy: Object.freeze({

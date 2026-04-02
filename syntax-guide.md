@@ -118,6 +118,9 @@ Variables name **cells** — mutable containers holding a value and meta propert
 | `(x) -> body` | `LAMBDA` | `(x) -> x + 1` |
 | `F(x) ?- [prep] -> body` | `FUNCDEF` | Soft prep phase before body |
 | `(x) ?!- [prep] -> body` | `LAMBDA` | Strict prep phase before body |
+| `F(x) => body` | `MULTIFUNCDEF` | Append variant to multifunction |
+| `F(x) ^=> body` | `MULTIFUNCDEF` | Prepend variant to multifunction |
+| `(x) /Name/ -> body` | `LAMBDA` | Name a variant with `variant.__name` |
 
 **Key distinctions:**
 - `=` shares a cell (aliases track mutations); `:=` creates an independent copy.
@@ -146,6 +149,52 @@ Rules:
 - In `?!-`, the same failures throw.
 
 Prep is meant for validation, conversion, destructuring, and local setup. RiX does not currently restrict mutation or IO in prep.
+
+#### Multifunctions
+
+Multifunctions are callable arrays marked with `._type = :multifunction`. RiX automatically applies that mark when an uppercase identifier is assigned an array.
+
+```rix
+F = [
+  (x) ?- [x > 0] /Positive/ -> x,
+  (x) /Fallback/ -> -x
+]
+```
+
+Dispatch model:
+
+- variants are considered in array order
+- prep success selects the variant
+- prep failure (`_` or soft prep error) moves to the next variant
+- body errors propagate
+- body return values are final, including `_`
+- if nothing matches, the result is `_`
+
+`?!-` keeps its strict meaning inside multifunctions: a thrown prep error propagates, while a prep result of `_` still counts as "try the next variant".
+
+Append and prepend forms mutate the multifunction definition:
+
+```rix
+F(x) => x + 1
+F(x) ^=> x * 10
+F(x) /Exact/ => x
+```
+
+If `F` is undefined, RiX creates a new multifunction. If `F` is a single function, RiX converts it into a multifunction before appending.
+
+Named variants use `/Name/` and can be dispatched directly:
+
+```rix
+F[:Exact](7)
+$$[:Exact](7)
+```
+
+Inside a variant body:
+
+- `$` resolves the current variant
+- `$$` resolves the parent multifunction
+
+If execution reaches a variant with no prep and later variants still exist, RiX can emit a configurable warning because the later variants are unreachable from that point.
 
 ### Left-Hand Destructuring
 

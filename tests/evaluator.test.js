@@ -5,6 +5,7 @@ import { lower } from "../src/lower.js";
 import { evaluate, createDefaultRegistry, createDefaultSystemContext } from "../src/evaluator.js";
 import { Context } from "../src/context.js";
 import { Integer, Rational, BaseSystem } from "@ratmath/core";
+import { getDiagnostics } from "../src/diagnostics.js";
 
 function systemLookup(name) {
     const symbols = {
@@ -1677,6 +1678,111 @@ describe("RiX Evaluator", () => {
             evalRix("x = 15;", ctx);
             const result = evalRix("x > 10 ?? 1 ?: x > 5 ?? 2 ?: 3;", ctx);
             expect(result.value).toBe(1n);
+        });
+    });
+
+    describe("Multifunctions", () => {
+        test("dispatches in array order based on prep success", () => {
+            const result = evalRix(`
+                F = [
+                  (x) ?- [x > 0] -> x,
+                  (x) -> -x
+                ];
+                {: F(5), F(-5) };
+            `);
+            expect(result.type).toBe("tuple");
+            expect(result.values[0].value).toBe(5n);
+            expect(result.values[1].value).toBe(5n);
+        });
+
+        test("body null does not fall through", () => {
+            const result = evalRix(`
+                F = [
+                  (x) ?- [x > 0] -> _,
+                  (x) -> 10
+                ];
+                F(5);
+            `);
+            expect(result).toBeNull();
+        });
+
+        test("prep failure falls through and soft prep errors do not propagate", () => {
+            const result = evalRix(`
+                F = [
+                  (x) ?- [xr = x ~: :rational] -> xr,
+                  (x) -> 10
+                ];
+                F("bad");
+            `);
+            expect(result.value).toBe(10n);
+        });
+
+        test("strict prep errors propagate", () => {
+            expect(() => evalRix(`
+                F = [
+                  (x) ?!- [xr = x ~!: :rational] -> xr,
+                  (x) -> 10
+                ];
+                F("bad");
+            `)).toThrow(/Cannot convert value to semantic type rational/);
+        });
+
+        test("append and prepend build multifunctions", () => {
+            const result = evalRix(`
+                F(x) => x + 1;
+                F(x) => x + 2;
+                F(x) ^=> x * 10;
+                {: F(3), F[-1](3) };
+            `);
+            expect(result.values[0].value).toBe(30n);
+            expect(result.values[1].value).toBe(5n);
+        });
+
+        test("named variants support direct dispatch", () => {
+            const result = evalRix(`
+                F = [
+                  (x) /A/ -> x + 1,
+                  (x) /B/ -> x + 2
+                ];
+                F[:B](3);
+            `);
+            expect(result.value).toBe(5n);
+        });
+
+        test("duplicate names error when multifunction is called", () => {
+            expect(() => evalRix(`
+                F = [
+                  (x) /A/ -> x,
+                  (x) /A/ -> x + 1
+                ];
+                F(2);
+            `)).toThrow(/Duplicate multifunction variant name/);
+        });
+
+        test("warns for no-prep variant before later variants when enabled", () => {
+            const ctx = new Context();
+            ctx.setEnv("warnings", { multifunctionNoPrep: true });
+            evalRix(`
+                F = [
+                  (x) -> x,
+                  (x) -> x + 1
+                ];
+                F(3);
+            `, ctx);
+            const warnings = getDiagnostics(ctx).getEventsByKind("warning");
+            expect(warnings).toHaveLength(1);
+            expect(warnings[0].entries.get("label")?.value).toBe("Multifunction variant without prep is not last");
+        });
+
+        test("parent multifunction is available as $$ inside variants", () => {
+            const result = evalRix(`
+                F = [
+                  (x) /Base/ -> x + 1,
+                  (x) /Again/ -> $$[:Base](x) * 2
+                ];
+                F[:Again](3);
+            `);
+            expect(result.value).toBe(8n);
         });
     });
 

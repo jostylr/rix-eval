@@ -297,7 +297,8 @@ export class Context {
     }
 
     pushCurrentCallable(callable) {
-        this.currentCallables.push(callable);
+        const parentCallable = arguments.length > 1 ? arguments[1] : null;
+        this.currentCallables.push({ callable, parentCallable });
     }
 
     popCurrentCallable() {
@@ -308,7 +309,14 @@ export class Context {
         if (this.currentCallables.length === 0) {
             return undefined;
         }
-        return this.currentCallables[this.currentCallables.length - 1];
+        return this.currentCallables[this.currentCallables.length - 1].callable;
+    }
+
+    getParentCallable() {
+        if (this.currentCallables.length === 0) {
+            return undefined;
+        }
+        return this.currentCallables[this.currentCallables.length - 1].parentCallable;
     }
 
     // --- Environment ---

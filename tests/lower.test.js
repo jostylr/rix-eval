@@ -486,6 +486,21 @@ describe("Lowering Pass", () => {
       ]);
     });
 
+    test("lambda variant name lowers into params metadata", () => {
+      const ir = L("(x) /Rational/ -> x;");
+      expect(ir.fn).toBe("LAMBDA");
+      expect(ir.args[0].metadata.variantName).toBe("Rational");
+    });
+
+    test("append variant lowers to multifunction definition IR", () => {
+      const ir = L("F(x) /Base/ => x + 1;");
+      expect(ir.fn).toBe("MULTIFUNCDEF");
+      expect(ir.args[0]).toBe("F");
+      expect(ir.args[1]).toBe("append");
+      expect(ir.args[2].metadata.variantName).toBe("Base");
+      expect(ir.args[3].fn).toBe("ADD");
+    });
+
     test("function with hole-default params", () => {
       const ir = L("f(x, n ?= 5) :-> x^n;");
       expect(ir.fn).toBe("FUNCDEF");
@@ -539,6 +554,12 @@ describe("Lowering Pass", () => {
 
     test("assigning to bare $ is rejected during lowering", () => {
       expect(() => L("$ = 1;")).toThrow(/Cannot assign to '\$'/);
+    });
+
+    test("parent self lowers inside function bodies", () => {
+      const ir = L("(x) -> $$;");
+      expect(ir.fn).toBe("LAMBDA");
+      expect(ir.args[1]).toEqual({ fn: "PARENT_SELF", args: [] });
     });
   });
 

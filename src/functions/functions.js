@@ -6,6 +6,13 @@ import { Integer, Rational } from "@ratmath/core";
 import { keyOf } from "./keyof.js";
 import { HOLE, isHole } from "../hole.js";
 import { createTensor, forEachTensorCell, isTensor, tensorIndexTuple } from "../tensor.js";
+import {
+    appendMultifunctionVariant,
+    emitNoPrepWarning,
+    isMultifunctionValue,
+    rebuildMultifunctionState,
+    shouldWarnNoPrep,
+} from "../multifunction.js";
 
 const isTruthy = (val) => val !== null && val !== undefined;
 
@@ -133,9 +140,19 @@ function runCallablePrep(fn, context, evaluate) {
     return { ok: true };
 }
 
+function traceCallEvent(context, entry) {
+    const tc = context.getEnv("__trace_context__");
+    if (!tc || !tc.active) {
+        return;
+    }
+    tc.log.push(entry);
+}
+
 function invokeUserCallable(fn, callArgs, context, evaluate, options = {}) {
     const callName = options.callName ?? fn.name ?? null;
     const shareBody = options.shareBody !== false;
+    const parentCallable = options.parentCallable ?? fn.__parentMultifunction ?? null;
+    const returnPrepStatus = options.returnPrepStatus === true;
     let scopeActive = false;
 
     const tc = context.getEnv("__trace_context__");
@@ -171,11 +188,11 @@ function invokeUserCallable(fn, callArgs, context, evaluate, options = {}) {
             if (!prepResult.ok) {
                 doTraceExit(null, false);
                 traceActive = false;
-                return null;
+                return returnPrepStatus ? { matched: false, value: null } : null;
             }
 
             let result;
-            context.pushCurrentCallable(fn);
+            context.pushCurrentCallable(fn, parentCallable);
             try {
                 result = shareBody
                     ? context.withSharedBody(fn.body, () => evaluate(fn.body))
@@ -187,7 +204,7 @@ function invokeUserCallable(fn, callArgs, context, evaluate, options = {}) {
             if (!isTailSelfCall(result)) {
                 doTraceExit(result, false);
                 traceActive = false;
-                return result;
+                return returnPrepStatus ? { matched: true, value: result } : result;
             }
 
             doTraceExit(result.args, false);
@@ -205,6 +222,65 @@ function invokeUserCallable(fn, callArgs, context, evaluate, options = {}) {
         if (callName) context.popCall();
         if (scopeActive) context.pop();
     }
+}
+
+function invokeMultifunction(multifn, callArgs, context, evaluate, options = {}) {
+    const ownerName = options.callName ?? multifn.__name ?? null;
+    const namedOnly = options.namedOnly ?? null;
+    rebuildMultifunctionState(multifn);
+
+    const variants = namedOnly ? [namedOnly] : multifn.values;
+    for (let index = 0; index < variants.length; index++) {
+        const variant = variants[index];
+        if (!variant || (variant.type !== "function" && variant.type !== "lambda")) {
+            const displayIndex = namedOnly ? variant?.__name || "named" : `${index + 1}`;
+            throw new Error(`Multifunction variant ${displayIndex} is not a function`);
+        }
+
+        const actualIndex = namedOnly ? multifn.values.indexOf(variant) : index;
+        const variantName = variant.__name ?? null;
+        traceCallEvent(context, {
+            event: "variant",
+            fn: ownerName || "<multifunction>",
+            depth: context.getEnv("__trace_context__")?.currentDepth ?? 0,
+            variantIndex: actualIndex + 1,
+            variantName,
+        });
+
+        const prepEntries =
+            (Array.isArray(variant?.params?.conditionals) ? variant.params.conditionals.length : 0) +
+            (Array.isArray(variant?.params?.prep) ? variant.params.prep.length : 0);
+        if (!namedOnly && prepEntries === 0 && actualIndex < multifn.values.length - 1 && shouldWarnNoPrep(context)) {
+            emitNoPrepWarning(context, ownerName, actualIndex, variantName);
+        }
+
+        const result = invokeUserCallable(variant, callArgs, context, evaluate, {
+            callName: ownerName,
+            parentCallable: multifn,
+            returnPrepStatus: true,
+        });
+        if (!result.matched) {
+            traceCallEvent(context, {
+                event: "prep_fail",
+                fn: ownerName || "<multifunction>",
+                depth: context.getEnv("__trace_context__")?.currentDepth ?? 0,
+                variantIndex: actualIndex + 1,
+                variantName,
+            });
+            continue;
+        }
+
+        traceCallEvent(context, {
+            event: "variant_selected",
+            fn: ownerName || "<multifunction>",
+            depth: context.getEnv("__trace_context__")?.currentDepth ?? 0,
+            variantIndex: actualIndex + 1,
+            variantName,
+        });
+        return result.value;
+    }
+
+    return null;
 }
 
 /**
@@ -225,6 +301,10 @@ export function callWithConcreteArgs(fn, callArgs, context, evaluate) {
 
     if (fn.type === "function" || fn.type === "lambda") {
         return invokeUserCallable(fn, callArgs, context, evaluate, { callName: fn.name });
+    }
+
+    if (isMultifunctionValue(fn)) {
+        return invokeMultifunction(fn, callArgs, context, evaluate, { callName: fn.__name });
     }
 
     // System function reference — concrete values have no .fn so they pass
@@ -281,6 +361,11 @@ function invokeTraversalCallback(func, callArgs, context, evaluate) {
             callName: func.name,
         });
     }
+    if (isMultifunctionValue(func)) {
+        return invokeMultifunction(func, callArgs, context, evaluate, {
+            callName: func.__name,
+        });
+    }
     if (typeof func === "function") {
         return func(...callArgs);
     }
@@ -322,6 +407,11 @@ export const functionFunctions = {
                 // Evaluate arguments (user functions are NOT lazy by default for now)
                 const callArgs = evaluateArgs(argNodes, evaluate);
                 return invokeUserCallable(funcDef, callArgs, context, evaluate, { callName: name });
+            }
+
+            if (isMultifunctionValue(funcDef)) {
+                const callArgs = evaluateArgs(argNodes, evaluate);
+                return invokeMultifunction(funcDef, callArgs, context, evaluate, { callName: name });
             }
 
             // If it's a sysref (system function reference)
@@ -371,6 +461,12 @@ export const functionFunctions = {
                 });
             }
 
+            if (isMultifunctionValue(funcVal)) {
+                return invokeMultifunction(funcVal, callArgs, context, evaluate, {
+                    callName: funcVal.__name,
+                });
+            }
+
             if (funcVal && funcVal.type === "sysref") {
                 return evaluate({ fn: funcVal.name, args: callArgs });
             }
@@ -414,6 +510,7 @@ export const functionFunctions = {
                 type: "lambda",
                 params,
                 body: args[1],  // Keep as raw IR — will be evaluated when called
+                ...(params?.metadata?.variantName ? { __name: params.metadata.variantName } : {}),
             };
         },
         doc: "Create a lambda/anonymous function",
@@ -434,12 +531,35 @@ export const functionFunctions = {
                 name,
                 params,
                 body,
+                ...(params?.metadata?.variantName ? { __name: params.metadata.variantName } : {}),
             };
 
             context.defineFunction(name, funcDef);
             return funcDef;
         },
         doc: "Define a named function",
+    },
+
+    MULTIFUNCDEF: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            const name = args[0];
+            const mode = args[1];
+            const params = evaluate(args[2]);
+            const body = args[3];
+            const variant = {
+                type: "function",
+                name,
+                params,
+                body,
+                ...(params?.metadata?.variantName ? { __name: params.metadata.variantName } : {}),
+            };
+            const updated = appendMultifunctionVariant(context.getCallable(name), variant, mode, context, name);
+            updated.__name = name;
+            context.defineFunction(name, updated);
+            return updated;
+        },
+        doc: "Append or prepend a multifunction variant",
     },
 
     PATTERNDEF: {
@@ -506,6 +626,10 @@ export const functionFunctions = {
             }
 
             if (func && (func.type === "function" || func.type === "lambda")) {
+                return callWithConcreteArgs(func, callArgs, context, evaluate);
+            }
+
+            if (isMultifunctionValue(func)) {
                 return callWithConcreteArgs(func, callArgs, context, evaluate);
             }
 

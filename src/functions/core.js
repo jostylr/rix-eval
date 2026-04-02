@@ -18,6 +18,7 @@ import { parse } from "../../../parser/src/parser.js";
 import { tokenize } from "../../../parser/src/tokenizer.js";
 import { lower } from "../lower.js";
 import { runtimeDefaults } from "../runtime-config.js";
+import { maybeAutoMarkMultifunction } from "../multifunction.js";
 
 const BASE_RESERVED_CHARS = new Set([".", "/", "#", "~", "_", "^", "+", "-"]);
 const BASE_MODE_ALIASES = new Map([
@@ -1659,6 +1660,17 @@ export const coreFunctions = {
         doc: "Resolve the current callable object inside a function body",
     },
 
+    PARENT_SELF: {
+        impl(_args, context) {
+            const callable = context.getParentCallable();
+            if (callable === undefined || callable === null) {
+                throw new Error("Parent self reference '$$' is only valid within a multifunction variant body");
+            }
+            return callable;
+        },
+        doc: "Resolve the parent multifunction inside a variant body",
+    },
+
     OUTER_RETRIEVE: {
         impl(args, context) {
             const name = args[0];
@@ -1706,7 +1718,7 @@ export const coreFunctions = {
             }
 
             // Otherwise evaluate and create a fresh Cell
-            const value = evaluate(rhsIR);
+            const value = maybeAutoMarkMultifunction(name, evaluate(rhsIR));
             recordTraceWrite(context, name, context.get(name) ?? null, value);
             context.setFresh(name, value);
             return value;

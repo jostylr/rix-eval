@@ -203,6 +203,10 @@ const LOWERERS = {
     return ir("SELF");
   },
 
+  ParentSelfRef() {
+    return ir("PARENT_SELF");
+  },
+
   UserIdentifier(node) {
     return ir("RETRIEVE", node.name);
   },
@@ -480,15 +484,22 @@ const LOWERERS = {
 
   FunctionDefinition(node) {
     const name = node.name.name || node.name.value;
-    const params = lowerParams(node.parameters, node.prep, node.prepStrict);
+    const params = lowerParams(node.parameters, node.prep, node.prepStrict, node.variantName);
     const body = lowerFunctionBody(node.body);
     return ir("FUNCDEF", name, params, body);
   },
 
   FunctionLambda(node) {
-    const params = lowerParams(node.parameters, node.prep, node.prepStrict);
+    const params = lowerParams(node.parameters, node.prep, node.prepStrict, node.variantName);
     const body = lowerFunctionBody(node.body);
     return ir("LAMBDA", params, body);
+  },
+
+  FunctionVariantDefinition(node) {
+    const name = node.name.name || node.name.value;
+    const params = lowerParams(node.parameters, node.prep, node.prepStrict, node.variantName);
+    const body = lowerFunctionBody(node.body);
+    return ir("MULTIFUNCDEF", name, node.mode, params, body);
   },
 
   PatternMatchingFunction(node) {
@@ -1174,7 +1185,7 @@ function lowerCallArgs(args) {
 /**
  * Lower parameter definitions into a serializable format.
  */
-function lowerParams(params, prep = null, prepStrict = false) {
+function lowerParams(params, prep = null, prepStrict = false, variantName = null) {
   if (!params) return { positional: [], keyword: [], conditionals: [] };
 
   return {
@@ -1194,7 +1205,10 @@ function lowerParams(params, prep = null, prepStrict = false) {
     conditionals: (params.conditionals || []).map(lowerNode),
     prep: prep && prep.type === "Array" ? prep.elements.map(lowerNode) : [],
     prepStrict: prepStrict === true,
-    metadata: params.metadata || {},
+    metadata: {
+      ...(params.metadata || {}),
+      ...(variantName ? { variantName } : {}),
+    },
   };
 }
 

@@ -107,6 +107,12 @@ export function formatValue(val) {
             }
             return `[Function: ${val.name || "Anonymous"}(${params})]`;
         }
+        if (val.type === "sequence" && val._ext instanceof Map && val._ext.get("_type")?.value === "multifunction") {
+            const names = val.values
+                .map((variant, index) => variant?.__name || `#${index + 1}`)
+                .join(", ");
+            return `[Multifunction: ${names || "empty"}]`;
+        }
         if (val.type === "pattern_function") {
             return `[PatternFunction: ${val.name || "Anonymous"}]`;
         }

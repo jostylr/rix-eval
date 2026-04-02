@@ -13,6 +13,7 @@ import { Cell } from "../cell.js";
 import { isTensor, tensorAssignBySelectors, tensorGetBySelectors } from "../tensor.js";
 import { getBuiltinProto } from "../methods.js";
 import { createTraitSet, rebuildSemanticMetadata } from "../semantic.js";
+import { getNamedMultifunctionVariant, isMultifunctionValue } from "../multifunction.js";
 
 /**
  * Convert a key value to a numeric index.
@@ -151,6 +152,20 @@ function sliceSequenceLike(obj, spec) {
 export function indexGetResolved(obj, key) {
     if (isTensor(obj)) {
         return tensorGetBySelectors(obj, [{ kind: "index", value: key }]);
+    }
+
+    if (isMultifunctionValue(obj)) {
+        const keyName =
+            typeof key === "string"
+                ? key
+                : (key && key.type === "string" ? key.value : null);
+        if (keyName !== null) {
+            const named = getNamedMultifunctionVariant(obj, keyName);
+            if (!named) {
+                throw new Error(`Unknown multifunction variant: ${keyName}`);
+            }
+            return named;
+        }
     }
 
     // Sequences / tuples (1-based, negative allowed)

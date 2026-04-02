@@ -60,6 +60,7 @@ export const IR = {
   // Functions
   call: (name, ...args) => ir("CALL", name, ...args),
   lambda: (params, body) => ir("LAMBDA", params, body),
+  multifuncdef: (name, mode, params, body) => ir("MULTIFUNCDEF", name, mode, params, body),
   pipe: (value, fn) => ir("PIPE", value, fn),
   pmap: (collection, fn) => ir("PMAP", collection, fn),
   pfilter: (collection, fn) => ir("PFILTER", collection, fn),

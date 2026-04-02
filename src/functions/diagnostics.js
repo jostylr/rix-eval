@@ -635,6 +635,8 @@ export const TRACE = {
             if (entry.var) m.set("var", toRixString(entry.var));
             if (entry.old !== undefined) m.set("old", entry.old);
             if (entry.new !== undefined) m.set("new", entry.new);
+            if (entry.variantIndex !== undefined) m.set("variantIndex", toRixInt(entry.variantIndex));
+            if (entry.variantName) m.set("variantName", toRixString(entry.variantName));
             return { type: "map", entries: m };
         });
 

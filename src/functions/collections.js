@@ -438,7 +438,7 @@ export const collectionFunctions = {
                 return collectionFunctions.INTERVAL.impl([lo, hi]);
             }
 
-            throw new Error(`UNION not defined for these types: ${a.type || a.constructor.name} and ${b.type || b.constructor.name}`);
+            throw new Error(`UNION not defined for these types: ${a.type || a.constructor?.name || typeof a} and ${b.type || b.constructor?.name || typeof b}`);
         },
         pure: true,
         doc: "Join/Union of two collections (set union or interval hull)",

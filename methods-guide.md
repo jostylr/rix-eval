@@ -207,9 +207,12 @@ This section is the reference version of the built-in method surface. Signatures
 `Slice(start?, end?)`
 - Signature: `array.Slice(start?, end?) -> Array`
 - Purpose: Return a non-mutating slice. Start is inclusive, end is exclusive, using RiX's 1-based indexing.
+- Note: Bracket slicing uses different semantics: `array[i:j]` is inclusive on both ends and may run backward.
 - Example:
 ```rix
 [1, 2, 3, 4].Slice(2, 4)   ## [2, 3]
+[1, 2, 3, 4][2:4]          ## [2, 3, 4]
+[1, 2, 3, 4][4:2]          ## [4, 3, 2]
 ```
 
 `Join(separator?)`
@@ -262,6 +265,27 @@ a.Push!(3, 4)
 [1, 2, 3].RemoveAt(2)   ## [1, 3]
 a := [1, 2, 3]
 a.RemoveAt!(2)          ## a is [1,,3]
+```
+
+`Swap(i, j)`, `Swap!(i, j)`
+- Signature: `array.Swap(i, j) -> Array`, `array.Swap!(i, j) -> Array`
+- Purpose: Exchange two existing slots. Negative indices count from the end.
+- Example:
+```rix
+[10, 20, 30].Swap(1, 3)   ## [30, 20, 10]
+```
+
+`Move(indexOrInterval, targetIndex)`, `Move!(indexOrInterval, targetIndex)`
+- Signature: `array.Move(indexOrInterval, targetIndex) -> Array`, `array.Move!(indexOrInterval, targetIndex) -> Array`
+- Purpose: Remove one element or an inclusive interval, then reinsert it elsewhere.
+- Semantics:
+  Positive `targetIndex` inserts before that 1-based position in the post-removal array.
+  Negative `targetIndex` inserts after that position counting from the end of the post-removal array.
+- Example:
+```rix
+[1, 2, 3, 4, 5, 6, 7].Move(4:6, 2)   ## [1, 4, 5, 6, 2, 3, 7]
+[1, 2, 3, 4].Move(1, -1)             ## [2, 3, 4, 1]
+[1, 2, 3, 4].Move(2, -2)             ## [1, 3, 2, 4]
 ```
 
 `Concat(valuesOrCollections...)`, `Concat!(valuesOrCollections...)`

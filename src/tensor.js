@@ -20,6 +20,17 @@ function exactInteger(value, label = "Index") {
         }
         return value;
     }
+    if (value && typeof value === "object") {
+        if (typeof value.value === "bigint") {
+            return Number(value.value);
+        }
+        if (typeof value.numerator === "bigint" && typeof value.denominator === "bigint") {
+            if (value.denominator !== 1n) {
+                throw new Error(`${label} must be an integer`);
+            }
+            return Number(value.numerator);
+        }
+    }
     throw new Error(`${label} must be an integer`);
 }
 

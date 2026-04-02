@@ -1,4 +1,4 @@
-import { Integer } from "@ratmath/core";
+import { Integer, RationalInterval, Rational } from "@ratmath/core";
 import { HOLE, isHole } from "./hole.js";
 import { keyOf } from "./functions/keyof.js";
 import { deferredMethods } from "./functions/deferred.js";
@@ -129,10 +129,49 @@ function valueKey(value) {
     return JSON.stringify(value);
 }
 
+function isInterval(value) {
+    if (!value || typeof value !== "object") return false;
+    if (value instanceof RationalInterval) return true;
+    if (value.type === "interval") return true;
+    return false;
+}
+
+function getIntervalRange(value, length) {
+    let lo, hi;
+    if (value && (value.type === "interval" || value instanceof RationalInterval)) {
+        lo = value.start;
+        hi = value.end;
+    } else {
+        lo = value.lo;
+        hi = value.hi;
+    }
+    const startNum = normalizeLookupIndex(lo, length);
+    const start = startNum === null ? (numericIndex(lo) < 1 ? 1 : length + 1) : startNum;
+    const endNum = normalizeLookupIndex(hi, length);
+    const end = endNum === null ? (numericIndex(hi) < 1 ? 1 : length + 1) : endNum;
+    return { start, end };
+}
+
 function numericIndex(value, label = "Index") {
     if (value instanceof Integer) return Number(value.value);
+    if (value instanceof Rational) {
+        if (value.denominator !== 1n) {
+            throw new Error(`${label} must be an integer, got ${value}`);
+        }
+        return Number(value.numerator);
+    }
+    if (value && typeof value === "object") {
+        if (typeof value.value === "bigint") return Number(value.value);
+        if (typeof value.numerator === "bigint" && typeof value.denominator === "bigint") {
+            if (value.denominator !== 1n) {
+                throw new Error(`${label} must be an integer, got ${value}`);
+            }
+            return Number(value.numerator);
+        }
+    }
     if (typeof value === "number" || typeof value === "bigint") return Number(value);
-    throw new Error(`${label} must be numeric`);
+    if (typeof value === "string" && !isNaN(value)) return Number(value);
+    throw new Error(`${label} must be numeric, got ${typeof value} (${value})`);
 }
 
 function normalizeLookupIndex(rawIndex, length) {
@@ -617,6 +656,67 @@ const arrayMethods = {
     FINDINDEX: method("FINDINDEX", ([target, iterator], context, evaluate, invoke) => findEntry(target, iterator, context, evaluate, invoke, true)),
     REDUCE: method("REDUCE", ([target, iterator, initial], context, evaluate, invoke) =>
         reduceEntries(target, iterator, initial, context, evaluate, invoke)),
+    "SWAP!": method("SWAP!", ([target, i, j]) => {
+        ensureSequence(target, "Swap!");
+        const len = target.values.length;
+        const idxI = normalizeLookupIndex(i, len);
+        const idxJ = normalizeLookupIndex(j, len);
+        if (idxI === null || idxJ === null) throw new Error("Index out of bounds for Swap!");
+        const tmp = target.values[idxI - 1];
+        target.values[idxI - 1] = target.values[idxJ - 1];
+        target.values[idxJ - 1] = tmp;
+        return target;
+    }),
+    SWAP: method("SWAP", ([target, i, j]) => {
+        ensureSequence(target, "Swap");
+        const copy = shallowCopyValue(target);
+        copy.values = [...target.values];
+        return arrayMethods["SWAP!"].impl([copy, i, j]);
+    }),
+    "MOVE!": method("MOVE!", ([target, rangeOrIdx, targetIdx]) => {
+        ensureSequence(target, "Move!");
+        const len = target.values.length;
+
+        let s, e;
+        if (isInterval(rangeOrIdx)) {
+            const range = getIntervalRange(rangeOrIdx, len);
+            s = range.start;
+            e = range.end;
+        } else {
+            s = normalizeLookupIndex(rangeOrIdx, len);
+            e = s;
+        }
+
+        if (s === null || e === null) throw new Error("Index out of bounds for Move!");
+
+        const actualStart = Math.min(s, e);
+        const actualEnd = Math.max(s, e);
+        const count = actualEnd - actualStart + 1;
+
+        const movedItems = target.values.splice(actualStart - 1, count);
+
+        let insertPos;
+        const newLen = target.values.length;
+        const rawTargetIdx = numericIndex(targetIdx);
+
+        if (rawTargetIdx > 0) {
+            insertPos = normalizeWritableIndex(targetIdx, newLen, true);
+        } else if (rawTargetIdx < 0) {
+            let idx = normalizeLookupIndex(targetIdx, newLen);
+            insertPos = (idx === null) ? newLen + 1 : idx + 1;
+        } else {
+            insertPos = 1;
+        }
+
+        target.values.splice(insertPos - 1, 0, ...movedItems);
+        return target;
+    }),
+    MOVE: method("MOVE", ([target, rangeOrIdx, targetIdx]) => {
+        ensureSequence(target, "Move");
+        const copy = shallowCopyValue(target);
+        copy.values = [...target.values];
+        return arrayMethods["MOVE!"].impl([copy, rangeOrIdx, targetIdx]);
+    }),
 };
 
 const mapMethods = {

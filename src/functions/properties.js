@@ -7,7 +7,7 @@
  * MUTCOPY, MUTINPLACE — map mutation operators
  */
 
-import { Integer } from "@ratmath/core";
+import { Integer, RationalInterval, Rational } from "@ratmath/core";
 import { keyOf, canonicalizeMetaKey } from "./keyof.js";
 import { Cell } from "../cell.js";
 import { isTensor, tensorAssignBySelectors, tensorGetBySelectors } from "../tensor.js";
@@ -20,8 +20,24 @@ import { getNamedMultifunctionVariant, isMultifunctionValue } from "../multifunc
  */
 function toInteger(key) {
     if (key instanceof Integer) return Number(key.value);
+    if (key instanceof Rational) {
+        if (key.denominator !== 1n) {
+            throw new Error(`Index must be an integer, got ${key}`);
+        }
+        return Number(key.numerator);
+    }
+    if (key && typeof key === "object") {
+        if (typeof key.value === "bigint") return Number(key.value);
+        if (typeof key.numerator === "bigint" && typeof key.denominator === "bigint") {
+            if (key.denominator !== 1n) {
+                throw new Error(`Index must be an integer, got ${key}`);
+            }
+            return Number(key.numerator);
+        }
+    }
     if (typeof key === "number" || typeof key === "bigint") return Number(key);
-    throw new Error(`Index must be numeric, got ${typeof key}`);
+    if (typeof key === "string" && !isNaN(key)) return Number(key);
+    throw new Error(`Index must be numeric, got ${typeof key} (${key})`);
 }
 
 /**
@@ -169,6 +185,20 @@ export function indexGetResolved(obj, key) {
     }
 
     // Sequences / tuples (1-based, negative allowed)
+    if (obj && (obj.type === "sequence" || obj.type === "tuple" || obj.type === "string")) {
+        if (key && (key.type === "interval" || key instanceof RationalInterval)) {
+            let sVal, eVal;
+            if (key instanceof RationalInterval) {
+                sVal = key.start;
+                eVal = key.end;
+            } else {
+                sVal = key.lo;
+                eVal = key.hi;
+            }
+            return bracketGetResolved(obj, [{ kind: "slice", start: sVal, end: eVal }]);
+        }
+    }
+
     if (obj && (obj.type === "sequence" || obj.type === "tuple")) {
         const idx = toInteger(key);
         const len = obj.values.length;

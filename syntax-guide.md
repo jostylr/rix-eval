@@ -287,6 +287,16 @@ Examples:
 
 Tuple bracket slices now produce tuples; sequence bracket slices produce sequences.
 
+For sequence-like values, bracket slices use interval semantics: they are closed (inclusive on both ends), strict, and directed.
+
+```rix
+a[2:4]      ## includes indices 2, 3, 4
+a[4:2]      ## traverses backward
+a[-2:-1]    ## counts from the end
+```
+
+This is intentionally different from receiver-first `.Slice(start?, end?)`, whose end bound remains exclusive.
+
 ### Headered Outfitting And Constructor Capture
 
 RiX now uses a shared `/ ... /` header zone for value outfitting and constructor defaults:

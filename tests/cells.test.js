@@ -418,10 +418,9 @@ describe("Cell Assignment Semantics", () => {
             expect(result.values.map((v) => v.toString())).toEqual(["1", "3"]);
         });
 
-        test("**= affects aliases using existing ** semantics", () => {
-            const result = evalRix('s := {| 1, 2 |}; t = s; s **= {| "a" |}; t;');
-            expect(result.type).toBe("set");
-            expect(result.values.length).toBe(2);
+        test("**= affects aliases using POWPROD semantics", () => {
+            const result = evalRix("x := 2; y = x; x **= 5; y;");
+            expect(result.value).toBe(32n);
         });
 
         test("/^= and /~= affect aliases", () => {

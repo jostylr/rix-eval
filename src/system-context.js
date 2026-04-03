@@ -172,6 +172,7 @@ export const OPERATOR_ALIASES = {
     "//": "INTDIV",
     "%":  "MOD",
     "^":  "POW",
+    "**": "POWPROD",
     "=":  "EQ",
     "!=": "NEQ",
     "<":  "LT",

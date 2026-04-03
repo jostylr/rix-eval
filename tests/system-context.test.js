@@ -87,6 +87,12 @@ describe("Parser — SystemObject / SystemAccess", () => {
         expect(ast[0].type).toBe("SystemAccess");
         expect(ast[0].property).toBe("MUL");
     });
+
+    test("@** produces SystemAccess { property: 'POWPROD' }", () => {
+        const ast = parseRix("@**");
+        expect(ast[0].type).toBe("SystemAccess");
+        expect(ast[0].property).toBe("POWPROD");
+    });
 });
 
 // ---------------------------------------------------------------------------
@@ -182,6 +188,12 @@ describe("Evaluator — .Name (SYS_GET)", () => {
         const result = evalRix("@*");
         expect(result.type).toBe("sysref");
         expect(result.name).toBe("MUL");
+    });
+
+    test("@** returns sysref to POWPROD", () => {
+        const result = evalRix("@**");
+        expect(result.type).toBe("sysref");
+        expect(result.name).toBe("POWPROD");
     });
 });
 

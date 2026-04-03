@@ -34,6 +34,7 @@ Args can contain other IR nodes (nested calls), literal strings, numbers, or str
 | `INTDIV` | `a // b` | `[left, right]` |
 | `MOD` | `a % b` | `[left, right]` |
 | `POW` | `a ^ b` | `[left, right]` |
+| `POWPROD` | `a ** b` | `[left, right]` |
 | `NEG` | `-x` | `[operand]` |
 
 ### Comparison

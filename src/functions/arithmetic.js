@@ -1,5 +1,5 @@
 /**
- * Arithmetic system functions: ADD, SUB, MUL, DIV, INTDIV, MOD, POW, NEG
+ * Arithmetic system functions: ADD, SUB, MUL, DIV, INTDIV, MOD, POW, POWPROD, NEG
  *
  * Uses ratmath core type methods for exact arithmetic.
  */
@@ -192,6 +192,17 @@ export const arithmeticFunctions = {
         },
         pure: true,
         doc: "Exponentiation",
+    },
+
+    POWPROD: {
+        impl(args) {
+            const base = ensureNumeric(args[0]);
+            const exp = ensureNumeric(args[1]);
+            const expValue = exp instanceof Integer ? exp.value : Number(exp.toString());
+            return base.pow(expValue);
+        },
+        pure: true,
+        doc: "Exponentiation/product power (currently same implementation as POW)",
     },
 
     NEG: {

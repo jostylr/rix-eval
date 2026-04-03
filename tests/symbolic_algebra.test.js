@@ -63,10 +63,10 @@ test("Symbolic Algebra: Intersects", () => {
     expect(evalRiX("1:5 ?& 6:10")).toBe(null);
 });
 
-test("Symbolic Algebra: Cartesian Product", () => {
-    const p = evalRiX("{| 1, 2 |} ** {| \"a\", \"b\" |}");
-    expect(p.type).toBe("set");
-    expect(p.values.length).toBe(4);
+test("Symbolic Algebra: Distinct ** dispatch name currently matches exponentiation", () => {
+    const p = evalRiX("2 ** 5");
+    expect(p).toBeInstanceOf(Integer);
+    expect(p.value).toBe(32n);
 });
 
 test("Symbolic Algebra: Concatenation", () => {

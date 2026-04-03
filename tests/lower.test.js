@@ -224,6 +224,10 @@ describe("Lowering Pass", () => {
       expect(L("a ^ b;").fn).toBe("POW");
     });
 
+    test("power product", () => {
+      expect(L("a ** b;").fn).toBe("POWPROD");
+    });
+
     test("nested: 2 + 3 * 4 → ADD(2, MUL(3, 4))", () => {
       const ir = L("2 + 3 * 4;");
       expect(ir.fn).toBe("ADD");

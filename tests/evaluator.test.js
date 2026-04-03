@@ -277,6 +277,12 @@ describe("RiX Evaluator", () => {
             expect(result.value).toBe(1024n);
         });
 
+        test("power product: 2 ** 10 = 1024", () => {
+            const result = evalRix("2 ** 10;");
+            expect(result).toBeInstanceOf(Integer);
+            expect(result.value).toBe(1024n);
+        });
+
         test("negation: -42", () => {
             const result = evalRix("-42;");
             expect(result).toBeInstanceOf(Integer);

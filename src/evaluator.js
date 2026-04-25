@@ -28,6 +28,7 @@ import { advancedFunctions } from "./functions/advanced.js";
 import { stdlibFunctions } from "./functions/stdlib.js";
 import { diagnosticFunctions } from "./functions/diagnostics.js";
 import { installSymbolicBindings, symbolicFunctions } from "./functions/symbolic.js";
+import { installRegisteredTypes, registerBuiltinSemanticTypes } from "./type-system.js";
 import { parse } from "../../parser/src/parser.js";
 import { tokenize } from "../../parser/src/tokenizer.js";
 import { lower } from "./lower.js";
@@ -36,7 +37,8 @@ import { lower } from "./lower.js";
  * Create the internal operator/language registry (no user-accessible stdlib).
  * Stdlib functions are now in SystemContext, accessible only via `.Name()`.
  */
-export function createDefaultRegistry() {
+export function createDefaultRegistry(options = {}) {
+    registerBuiltinSemanticTypes();
     const registry = new Registry();
     registry.registerAll(coreFunctions);
     registry.registerAll(arithmeticFunctions);
@@ -49,6 +51,10 @@ export function createDefaultRegistry() {
     registry.registerAll(propertyFunctions);
     registry.registerAll(advancedFunctions);
     registry.registerAll(symbolicFunctions);
+    installRegisteredTypes(registry);
+    for (const loadStartup of options.startupLoaders || []) {
+        loadStartup(registry);
+    }
     // Note: stdlibFunctions no longer registered here — use createDefaultSystemContext()
     return registry;
 }
@@ -71,6 +77,10 @@ export function createDefaultSystemContext(options = {}) {
     const ctx = new SystemContext(new Map(), false); // always build unfrozen
     ctx.registerAll(stdlibFunctions);
     ctx.register("EVAL", coreFunctions.EVAL);
+    ctx.register("TypeExport", coreFunctions.TYPE_EXPORT);
+    ctx.register("TypeImport", coreFunctions.TYPE_IMPORT);
+    ctx.register("TYPEEXPORT", coreFunctions.TYPE_EXPORT);
+    ctx.register("TYPEIMPORT", coreFunctions.TYPE_IMPORT);
     // User-callable property functions (KEYOF, KEYS, VALUES)
     const userPropertyNames = ["KEYOF", "KEYS", "VALUES"];
     for (const name of userPropertyNames) {

@@ -79,6 +79,7 @@ const BINARY_OPS = new Map([
     ["INTDIV", "//"],
     ["MOD", "%"],
     ["POW", "^"],
+    ["POWPROD", "**"],
     ["EQ", "=="],
     ["NEQ", "!="],
     ["LT", "<"],

@@ -1,3 +1,5 @@
+import { TYPE_INSTALL_FUNCTIONS } from "./type-system.js";
+
 /**
  * System Function Registry
  *
@@ -12,6 +14,7 @@ export class Registry {
     constructor() {
         this.functions = new Map();
         this._overrides = new Map(); // saved originals when overridden
+        this.multifunctionNames = new Set(TYPE_INSTALL_FUNCTIONS);
     }
 
     /**
@@ -24,11 +27,84 @@ export class Registry {
      * @param {string} [options.doc=""] - Documentation string
      */
     register(name, impl, options = {}) {
-        this.functions.set(name, {
+        const entry = {
             impl,
             lazy: options.lazy || false,
             pure: options.pure || false,
             doc: options.doc || "",
+        };
+        if (this.multifunctionNames.has(name) && !entry.lazy) {
+            this.functions.set(name, this._createSystemMultifunction(name, entry));
+            return;
+        }
+        this.functions.set(name, entry);
+    }
+
+    _createSystemMultifunction(name, fallback) {
+        return {
+            ...fallback,
+            systemMultifunction: true,
+            variants: [{
+                name: "NativeFallback",
+                impl: fallback.impl,
+                prep: null,
+                nativeFallback: true,
+                targetFunction: name,
+                installOrder: Number.POSITIVE_INFINITY,
+            }],
+            impl: (args, context, evaluate) => this._callSystemMultifunction(name, args, context, evaluate),
+        };
+    }
+
+    _callSystemMultifunction(name, args, context, evaluate) {
+        const func = this.functions.get(name);
+        if (!func?.systemMultifunction) {
+            throw new Error(`${name} is not a system multifunction`);
+        }
+        for (const variant of func.variants) {
+            if (variant.prep) {
+                let ok = false;
+                try {
+                    ok = Boolean(variant.prep(args, context, evaluate));
+                } catch {
+                    ok = false;
+                }
+                if (!ok) continue;
+            }
+
+            const tc = context?.getEnv?.("__trace_context__");
+            if (tc?.active && context?.getEnv?.("traceSystemVariants", false)) {
+                tc.log.push({
+                    event: "system_variant_selected",
+                    fn: name,
+                    variantName: variant.name,
+                    installedByType: variant.installedByType ?? null,
+                    depth: tc.currentDepth ?? 0,
+                });
+            }
+            return variant.impl(args, context, evaluate);
+        }
+        return null;
+    }
+
+    installVariant(name, variant) {
+        let func = this.functions.get(name);
+        if (!func) {
+            throw new Error(`Unknown system function for type installation: ${name}`);
+        }
+        if (!func.systemMultifunction) {
+            func = this._createSystemMultifunction(name, func);
+            this.functions.set(name, func);
+        }
+        if (func.variants.some((existing) => existing.name === variant.name && !existing.nativeFallback)) {
+            throw new Error(`Duplicate system multifunction variant '${variant.name}' for ${name}`);
+        }
+        const fallbackIndex = func.variants.findIndex((existing) => existing.nativeFallback);
+        const insertAt = fallbackIndex === -1 ? func.variants.length : fallbackIndex;
+        func.variants.splice(insertAt, 0, {
+            ...variant,
+            nativeFallback: false,
+            targetFunction: name,
         });
     }
 

@@ -305,6 +305,7 @@ RiX now uses a shared `/ ... /` header zone for value outfitting and constructor
 {^ 7}
 {^ /#len ::Length :meters/ 7}
 {= /:= #pt ::Point :cartesian/ x = 3, y = 4}
+```
 
 ### Semantic Inquiry And Conversion
 
@@ -336,6 +337,12 @@ warnings: {
 ```
 
 When `warnings.conversion === true`, failed `~:` emits a structured warning before returning `_`.
+
+RiX now backs these forms with immutable type and trait registries. Types are protocol bundles: they can define conversion, normalization, validation, default traits, proto methods, export/import hooks, and operator variants. Traits can imply other traits and contribute proto methods. Implied traits are materialized into `.__traits`, so `x ? :trait` remains a direct membership check.
+
+See `types-and-traits-guide.md` for the full registry, conversion, export/import, and system multifunction installation model.
+
+```rix
 {.. /::=/ a, ==b, ~=c}
 {: /#pair/ a, b}
 {:2x2: /#M ::Matrix :square/ 1, 2; 3, 4}

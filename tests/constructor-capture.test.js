@@ -88,10 +88,10 @@ describe("semantic outfitting headers", () => {
         expect(result.value).toBe("x");
     });
 
-    test("{^ /::oracle/ 7} applies type transform and sticky type", () => {
-        const result = evalRiX("v = {^ /::oracle/ 7}; {: v.__type, v._type }");
-        expect(result.values[0].value).toBe("oracle");
-        expect(result.values[1].value).toBe("oracle");
+    test("{^ /::Rational/ 7} applies type transform and sticky type", () => {
+        const result = evalRiX("v = {^ /::Rational/ 7}; {: v.__type, v._type }");
+        expect(result.values[0].value).toBe("Rational");
+        expect(result.values[1].value).toBe("Rational");
     });
 
     test("{^ /#len ::Length :meters/ 7} stores name, type, and traits", () => {
@@ -106,9 +106,9 @@ describe("semantic outfitting headers", () => {
     });
 
     test("sticky semantic type reapplies on ~= updates", () => {
-        const result = evalRiX("x = {^ /::oracle/ 7}; x ~= 9; {: x.__type, x._type }");
-        expect(result.values[0].value).toBe("oracle");
-        expect(result.values[1].value).toBe("oracle");
+        const result = evalRiX("x = {^ /::Rational/ 7}; x ~= 9; {: x.__type, x._type }");
+        expect(result.values[0].value).toBe("Rational");
+        expect(result.values[1].value).toBe("Rational");
     });
 
     test("sticky semantic metadata survives ~= while runtime metadata is rebuilt", () => {

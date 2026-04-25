@@ -19,6 +19,7 @@ import { tokenize } from "../../../parser/src/tokenizer.js";
 import { lower } from "../lower.js";
 import { runtimeDefaults } from "../runtime-config.js";
 import { maybeAutoMarkMultifunction } from "../multifunction.js";
+import { exportByRegisteredType, importByRegisteredType } from "../type-system.js";
 
 const BASE_RESERVED_CHARS = new Set([".", "/", "#", "~", "_", "^", "+", "-"]);
 const BASE_MODE_ALIASES = new Map([
@@ -1333,6 +1334,20 @@ export const coreFunctions = {
             }), context);
         },
         doc: "Convert a value to a semantic type, throwing on failure",
+    },
+
+    TYPE_EXPORT: {
+        impl(args) {
+            return exportByRegisteredType(args[0]);
+        },
+        doc: "Export a semantically typed value through its registered type exporter",
+    },
+
+    TYPE_IMPORT: {
+        impl(args) {
+            return importByRegisteredType(args[0]);
+        },
+        doc: "Import a value from a tagged type export map",
     },
 
     DEFINEBASE: {

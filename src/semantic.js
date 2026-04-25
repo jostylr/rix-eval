@@ -1,12 +1,21 @@
 import { Integer, Rational, RationalInterval } from "@ratmath/core";
 import { createEvent, getCurrentFilePath, getDiagnostics } from "./diagnostics.js";
+import {
+    convertToRegisteredType,
+    makeProto,
+    registerBuiltinSemanticTypes,
+    resolveTraitNames,
+    runtimeTypeName,
+    stringObj,
+    traitRegistry,
+    typeRegistry,
+    valueMethod,
+} from "./type-system.js";
+
+registerBuiltinSemanticTypes();
 
 function int(value) {
     return new Integer(BigInt(value));
-}
-
-function stringObj(value) {
-    return { type: "string", value };
 }
 
 function mutableExt() {
@@ -21,10 +30,6 @@ function ensureExt(value) {
         value._ext = new Map();
     }
     return value._ext;
-}
-
-function makeProto(entries = []) {
-    return { type: "map", entries: new Map(entries), _ext: new Map([["frozen", int(1)], ["immutable", int(1)]]) };
 }
 
 function traitOrderSequence(names) {
@@ -91,133 +96,10 @@ function cloneHeader(header) {
     };
 }
 
-function runtimeTypeName(value) {
-    if (value === null) return "null";
-    if (value?.type) return value.type;
-    if (value?.constructor?.name) return value.constructor.name;
-    return typeof value;
-}
-
-function valueMethod(name, fn) {
-    return { type: "method_builtin", name, impl: fn };
-}
-
-const typeRegistry = new Map([
-    ["rational", {
-        apply(value) {
-            if (value instanceof Rational) return value;
-            if (value instanceof Integer) return new Rational(value.value, 1n);
-            if (value instanceof RationalInterval) {
-                if (value.low.equals(value.high)) return value.low;
-                return null;
-            }
-            return null;
-        },
-        proto() {
-            return makeProto([
-                ["Describe", valueMethod("Describe", () => stringObj("type:rational"))],
-                ["KIND", valueMethod("KIND", () => stringObj("type:rational"))],
-            ]);
-        },
-    }],
-    ["oracle", {
-        apply(value) {
-            if (value?.type === "oracle") return value;
-            return { type: "oracle", value };
-        },
-        proto(value) {
-            return makeProto([
-                ["Describe", valueMethod("Describe", () => stringObj("type:oracle"))],
-                ["KIND", valueMethod("KIND", () => stringObj("type:oracle"))],
-            ]);
-        },
-    }],
-    ["Length", {
-        apply(value) {
-            return value;
-        },
-        proto() {
-            return makeProto([
-                ["Describe", valueMethod("Describe", () => stringObj("type:length"))],
-                ["KIND", valueMethod("KIND", () => stringObj("type:length"))],
-            ]);
-        },
-    }],
-    ["Point", {
-        apply(value) {
-            return value;
-        },
-        proto() {
-            return makeProto([
-                ["Describe", valueMethod("Describe", () => stringObj("type:point"))],
-            ]);
-        },
-    }],
-    ["Matrix", {
-        apply(value) {
-            return value;
-        },
-        proto() {
-            return makeProto([
-                ["Describe", valueMethod("Describe", () => stringObj("type:matrix"))],
-            ]);
-        },
-    }],
-    ["Vector", {
-        apply(value) {
-            return value;
-        },
-        proto() {
-            return makeProto([
-                ["Describe", valueMethod("Describe", () => stringObj("type:vector"))],
-                ["KIND", valueMethod("KIND", () => stringObj("type:vector"))],
-            ]);
-        },
-    }],
-]);
-
-const traitRegistry = new Map([
-    ["meters", {
-        proto() {
-            return makeProto([
-                ["Describe", valueMethod("Describe", () => stringObj("trait:meters"))],
-                ["KIND", valueMethod("KIND", () => stringObj("trait:meters"))],
-            ]);
-        },
-    }],
-    ["cartesian", {
-        proto() {
-            return makeProto([
-                ["Describe", valueMethod("Describe", () => stringObj("trait:cartesian"))],
-            ]);
-        },
-    }],
-    ["square", {
-        proto() {
-            return makeProto([
-                ["Describe", valueMethod("Describe", () => stringObj("trait:square"))],
-            ]);
-        },
-    }],
-    ["positive", {
-        proto() {
-            return makeProto([
-                ["Describe", valueMethod("Describe", () => stringObj("trait:positive"))],
-            ]);
-        },
-    }],
-    ["verify", {
-        proto() {
-            return makeProto();
-        },
-    }],
-]);
-
 export const traitChecks = new Map([
     ["positive", (value) => {
         if (value instanceof Integer) return value.value > 0n;
         if (typeof value === "number" || typeof value === "bigint") return Number(value) > 0;
-        if (value?.type === "oracle") return traitChecks.get("positive")(value.value);
         return true;
     }],
 ]);
@@ -278,15 +160,11 @@ export function checkTraits(value, context, { warnOnly = false } = {}) {
 function applyType(header, value) {
     const typeName = header.typeName;
     if (!typeName) return value;
-    const handler = typeRegistry.get(typeName);
-    if (!handler?.apply) {
-        throw new Error(`Unknown semantic type: ${typeName}`);
-    }
-    const nextValue = handler.apply(value);
-    if (nextValue === null || nextValue === undefined) {
+    const result = convertToRegisteredType(value, typeName);
+    if (result === null) {
         throw new Error(`Cannot convert value to semantic type ${typeName}`);
     }
-    return nextValue;
+    return result.value;
 }
 
 export function valueHasSemanticMembership(value, name) {
@@ -400,9 +278,11 @@ export function applySemanticHeader(value, header, context, options = {}) {
         ext.set("__type", stringObj(nextTypeName));
     }
 
-    const nextTraits = effectiveHeader.traits.length > 0
+    const explicitTraits = effectiveHeader.traits.length > 0
         ? effectiveHeader.traits.map((trait) => trait.name)
         : (options.inheritMissing ? previous.traits.map((trait) => trait.name) : []);
+    const typeDefaultTraits = nextTypeName ? (typeRegistry.get(nextTypeName)?.defaultTraits || []) : [];
+    const nextTraits = resolveTraitNames([...typeDefaultTraits, ...explicitTraits]);
     if (nextTraits.length > 0) {
         ext.set("__traits", createTraitSet(nextTraits, nextTraits));
     }

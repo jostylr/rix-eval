@@ -3,7 +3,6 @@ import { createEvent, getCurrentFilePath, getDiagnostics } from "./diagnostics.j
 import {
     convertToRegisteredType,
     makeProto,
-    registerBuiltinSemanticTypes,
     resolveTraitNames,
     runtimeTypeName,
     stringObj,
@@ -11,8 +10,6 @@ import {
     typeRegistry,
     valueMethod,
 } from "./type-system.js";
-
-registerBuiltinSemanticTypes();
 
 function int(value) {
     return new Integer(BigInt(value));
@@ -157,10 +154,10 @@ export function checkTraits(value, context, { warnOnly = false } = {}) {
     return int(1);
 }
 
-function applyType(header, value) {
+function applyType(header, value, context, evaluate = null) {
     const typeName = header.typeName;
     if (!typeName) return value;
-    const result = convertToRegisteredType(value, typeName);
+    const result = convertToRegisteredType(value, typeName, context, evaluate);
     if (result === null) {
         throw new Error(`Cannot convert value to semantic type ${typeName}`);
     }
@@ -182,7 +179,7 @@ export function valueHasSemanticMembership(value, name) {
     return traitNamesFromSet(ext.get("__traits")).includes(name);
 }
 
-export function convertSemanticType(value, typeName, context, { strict = true, warnOnFailure = false } = {}) {
+export function convertSemanticType(value, typeName, context, { strict = true, warnOnFailure = false, evaluate = null } = {}) {
     const header = {
         captureMode: null,
         name: null,
@@ -195,6 +192,7 @@ export function convertSemanticType(value, typeName, context, { strict = true, w
         return applySemanticHeader(value, effectiveHeader, context, {
             inheritMissing: true,
             warnOnTypeChange: true,
+            evaluate,
         });
     } catch (error) {
         if (error.message === `Unknown semantic type: ${typeName}`) {
@@ -264,7 +262,7 @@ export function applySemanticHeader(value, header, context, options = {}) {
 
     const previous = readStickyHeader(value);
     let nextValue = value;
-    nextValue = applyType(effectiveHeader, nextValue);
+    nextValue = applyType(effectiveHeader, nextValue, context, options.evaluate ?? null);
 
     const ext = ensureExt(nextValue);
     if (effectiveHeader.name) {
@@ -307,12 +305,12 @@ export function applySemanticHeader(value, header, context, options = {}) {
     return nextValue;
 }
 
-export function applyUpdateSemantics(oldValue, newValue, context) {
+export function applyUpdateSemantics(oldValue, newValue, context, evaluate = null) {
     const inherited = readStickyHeader(oldValue);
     if (!inherited.name && !inherited.typeName && inherited.traits.length === 0) {
         return newValue;
     }
-    return applySemanticHeader(newValue, inherited, context, { inheritMissing: true });
+    return applySemanticHeader(newValue, inherited, context, { inheritMissing: true, evaluate });
 }
 
 export function rebuildSemanticMetadata(value, context) {

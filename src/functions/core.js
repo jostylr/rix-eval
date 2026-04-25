@@ -19,7 +19,13 @@ import { tokenize } from "../../../parser/src/tokenizer.js";
 import { lower } from "../lower.js";
 import { runtimeDefaults } from "../runtime-config.js";
 import { maybeAutoMarkMultifunction } from "../multifunction.js";
-import { exportByRegisteredType, importByRegisteredType } from "../type-system.js";
+import {
+    exportByRegisteredTypeRuntime,
+    importByRegisteredTypeRuntime,
+    installRegisteredTypes,
+    registerTraitFromRixSpec,
+    registerTypeFromRixSpec,
+} from "../type-system.js";
 
 const BASE_RESERVED_CHARS = new Set([".", "/", "#", "~", "_", "^", "+", "-"]);
 const BASE_MODE_ALIASES = new Map([
@@ -69,6 +75,7 @@ function evaluateOutfitValue(header, valueNode, context, evaluate) {
     const next = applySemanticHeader(value, effectiveHeader, context, {
         inheritMissing: true,
         warnOnTypeChange: true,
+        evaluate,
     });
     return finalizeSemanticValue(next, context);
 }
@@ -842,7 +849,7 @@ function checkFrozenImmutable(value) {
  * Perform in-place value replacement (~= / ~~=) on a local binding.
  * Preserves cell identity (binding slot) so aliases see the change.
  */
-function performUpdate(name, rhsValue, context, depth) {
+function performUpdate(name, rhsValue, context, depth, evaluate = null) {
     const copyFn = depth === "deep" ? deepCopyValue : shallowCopyValue;
     const cell = context.getCell(name);
 
@@ -852,7 +859,7 @@ function performUpdate(name, rhsValue, context, depth) {
         checkFrozenImmutable(oldValue);
         let newValue = copyFn(rhsValue);
         transferMetaForUpdate(oldValue, newValue, rhsValue, depth);
-        newValue = applyUpdateSemantics(oldValue, newValue, context);
+        newValue = applyUpdateSemantics(oldValue, newValue, context, evaluate);
         attachBuiltinProto(newValue);
         refreshRuntimeMetadata(newValue, newValue?._ext?.get("_proto") ?? null);
         recordTraceWrite(context, name, oldValue, newValue);
@@ -876,7 +883,7 @@ function performUpdate(name, rhsValue, context, depth) {
 /**
  * Perform in-place value replacement on an outer scope binding.
  */
-function performOuterUpdate(name, rhsValue, context, depth) {
+function performOuterUpdate(name, rhsValue, context, depth, evaluate = null) {
     const copyFn = depth === "deep" ? deepCopyValue : shallowCopyValue;
     const cell = context.getOuterCell(name);
 
@@ -886,7 +893,7 @@ function performOuterUpdate(name, rhsValue, context, depth) {
         checkFrozenImmutable(oldValue);
         let newValue = copyFn(rhsValue);
         transferMetaForUpdate(oldValue, newValue, rhsValue, depth);
-        newValue = applyUpdateSemantics(oldValue, newValue, context);
+        newValue = applyUpdateSemantics(oldValue, newValue, context, evaluate);
         attachBuiltinProto(newValue);
         refreshRuntimeMetadata(newValue, newValue?._ext?.get("_proto") ?? null);
         recordTraceWrite(context, name, oldValue, newValue);
@@ -967,7 +974,7 @@ function unwrapDestructureTarget(target, outerMode) {
     };
 }
 
-function applyDestructureSemanticHeader(value, header, context) {
+function applyDestructureSemanticHeader(value, header, context, evaluate = null) {
     if (isHole(value) || !header) {
         return value;
     }
@@ -976,10 +983,10 @@ function applyDestructureSemanticHeader(value, header, context) {
             throw new Error(`Trait required by destructuring header not satisfied: ${trait.name}`);
         }
     }
-    return applySemanticHeader(value, header, context);
+    return applySemanticHeader(value, header, context, { evaluate });
 }
 
-function bindDestructuredName(name, sourceRef, bindingMode, context) {
+function bindDestructuredName(name, sourceRef, bindingMode, context, evaluate = null) {
     const value = sourceRef.value;
     if (bindingMode === "alias") {
         recordTraceWrite(context, name, context.get(name) ?? null, value);
@@ -1005,24 +1012,24 @@ function bindDestructuredName(name, sourceRef, bindingMode, context) {
         return newValue;
     }
     if (bindingMode === "refresh") {
-        return performUpdate(name, value, context, "shallow");
+        return performUpdate(name, value, context, "shallow", evaluate);
     }
     if (bindingMode === "deep_refresh") {
-        return performUpdate(name, value, context, "deep");
+        return performUpdate(name, value, context, "deep", evaluate);
     }
     throw new Error(`Unknown destructuring binding mode: ${bindingMode}`);
 }
 
-function bindDestructureTarget(target, sourceRef, outerMode, context) {
+function bindDestructureTarget(target, sourceRef, outerMode, context, evaluate = null) {
     const resolved = unwrapDestructureTarget(target, outerMode);
-    const preparedValue = applyDestructureSemanticHeader(sourceRef.value, resolved.semanticHeader, context);
+    const preparedValue = applyDestructureSemanticHeader(sourceRef.value, resolved.semanticHeader, context, evaluate);
     const preparedRef = makeSourceRef(preparedValue, sourceRef.cell);
 
     if (resolved.base?.type !== "DestructureVariableTarget") {
         throw new Error("Rest capture target must resolve to a variable");
     }
 
-    return bindDestructuredName(resolved.base.name, preparedRef, resolved.bindingMode, context);
+    return bindDestructuredName(resolved.base.name, preparedRef, resolved.bindingMode, context, evaluate);
 }
 
 function evaluatePatternKey(spec, evaluate) {
@@ -1058,7 +1065,7 @@ function isIndexedDestructurePattern(target, outerMode) {
 }
 
 function missingSimpleBind(pattern, outerMode, context) {
-    bindDestructureTarget(pattern, makeSourceRef(HOLE), outerMode, context);
+    bindDestructureTarget(pattern, makeSourceRef(HOLE), outerMode, context, null);
 }
 
 function ensureNestedSource(sourceRef, label) {
@@ -1072,7 +1079,7 @@ function destructureInto(pattern, sourceRef, outerMode, context, evaluate) {
     const base = resolved.base;
 
     if (base?.type === "DestructureVariableTarget") {
-        bindDestructureTarget(pattern, sourceRef, outerMode, context);
+        bindDestructureTarget(pattern, sourceRef, outerMode, context, evaluate);
         return;
     }
 
@@ -1080,7 +1087,7 @@ function destructureInto(pattern, sourceRef, outerMode, context, evaluate) {
         const selection = bracketGetResolved(sourceRef.value, evaluateIndexedSpecs(base.specs, evaluate));
         const selectedRef = makeSourceRef(selection);
         if (base.wholeTarget) {
-            bindDestructureTarget(base.wholeTarget, selectedRef, resolved.bindingMode, context);
+            bindDestructureTarget(base.wholeTarget, selectedRef, resolved.bindingMode, context, evaluate);
         }
         if (base.nestedTarget) {
             destructureInto(base.nestedTarget, selectedRef, resolved.bindingMode, context, evaluate);
@@ -1119,7 +1126,7 @@ function destructureInto(pattern, sourceRef, outerMode, context, evaluate) {
         }
         if (base.rest) {
             const restValues = value.values.slice(positionalIndex);
-            bindDestructureTarget(base.rest.target, makeSourceRef(createMutableSequence(restValues)), resolved.bindingMode, context);
+            bindDestructureTarget(base.rest.target, makeSourceRef(createMutableSequence(restValues)), resolved.bindingMode, context, evaluate);
         }
         return;
     }
@@ -1152,7 +1159,7 @@ function destructureInto(pattern, sourceRef, outerMode, context, evaluate) {
         }
         if (base.rest) {
             const restValues = value.values.slice(positionalIndex);
-            bindDestructureTarget(base.rest.target, makeSourceRef(createTupleValue(restValues)), resolved.bindingMode, context);
+            bindDestructureTarget(base.rest.target, makeSourceRef(createTupleValue(restValues)), resolved.bindingMode, context, evaluate);
         }
         return;
     }
@@ -1182,7 +1189,7 @@ function destructureInto(pattern, sourceRef, outerMode, context, evaluate) {
                 throw new Error("Missing required nested structure");
             }
             if (entry.wholeTarget) {
-                bindDestructureTarget(entry.wholeTarget, itemRef, resolved.bindingMode, context);
+                bindDestructureTarget(entry.wholeTarget, itemRef, resolved.bindingMode, context, evaluate);
             }
             if (entry.nestedTarget) {
                 destructureInto(entry.nestedTarget, itemRef, resolved.bindingMode, context, evaluate);
@@ -1197,7 +1204,7 @@ function destructureInto(pattern, sourceRef, outerMode, context, evaluate) {
                     }
                 }
             }
-            bindDestructureTarget(base.rest.target, makeSourceRef(createMutableMap(restEntries)), resolved.bindingMode, context);
+            bindDestructureTarget(base.rest.target, makeSourceRef(createMutableMap(restEntries)), resolved.bindingMode, context, evaluate);
         }
         return;
     }
@@ -1315,6 +1322,7 @@ export const coreFunctions = {
             const converted = convertSemanticType(value, typeName, context, {
                 strict: false,
                 warnOnFailure: conversionWarningsEnabled(context),
+                evaluate,
             });
             return converted === null ? null : finalizeSemanticValue(converted, context);
         },
@@ -1331,23 +1339,53 @@ export const coreFunctions = {
             const value = captureIrValue(args[0], constructorDefaultCaptureMode(context), context, evaluate);
             return finalizeSemanticValue(convertSemanticType(value, typeName, context, {
                 strict: true,
+                evaluate,
             }), context);
         },
         doc: "Convert a value to a semantic type, throwing on failure",
     },
 
     TYPE_EXPORT: {
-        impl(args) {
-            return exportByRegisteredType(args[0]);
+        lazy: true,
+        impl(args, context, evaluate) {
+            return exportByRegisteredTypeRuntime(evaluate(args[0]), context, evaluate);
         },
         doc: "Export a semantically typed value through its registered type exporter",
     },
 
     TYPE_IMPORT: {
-        impl(args) {
-            return importByRegisteredType(args[0]);
+        lazy: true,
+        impl(args, context, evaluate) {
+            return importByRegisteredTypeRuntime(evaluate(args[0]), context, evaluate);
         },
         doc: "Import a value from a tagged type export map",
+    },
+
+    TRAIT_REGISTER: {
+        impl(args) {
+            registerTraitFromRixSpec(args[0]);
+            return args[0];
+        },
+        doc: "Register an immutable semantic trait from a RiX map spec",
+    },
+
+    TYPE_REGISTER: {
+        impl(args) {
+            registerTypeFromRixSpec(args[0]);
+            return args[0];
+        },
+        doc: "Register an immutable semantic type from a RiX map spec",
+    },
+
+    TYPE_INSTALL: {
+        impl(args, context, evaluate) {
+            const registry = context.getEnv("__registry__", null);
+            if (!registry) throw new Error("TypeInstall requires an active registry");
+            const name = args[0]?.type === "string" ? args[0].value : String(args[0]);
+            installRegisteredTypes(registry, [name]);
+            return args[0];
+        },
+        doc: "Install a registered semantic type into system multifunctions",
     },
 
     DEFINEBASE: {
@@ -1760,7 +1798,7 @@ export const coreFunctions = {
         impl(args, context, evaluate) {
             const name = resolveAssignName(args[0], evaluate);
             const rhsValue = evaluate(args[1]);
-            return performUpdate(name, rhsValue, context, "shallow");
+            return performUpdate(name, rhsValue, context, "shallow", evaluate);
         },
         doc: "In-place value replacement (~=) — preserves cell identity, ordinary meta; replaces ephemeral; preserves sticky unless rhs overrides",
     },
@@ -1784,7 +1822,7 @@ export const coreFunctions = {
         impl(args, context, evaluate) {
             const name = resolveAssignName(args[0], evaluate);
             const rhsValue = evaluate(args[1]);
-            return performUpdate(name, rhsValue, context, "deep");
+            return performUpdate(name, rhsValue, context, "deep", evaluate);
         },
         doc: "In-place deep value replacement (~~=) — like ~= but deep-copies rhs value",
     },
@@ -1819,7 +1857,7 @@ export const coreFunctions = {
             const name = resolveAssignName(args[0], evaluate);
             const rhsValue = evaluate(args[1]);
             const depth = args[2] || "shallow";
-            return performOuterUpdate(name, rhsValue, context, depth);
+            return performOuterUpdate(name, rhsValue, context, depth, evaluate);
         },
         doc: "In-place value replacement on an outer scope variable (~= / ~~= with @)",
     },

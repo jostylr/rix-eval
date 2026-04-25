@@ -81,6 +81,12 @@ export function createDefaultSystemContext(options = {}) {
     ctx.register("TypeImport", coreFunctions.TYPE_IMPORT);
     ctx.register("TYPEEXPORT", coreFunctions.TYPE_EXPORT);
     ctx.register("TYPEIMPORT", coreFunctions.TYPE_IMPORT);
+    ctx.register("TraitRegister", coreFunctions.TRAIT_REGISTER);
+    ctx.register("TypeRegister", coreFunctions.TYPE_REGISTER);
+    ctx.register("TypeInstall", coreFunctions.TYPE_INSTALL);
+    ctx.register("TRAITREGISTER", coreFunctions.TRAIT_REGISTER);
+    ctx.register("TYPEREGISTER", coreFunctions.TYPE_REGISTER);
+    ctx.register("TYPEINSTALL", coreFunctions.TYPE_INSTALL);
     // User-callable property functions (KEYOF, KEYS, VALUES)
     const userPropertyNames = ["KEYOF", "KEYS", "VALUES"];
     for (const name of userPropertyNames) {
@@ -664,6 +670,7 @@ export function parseAndEvaluate(code, options = {}) {
     const systemContext = options.systemContext || createDefaultSystemContext();
     const systemLookup = options.systemLookup || defaultSystemLookup;
     getScriptRuntime(context, { systemLookup });
+    context.setEnv("__registry__", registry);
 
     const tokens = tokenize(code);
     const ast = parse(tokens, systemLookup);

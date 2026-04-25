@@ -130,22 +130,52 @@ Built-in type installation currently installs Rational arithmetic/comparison var
 
 ## Defining New Types And Traits
 
-The runtime now exposes immutable JS-side registration helpers in `rix/eval/src/type-system.js`:
+The runtime core is implemented in JavaScript, but extension registration is available from RiX startup code through system helpers:
+
+```rix
+.TraitRegister({=
+  name = :exampleTrait,
+  implies = [:number],
+  proto = {=
+    Describe = (self) -> "example trait"
+  }
+})
+
+.TypeRegister({=
+  name = :Example,
+  nativeType = :map,
+  defaultTraits = [:exampleTrait],
+  convertFrom = {=
+    integer = (x) -> {= kind = :example, value = x }
+  },
+  validate = (x) -> x[:kind] == :example,
+  proto = {=
+    Value = (self) -> self[:value]
+  },
+  installs = {= }
+})
+
+.TypeInstall(:Example)
+```
+
+Hosts can still use the JS-side helpers in `rix/eval/src/type-system.js` for core bootstrapping:
 
 - `registerTrait(spec)`
 - `registerType(spec)`
 - `installRegisteredTypes(registry, typeNames)`
 
-Registration stores immutable specs. Installation injects operator variants into system multifunctions. RiX-source startup registration is reserved for the next layer on top of this runtime API.
+Registration stores immutable specs. Installation injects operator variants into system multifunctions.
 
-Oracle-style real number implementations are deliberately not built in. They are user-land types so multiple real-number representations can coexist and be compared. The example startup loader in `src/startup/oracle-example.js` registers:
+Integer, Rational, and RationalInterval are built-in exact numeric types. Oracle-style real number implementations are deliberately not built in. They are user-land types so multiple real-number representations can coexist and be compared.
+
+The example startup source in `src/startup/oracle-example.rix` registers:
 
 - `:refinable`
 - `:approximate`
 - `:oracle`
 - `:Oracle`
 
-Hosts can load it when creating the registry:
+The JavaScript loader in `src/startup/oracle-example.js` only reads and evaluates that RiX startup source. Hosts can load it when creating the registry:
 
 ```js
 import { createDefaultRegistry } from "./src/evaluator.js";

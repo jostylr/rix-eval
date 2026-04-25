@@ -1,0 +1,69 @@
+.TraitRegister({=
+  name = :refinable,
+  description = "Example user-land trait for values that can refine approximations",
+  proto = {=
+    Describe = (self) -> "trait:refinable"
+  }
+});
+
+.TraitRegister({=
+  name = :approximate,
+  description = "Example user-land trait for approximate real representations",
+  proto = {=
+    Describe = (self) -> "trait:approximate"
+  }
+});
+
+.TraitRegister({=
+  name = :oracle,
+  implies = [:refinable, :approximate],
+  description = "Example user-land trait for oracle real values",
+  proto = {=
+    Describe = (self) -> "trait:oracle"
+  }
+});
+
+.TypeRegister({=
+  name = :Oracle,
+  aliases = [:oracle],
+  nativeType = :map,
+  defaultTraits = [:oracle, :refinable, :approximate, :number],
+
+  convertFrom = {=
+    integer = (x) -> {= kind = :oracle, seed = x, bounds = _, cache = _ },
+    rational = (x) -> {= kind = :oracle, seed = x, bounds = _, cache = _ },
+    map = (x) ?- [x[:kind] == :oracle] -> x
+  },
+
+  convert = (x) -> {= kind = :oracle, seed = x, bounds = _, cache = _ },
+  normalize = (x) -> x,
+  validate = (x) -> x[:kind] == :oracle,
+
+  export = (x) -> {=
+    type = :Oracle,
+    data = {=
+      seed = x[:seed],
+      bounds = x[:bounds]
+    },
+    cache = x[:cache],
+    version = 1
+  },
+
+  import = (m) -> {=
+    kind = :oracle,
+    seed = m[:data][:seed],
+    bounds = m[:data][:bounds],
+    cache = m[:cache]
+  },
+
+  proto = {=
+    Bounds = (self) -> self[:bounds],
+    Mid = (self) -> self[:seed],
+    ToInterval = (self) -> self[:bounds],
+    Describe = (self) -> "type:Oracle"
+  },
+
+  installs = {= }
+});
+
+.TypeInstall(:Oracle);

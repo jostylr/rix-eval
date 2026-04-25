@@ -1,5 +1,6 @@
 import { Integer, Rational, RationalInterval } from "@ratmath/core";
 import { createTensor, isTensor } from "./tensor.js";
+import { callWithConcreteArgs } from "./functions/functions.js";
 
 function int(value) {
     return new Integer(BigInt(value));
@@ -54,6 +55,26 @@ function immutableCloneSpec(spec) {
     else if (spec.installs && typeof spec.installs === "object") clone.installs = new Map(Object.entries(spec.installs));
     else clone.installs = new Map();
     return Object.freeze(clone);
+}
+
+function isCallable(value) {
+    return value && typeof value === "object" && (
+        value.type === "function" ||
+        value.type === "lambda" ||
+        value.type === "sysref" ||
+        value.type === "partial"
+    );
+}
+
+function invokeMaybeCallable(fn, args, context, evaluate) {
+    if (!fn) return null;
+    if (typeof fn === "function") return fn(...args);
+    if (isCallable(fn)) return callWithConcreteArgs(fn, args, context, evaluate);
+    throw new Error("Type/trait registry hook must be callable");
+}
+
+function truthy(value) {
+    return value !== null && value !== undefined;
 }
 
 class ImmutableSemanticRegistry {
@@ -148,7 +169,7 @@ function normalizeResult(entry, value) {
     return entry.normalize ? entry.normalize(value) : value;
 }
 
-export function convertToRegisteredType(value, requestedTypeName) {
+export function convertToRegisteredType(value, requestedTypeName, context = null, evaluate = null) {
     const typeName = colonName(requestedTypeName);
     const entry = typeRegistry.get(typeName);
     if (!entry) throw new Error(`Unknown semantic type: ${typeName}`);
@@ -164,21 +185,21 @@ export function convertToRegisteredType(value, requestedTypeName) {
         entry.convertFrom?.get(String(sourceType).toLowerCase());
 
     if (converter) {
-        next = converter(value);
+        next = invokeMaybeCallable(converter, [value], context, evaluate);
     } else if (entry.name === sourceType || typeName === sourceType || entry.nativeType === sourceType) {
         next = value;
     } else if (entry.convert) {
-        next = entry.convert(value, sourceType);
+        next = invokeMaybeCallable(entry.convert, [value, stringObj(sourceType)], context, evaluate);
     }
 
     if (next === null || next === undefined) {
         return null;
     }
-    next = normalizeResult(entry, next);
+    next = entry.normalize ? invokeMaybeCallable(entry.normalize, [next], context, evaluate) : normalizeResult(entry, next);
     if (next === null || next === undefined) {
         return null;
     }
-    if (entry.validate && !entry.validate(next)) {
+    if (entry.validate && !truthy(invokeMaybeCallable(entry.validate, [next], context, evaluate))) {
         return null;
     }
     return { value: next, entry, requestedTypeName: typeName };
@@ -505,6 +526,13 @@ export function exportByRegisteredType(value) {
     return entry.export(value);
 }
 
+export function exportByRegisteredTypeRuntime(value, context = null, evaluate = null) {
+    const typeName = value?._ext?.get("__type")?.value ?? null;
+    const entry = typeRegistry.get(typeName) ?? typeRegistry.get(runtimeTypeName(value));
+    if (!entry?.export) throw new Error(`No type export registered for ${typeName || runtimeTypeName(value)}`);
+    return invokeMaybeCallable(entry.export, [value], context, evaluate);
+}
+
 export function importByRegisteredType(value) {
     if (!value || value.type !== "map" || !(value.entries instanceof Map)) {
         throw new Error("TypeImport expects a tagged map export");
@@ -514,6 +542,10 @@ export function importByRegisteredType(value) {
     const entry = typeRegistry.get(typeName);
     if (!entry?.import) throw new Error(`No type import registered for ${typeName}`);
     const imported = entry.import(value);
+    return finalizeImportedRegisteredValue(imported, typeName, entry);
+}
+
+function finalizeImportedRegisteredValue(imported, typeName, entry) {
     if (imported && typeof imported === "object") {
         if (!(imported._ext instanceof Map)) imported._ext = new Map();
         imported._ext.set("__type", stringObj(typeName));
@@ -534,6 +566,17 @@ export function importByRegisteredType(value) {
     return imported;
 }
 
+export function importByRegisteredTypeRuntime(value, context = null, evaluate = null) {
+    if (!value || value.type !== "map" || !(value.entries instanceof Map)) {
+        throw new Error("TypeImport expects a tagged map export");
+    }
+    const typeName = value.entries.get("type")?.value;
+    if (!typeName) throw new Error("TypeImport export map requires a type tag");
+    const entry = typeRegistry.get(typeName);
+    if (!entry?.import) throw new Error(`No type import registered for ${typeName}`);
+    return finalizeImportedRegisteredValue(invokeMaybeCallable(entry.import, [value], context, evaluate), typeName, entry);
+}
+
 export function installRegisteredTypes(registry, typeNames = ["Integer", "Rational", "RationalInterval", "Tensor"]) {
     let order = 0;
     for (const typeName of typeNames) {
@@ -550,6 +593,67 @@ export function installRegisteredTypes(registry, typeNames = ["Integer", "Ration
             }
         }
     }
+}
+
+function mapGet(mapValue, key) {
+    return mapValue?.type === "map" && mapValue.entries instanceof Map ? mapValue.entries.get(key) : undefined;
+}
+
+function listNames(value) {
+    if (!value) return [];
+    if (value.type === "set" || value.type === "sequence" || value.type === "tuple") {
+        return value.values.map(colonName).filter(Boolean);
+    }
+    if (value.type === "map" && value.entries instanceof Map) {
+        return Array.from(value.entries.keys());
+    }
+    return [];
+}
+
+function protoFromRixMap(value) {
+    if (!value || value.type !== "map" || !(value.entries instanceof Map)) return value;
+    return makeProto(Array.from(value.entries.entries()));
+}
+
+function hooksFromRixMap(value) {
+    if (!value || value.type !== "map" || !(value.entries instanceof Map)) return {};
+    return Object.fromEntries(value.entries.entries());
+}
+
+export function registerTraitFromRixSpec(spec) {
+    if (!spec || spec.type !== "map" || !(spec.entries instanceof Map)) {
+        throw new Error("TraitRegister expects a map spec");
+    }
+    return registerTrait({
+        name: colonName(mapGet(spec, "name")),
+        implies: listNames(mapGet(spec, "implies")),
+        verify: mapGet(spec, "verify") || null,
+        proto: () => protoFromRixMap(mapGet(spec, "proto")) || makeProto(),
+        description: mapGet(spec, "description")?.value ?? "",
+    });
+}
+
+export function registerTypeFromRixSpec(spec) {
+    if (!spec || spec.type !== "map" || !(spec.entries instanceof Map)) {
+        throw new Error("TypeRegister expects a map spec");
+    }
+    return registerType({
+        name: colonName(mapGet(spec, "name")),
+        aliases: listNames(mapGet(spec, "aliases")),
+        nativeType: colonName(mapGet(spec, "nativeType")),
+        parent: colonName(mapGet(spec, "parent")),
+        defaultTraits: listNames(mapGet(spec, "defaultTraits")),
+        construct: mapGet(spec, "construct") || null,
+        convert: mapGet(spec, "convert") || null,
+        convertFrom: hooksFromRixMap(mapGet(spec, "convertFrom")),
+        normalize: mapGet(spec, "normalize") || null,
+        validate: mapGet(spec, "validate") || null,
+        export: mapGet(spec, "export") || null,
+        import: mapGet(spec, "import") || null,
+        proto: () => protoFromRixMap(mapGet(spec, "proto")) || makeProto(),
+        installs: hooksFromRixMap(mapGet(spec, "installs")),
+        display: mapGet(spec, "display") || null,
+    });
 }
 
 registerBuiltinSemanticTypes();

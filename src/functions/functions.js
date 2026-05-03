@@ -157,6 +157,13 @@ function invokeUserCallable(fn, callArgs, context, evaluate, options = {}) {
 
     const tc = context.getEnv("__trace_context__");
     let traceActive = false;
+    const restoredEnv = new Map();
+    if (fn.__rixCapturedEnv && context?.setEnv) {
+        for (const [key, value] of fn.__rixCapturedEnv) {
+            restoredEnv.set(key, context.getEnv(key, undefined));
+            context.setEnv(key, value);
+        }
+    }
 
     const doTraceEnter = (args) => {
         if (tc && tc.active && tc.currentDepth < tc.depth) {
@@ -216,6 +223,9 @@ function invokeUserCallable(fn, callArgs, context, evaluate, options = {}) {
             scopeActive = true;
         }
     } finally {
+        for (const [key, value] of restoredEnv) {
+            context.setEnv(key, value);
+        }
         if (traceActive && tc) {
             tc.currentDepth--;
         }

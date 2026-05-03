@@ -15,6 +15,7 @@ import {
     stringObj,
 } from "../src/type-system.js";
 import { loadOracleExampleStartup } from "../src/startup/oracle-example.js";
+import { loadFloatExampleStartup } from "../../examples/floats/floats-loader.js";
 
 const defaultSystemContext = createDefaultSystemContext();
 
@@ -146,6 +147,26 @@ describe("RiX type and trait registry", () => {
             { startupLoaders: [loadOracleExampleStartup] },
         ).result;
         expect(result.value).toBe(7n);
+    });
+
+    test("example Float startup registers a RiX interface backed by JavaScript", () => {
+        expect(defaultSystemContext.has("FLOATLTE")).toBe(false);
+        expect(defaultSystemContext.has("FloatLte")).toBe(false);
+        expect(defaultSystemContext.has("IMPORTJS")).toBe(true);
+        expect(defaultSystemContext.has("SIN")).toBe(true);
+
+        const { result, registry } = evalRiX(
+            "{; a = 1 ~: :Float; b = 2 ~: :Float; c = a + b * b; s = .SIN(a); e = .EXP(a); ex = .TypeExport(c); c2 = .TypeImport(ex); {: c2.Value(), s.Value(), e.Value() } }",
+            new Context(),
+            { startupLoaders: [loadFloatExampleStartup] },
+        );
+
+        expect(result.values[0].value).toBe("5");
+        expect(Number(result.values[1].value)).toBeCloseTo(Math.sin(1));
+        expect(Number(result.values[2].value)).toBeCloseTo(Math.exp(1));
+        expect(registry.get("ADD").variants.some((variant) => variant.name === "FloatFloat" && variant.installedByType === "Float")).toBe(true);
+        expect(registry.get("SIN").variants.some((variant) => variant.name === "Float" && variant.installedByType === "Float")).toBe(true);
+        expect(registry.get("SIN").variants.at(-1).name).toBe("NativeFallback");
     });
 
     test("built-in registries expose the expected built-ins", () => {

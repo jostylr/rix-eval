@@ -2,6 +2,8 @@
  * Core system functions: LITERAL, STRING, NULL, RETRIEVE, ASSIGN, NOP, SYSREF, GLOBAL
  */
 
+import path from "node:path";
+import { createRequire } from "node:module";
 import { Integer, Rational, RationalInterval, BaseSystem } from "@ratmath/core";
 import { HOLE, isHole } from "../hole.js";
 import {
@@ -28,6 +30,7 @@ import {
 } from "../type-system.js";
 
 const BASE_RESERVED_CHARS = new Set([".", "/", "#", "~", "_", "^", "+", "-"]);
+const requireFromHere = createRequire(import.meta.url);
 const BASE_MODE_ALIASES = new Map([
     ["mixed", 1], ["..", 1],
     ["repeat", 2], [".", 2], ["#", 2], ["radix", 2],
@@ -66,6 +69,42 @@ function finalizeSemanticValue(value, context) {
     rebuildSemanticMetadata(value, context);
     refreshRuntimeMetadata(value, value?._ext?.get("_proto") ?? null);
     return value;
+}
+
+function jsExportToRix(value) {
+    if (typeof value === "function") return value;
+    if (value && typeof value === "object") {
+        return {
+            type: "map",
+            entries: new Map(Object.entries(value).map(([key, entry]) => [key, jsExportToRix(entry)])),
+        };
+    }
+    return value ?? null;
+}
+
+function importJSModule(filename, context) {
+    const spec = filename?.type === "string" ? filename.value : String(filename ?? "");
+    if (!spec.endsWith(".js")) {
+        throw new Error("ImportJS expects a local .js module path");
+    }
+    const baseDir = context.getEnv("jsImportBaseDir", context.getEnv("scriptBaseDir", process.cwd()));
+    const resolved = path.isAbsolute(spec) ? spec : path.resolve(baseDir, spec);
+    const cache = context.getEnv("__js_import_cache__", new Map());
+    context.setEnv("__js_import_cache__", cache);
+    if (!cache.has(resolved)) {
+        cache.set(resolved, jsExportToRix(requireFromHere(resolved)));
+    }
+    return cache.get(resolved);
+}
+
+function callJSModule(filename, exportName, callArgs, context) {
+    const module = importJSModule(filename, context);
+    const key = exportName?.type === "string" ? exportName.value : String(exportName ?? "");
+    const fn = module?.type === "map" ? module.entries.get(key) : null;
+    if (typeof fn !== "function") {
+        throw new Error(`ImportJS module does not export callable '${key}'`);
+    }
+    return fn(...callArgs);
 }
 
 function evaluateOutfitValue(header, valueNode, context, evaluate) {
@@ -1370,8 +1409,8 @@ export const coreFunctions = {
     },
 
     TYPE_REGISTER: {
-        impl(args) {
-            registerTypeFromRixSpec(args[0]);
+        impl(args, context) {
+            registerTypeFromRixSpec(args[0], context);
             return args[0];
         },
         doc: "Register an immutable semantic type from a RiX map spec",
@@ -1386,6 +1425,20 @@ export const coreFunctions = {
             return args[0];
         },
         doc: "Install a registered semantic type into system multifunctions",
+    },
+
+    IMPORT_JS: {
+        impl(args, context) {
+            return importJSModule(args[0], context);
+        },
+        doc: "Import a local JavaScript module for use from a .js.rix startup file",
+    },
+
+    JS_CALL: {
+        impl(args, context) {
+            return callJSModule(args[0], args[1], args.slice(2), context);
+        },
+        doc: "Call a named export from a local JavaScript module",
     },
 
     DEFINEBASE: {

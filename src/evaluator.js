@@ -28,6 +28,7 @@ import { advancedFunctions } from "./functions/advanced.js";
 import { stdlibFunctions } from "./functions/stdlib.js";
 import { diagnosticFunctions } from "./functions/diagnostics.js";
 import { installSymbolicBindings, symbolicFunctions } from "./functions/symbolic.js";
+import { MATH_FUNCTION_NAMES, mathFunctions } from "./functions/math.js";
 import { installRegisteredTypes, registerBuiltinSemanticTypes } from "./type-system.js";
 import { parse } from "../../parser/src/parser.js";
 import { tokenize } from "../../parser/src/tokenizer.js";
@@ -51,6 +52,7 @@ export function createDefaultRegistry(options = {}) {
     registry.registerAll(propertyFunctions);
     registry.registerAll(advancedFunctions);
     registry.registerAll(symbolicFunctions);
+    registry.registerAll(mathFunctions);
     installRegisteredTypes(registry);
     for (const loadStartup of options.startupLoaders || []) {
         loadStartup(registry);
@@ -84,9 +86,21 @@ export function createDefaultSystemContext(options = {}) {
     ctx.register("TraitRegister", coreFunctions.TRAIT_REGISTER);
     ctx.register("TypeRegister", coreFunctions.TYPE_REGISTER);
     ctx.register("TypeInstall", coreFunctions.TYPE_INSTALL);
+    ctx.register("ImportJS", coreFunctions.IMPORT_JS);
+    ctx.register("JSCall", coreFunctions.JS_CALL);
     ctx.register("TRAITREGISTER", coreFunctions.TRAIT_REGISTER);
     ctx.register("TYPEREGISTER", coreFunctions.TYPE_REGISTER);
     ctx.register("TYPEINSTALL", coreFunctions.TYPE_INSTALL);
+    ctx.register("IMPORTJS", coreFunctions.IMPORT_JS);
+    ctx.register("JSCALL", coreFunctions.JS_CALL);
+    for (const name of MATH_FUNCTION_NAMES) {
+        ctx.register(name, {
+            impl(args, _context, evaluate) {
+                return evaluate({ fn: name, args });
+            },
+            doc: `Dispatch ${name} through the active system multifunction registry`,
+        });
+    }
     // User-callable property functions (KEYOF, KEYS, VALUES)
     const userPropertyNames = ["KEYOF", "KEYS", "VALUES"];
     for (const name of userPropertyNames) {

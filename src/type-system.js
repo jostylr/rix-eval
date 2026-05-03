@@ -69,7 +69,23 @@ function isCallable(value) {
 function invokeMaybeCallable(fn, args, context, evaluate) {
     if (!fn) return null;
     if (typeof fn === "function") return fn(...args);
-    if (isCallable(fn)) return callWithConcreteArgs(fn, args, context, evaluate);
+    if (isCallable(fn)) {
+        if (!fn.__rixCapturedEnv || !context?.setEnv) {
+            return callWithConcreteArgs(fn, args, context, evaluate);
+        }
+        const restored = new Map();
+        for (const [key, value] of fn.__rixCapturedEnv) {
+            restored.set(key, context.getEnv(key, undefined));
+            context.setEnv(key, value);
+        }
+        try {
+            return callWithConcreteArgs(fn, args, context, evaluate);
+        } finally {
+            for (const [key, value] of restored) {
+                context.setEnv(key, value);
+            }
+        }
+    }
     throw new Error("Type/trait registry hook must be callable");
 }
 
@@ -240,6 +256,8 @@ function compareNumeric(a, b) {
 export const TYPE_INSTALL_FUNCTIONS = [
     "ADD", "SUB", "MUL", "DIV", "INTDIV", "MOD", "POW", "POWPROD", "NEG",
     "EQ", "LT", "GT", "LTE", "GTE",
+    "ABS", "SQRT", "SIN", "COS", "TAN", "ASIN", "ACOS", "ATAN", "ATAN2",
+    "LOG", "LN", "LOG10", "EXP",
 ];
 
 let builtinsRegistered = false;
@@ -586,6 +604,18 @@ export function installRegisteredTypes(registry, typeNames = ["Integer", "Ration
             for (const variant of variants || []) {
                 registry.installVariant(targetFunction, {
                     ...variant,
+                    impl(args, context, evaluate) {
+                        const result = variant.impl(args, context, evaluate);
+                        if (
+                            result &&
+                            typeof result === "object" &&
+                            entry.nativeType &&
+                            runtimeTypeName(result) === entry.nativeType
+                        ) {
+                            return finalizeImportedRegisteredValue(result, entry.name, entry);
+                        }
+                        return result;
+                    },
                     installedByType: entry.name,
                     targetFunction,
                     installOrder: order++,
@@ -596,7 +626,13 @@ export function installRegisteredTypes(registry, typeNames = ["Integer", "Ration
 }
 
 function mapGet(mapValue, key) {
-    return mapValue?.type === "map" && mapValue.entries instanceof Map ? mapValue.entries.get(key) : undefined;
+    if (mapValue?.type !== "map" || !(mapValue.entries instanceof Map)) return undefined;
+    if (mapValue.entries.has(key)) return mapValue.entries.get(key);
+    const lowerKey = key.toLowerCase();
+    for (const [entryKey, value] of mapValue.entries) {
+        if (String(entryKey).toLowerCase() === lowerKey) return value;
+    }
+    return undefined;
 }
 
 function listNames(value) {
@@ -610,14 +646,60 @@ function listNames(value) {
     return [];
 }
 
-function protoFromRixMap(value) {
+function protoFromRixMap(value, context = null) {
     if (!value || value.type !== "map" || !(value.entries instanceof Map)) return value;
-    return makeProto(Array.from(value.entries.entries()));
+    return makeProto(Array.from(value.entries.entries()).map(([key, entry]) => [key, captureHook(entry, context)]));
 }
 
-function hooksFromRixMap(value) {
+function captureHook(value, context) {
+    if (isCallable(value) && context?.getEnv) {
+        Object.defineProperty(value, "__rixCapturedEnv", {
+            value: new Map([
+                ["jsImportBaseDir", context.getEnv("jsImportBaseDir", undefined)],
+                ["scriptBaseDir", context.getEnv("scriptBaseDir", undefined)],
+            ]),
+            configurable: true,
+        });
+    }
+    return value;
+}
+
+function hooksFromRixMap(value, context = null) {
     if (!value || value.type !== "map" || !(value.entries instanceof Map)) return {};
-    return Object.fromEntries(value.entries.entries());
+    return Object.fromEntries(Array.from(value.entries.entries()).map(([key, entry]) => [key, captureHook(entry, context)]));
+}
+
+function isRixList(value) {
+    return value?.type === "sequence" || value?.type === "tuple" || value?.type === "set";
+}
+
+function callableVariantHook(fn, mode) {
+    if (!fn) return mode === "prep" ? null : () => null;
+    return (args, context, evaluate) => invokeMaybeCallable(fn, args, context, evaluate);
+}
+
+function variantsFromRixList(value, context = null) {
+    if (!value) return [];
+    const items = isRixList(value) ? value.values : [value];
+    return items.map((item, index) => {
+        if (!item || item.type !== "map" || !(item.entries instanceof Map)) {
+            throw new Error("Type install variants must be map specs");
+        }
+        const name = colonName(mapGet(item, "name")) || `Variant${index + 1}`;
+        return {
+            name,
+            prep: callableVariantHook(captureHook(mapGet(item, "prep"), context), "prep"),
+            impl: callableVariantHook(captureHook(mapGet(item, "impl"), context), "impl"),
+        };
+    });
+}
+
+function installsFromRixMap(value, context = null) {
+    if (!value || value.type !== "map" || !(value.entries instanceof Map)) return new Map();
+    return new Map(Array.from(value.entries.entries()).map(([targetFunction, variants]) => [
+        targetFunction,
+        variantsFromRixList(variants, context),
+    ]));
 }
 
 export function registerTraitFromRixSpec(spec) {
@@ -633,7 +715,7 @@ export function registerTraitFromRixSpec(spec) {
     });
 }
 
-export function registerTypeFromRixSpec(spec) {
+export function registerTypeFromRixSpec(spec, context = null) {
     if (!spec || spec.type !== "map" || !(spec.entries instanceof Map)) {
         throw new Error("TypeRegister expects a map spec");
     }
@@ -643,16 +725,16 @@ export function registerTypeFromRixSpec(spec) {
         nativeType: colonName(mapGet(spec, "nativeType")),
         parent: colonName(mapGet(spec, "parent")),
         defaultTraits: listNames(mapGet(spec, "defaultTraits")),
-        construct: mapGet(spec, "construct") || null,
-        convert: mapGet(spec, "convert") || null,
-        convertFrom: hooksFromRixMap(mapGet(spec, "convertFrom")),
-        normalize: mapGet(spec, "normalize") || null,
-        validate: mapGet(spec, "validate") || null,
-        export: mapGet(spec, "export") || null,
-        import: mapGet(spec, "import") || null,
-        proto: () => protoFromRixMap(mapGet(spec, "proto")) || makeProto(),
-        installs: hooksFromRixMap(mapGet(spec, "installs")),
-        display: mapGet(spec, "display") || null,
+        construct: captureHook(mapGet(spec, "construct") || null, context),
+        convert: captureHook(mapGet(spec, "convert") || null, context),
+        convertFrom: hooksFromRixMap(mapGet(spec, "convertFrom"), context),
+        normalize: captureHook(mapGet(spec, "normalize") || null, context),
+        validate: captureHook(mapGet(spec, "validate") || null, context),
+        export: captureHook(mapGet(spec, "export") || null, context),
+        import: captureHook(mapGet(spec, "import") || null, context),
+        proto: () => protoFromRixMap(mapGet(spec, "proto"), context) || makeProto(),
+        installs: installsFromRixMap(mapGet(spec, "installs"), context),
+        display: captureHook(mapGet(spec, "display") || null, context),
     });
 }
 

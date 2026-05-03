@@ -118,6 +118,9 @@ First-wave operators include:
 - `POW`, `POWPROD`
 - `NEG`
 - `EQ`, `LT`, `GT`, `LTE`, `GTE`
+- `ABS`, `SQRT`
+- `SIN`, `COS`, `TAN`, `ASIN`, `ACOS`, `ATAN`, `ATAN2`
+- `LOG`, `LN`, `LOG10`, `EXP`
 
 Built-in type installation currently installs Rational arithmetic/comparison variants before native fallback. Type install order is dispatch order; fallback remains last.
 
@@ -194,3 +197,24 @@ e = .TypeExport(o)
 o2 = .TypeImport(e)
 o2.Mid()
 ```
+
+The Float example demonstrates a different extension pattern. It lives outside the evaluator core in `rix/examples/floats/`, so it can become a standalone package or submodule. Its interface is a RiX startup file named `floats.js.rix`, while the heavy arithmetic and JavaScript `Math` calls live in the neighboring `floats.js`.
+
+The generic bridge is:
+
+```rix
+.ImportJS("floats.js")
+.JSCall("floats.js", :Sin, x)
+```
+
+`.ImportJS` loads a local JavaScript module relative to the active `.js.rix` startup file. `.JSCall` calls one named export from that module. Float-specific helpers such as `FloatLte` are not system capabilities; they are plain JavaScript exports used only by the Float package.
+
+```rix
+f = 1 ~: :Float
+g = 2 ~: :Float
+h = f + g * g
+s = .SIN(f)
+e = .EXP(f)
+```
+
+Float installs overloads for arithmetic, comparison, and common real-valued math functions. Those functions are system multifunctions with `/NativeFallback/` variants, so later user-land real-number types can install their own `SIN`, `LOG`, `EXP`, and related variants without replacing the Float implementation.

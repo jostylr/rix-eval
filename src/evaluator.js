@@ -86,11 +86,13 @@ export function createDefaultSystemContext(options = {}) {
     ctx.register("TraitRegister", coreFunctions.TRAIT_REGISTER);
     ctx.register("TypeRegister", coreFunctions.TYPE_REGISTER);
     ctx.register("TypeInstall", coreFunctions.TYPE_INSTALL);
+    ctx.register("CapabilityRegister", coreFunctions.CAPABILITY_REGISTER);
     ctx.register("ImportJS", coreFunctions.IMPORT_JS);
     ctx.register("JSCall", coreFunctions.JS_CALL);
     ctx.register("TRAITREGISTER", coreFunctions.TRAIT_REGISTER);
     ctx.register("TYPEREGISTER", coreFunctions.TYPE_REGISTER);
     ctx.register("TYPEINSTALL", coreFunctions.TYPE_INSTALL);
+    ctx.register("CAPABILITYREGISTER", coreFunctions.CAPABILITY_REGISTER);
     ctx.register("IMPORTJS", coreFunctions.IMPORT_JS);
     ctx.register("JSCALL", coreFunctions.JS_CALL);
     for (const name of MATH_FUNCTION_NAMES) {

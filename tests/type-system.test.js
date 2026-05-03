@@ -183,6 +183,32 @@ describe("RiX type and trait registry", () => {
         })).toBe("3");
     });
 
+    test("Float package installs conversion capability and mixed numeric promotion", () => {
+        const context = new Context();
+        const registry = createDefaultRegistry();
+        const systemContext = createDefaultSystemContext();
+        loadFloatExampleStartup(registry, systemContext);
+        const ir = lower(parse(tokenize("{; a = .Float(0.5); {: 7 + .SIN(a), .SIN(a) + 7, 1/2 + a, a < 1, 1 > a } }"), () => ({ type: "identifier" })));
+        let result = null;
+        for (const node of ir) {
+            result = evaluate(node, context, registry, systemContext);
+        }
+        expect(formatValue(result.values[0], {
+            context,
+            evaluate: (node) => evaluate(node, context, registry, systemContext),
+        })).toBe(String(7 + Math.sin(0.5)));
+        expect(formatValue(result.values[1], {
+            context,
+            evaluate: (node) => evaluate(node, context, registry, systemContext),
+        })).toBe(String(7 + Math.sin(0.5)));
+        expect(formatValue(result.values[2], {
+            context,
+            evaluate: (node) => evaluate(node, context, registry, systemContext),
+        })).toBe("1");
+        expect(asBool(result.values[3])).toBe(true);
+        expect(asBool(result.values[4])).toBe(true);
+    });
+
     test("built-in registries expose the expected built-ins", () => {
         expect(typeRegistry.has("Rational")).toBe(true);
         expect(typeRegistry.has("rational")).toBe(true);

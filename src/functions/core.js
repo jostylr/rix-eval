@@ -28,6 +28,7 @@ import {
     registerTraitFromRixSpec,
     registerTypeFromRixSpec,
 } from "../type-system.js";
+import { callWithConcreteArgs } from "./functions.js";
 
 const BASE_RESERVED_CHARS = new Set([".", "/", "#", "~", "_", "^", "+", "-"]);
 const requireFromHere = createRequire(import.meta.url);
@@ -105,6 +106,22 @@ function callJSModule(filename, exportName, callArgs, context) {
         throw new Error(`ImportJS module does not export callable '${key}'`);
     }
     return fn(...callArgs);
+}
+
+function capturePackageCallable(value, context) {
+    if (!value || typeof value !== "object") return value;
+    if (!(value.type === "function" || value.type === "lambda" || value.type === "sysref" || value.type === "partial")) {
+        return value;
+    }
+    const captured = new Map();
+    for (const key of ["jsImportBaseDir", "scriptBaseDir"]) {
+        if (context.env?.has(key)) captured.set(key, context.getEnv(key, undefined));
+    }
+    Object.defineProperty(value, "__rixCapturedEnv", {
+        value: captured,
+        configurable: true,
+    });
+    return value;
 }
 
 function evaluateOutfitValue(header, valueNode, context, evaluate) {
@@ -1406,6 +1423,32 @@ export const coreFunctions = {
             return args[0];
         },
         doc: "Register an immutable semantic trait from a RiX map spec",
+    },
+
+    CAPABILITY_REGISTER: {
+        impl(args, context, evaluate) {
+            if (!context.getEnv("allowCapabilityRegister", false)) {
+                throw new Error("CapabilityRegister is only available during trusted package startup");
+            }
+            const systemContext = context.getEnv("__system_context__", null);
+            if (!systemContext) {
+                throw new Error("CapabilityRegister requires an active system context");
+            }
+            const rawName = args[0]?.type === "string" ? args[0].value : String(args[0] ?? "");
+            const name = rawName.toUpperCase();
+            if (!name) throw new Error("CapabilityRegister requires a capability name");
+            const fn = capturePackageCallable(args[1], context);
+            systemContext._capabilities.set(name, {
+                impl(callArgs, callContext, callEvaluate) {
+                    return callWithConcreteArgs(fn, callArgs, callContext, callEvaluate);
+                },
+                lazy: false,
+                pure: false,
+                doc: args[2]?.type === "string" ? args[2].value : "Package capability",
+            });
+            return args[0];
+        },
+        doc: "Register a package system capability during trusted package startup",
     },
 
     TYPE_REGISTER: {

@@ -4,6 +4,7 @@ import { tokenize } from "../../parser/src/tokenizer.js";
 import { parse } from "../../parser/src/parser.js";
 import { lower } from "../src/lower.js";
 import { evaluate, createDefaultRegistry, createDefaultSystemContext } from "../src/evaluator.js";
+import { formatValue } from "../src/format.js";
 import { Context } from "../src/context.js";
 import {
     makeProto,
@@ -167,6 +168,19 @@ describe("RiX type and trait registry", () => {
         expect(registry.get("ADD").variants.some((variant) => variant.name === "FloatFloat" && variant.installedByType === "Float")).toBe(true);
         expect(registry.get("SIN").variants.some((variant) => variant.name === "Float" && variant.installedByType === "Float")).toBe(true);
         expect(registry.get("SIN").variants.at(-1).name).toBe("NativeFallback");
+    });
+
+    test("semantic display methods are used by formatter when host context is supplied", () => {
+        const { result, context, registry } = evalRiX(
+            "a = 1 ~: :Float; b = 2 ~: :Float; a + b;",
+            new Context(),
+            { startupLoaders: [loadFloatExampleStartup] },
+        );
+        expect(formatValue(result)).toBe("[object Object]");
+        expect(formatValue(result, {
+            context,
+            evaluate: (node) => evaluate(node, context, registry, defaultSystemContext),
+        })).toBe("3");
     });
 
     test("built-in registries expose the expected built-ins", () => {

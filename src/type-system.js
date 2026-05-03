@@ -75,14 +75,18 @@ function invokeMaybeCallable(fn, args, context, evaluate) {
         }
         const restored = new Map();
         for (const [key, value] of fn.__rixCapturedEnv) {
-            restored.set(key, context.getEnv(key, undefined));
+            restored.set(key, {
+                has: context.env?.has(key) === true,
+                value: context.getEnv(key, undefined),
+            });
             context.setEnv(key, value);
         }
         try {
             return callWithConcreteArgs(fn, args, context, evaluate);
         } finally {
-            for (const [key, value] of restored) {
-                context.setEnv(key, value);
+            for (const [key, entry] of restored) {
+                if (entry.has) context.setEnv(key, entry.value);
+                else context.env?.delete(key);
             }
         }
     }
@@ -653,11 +657,12 @@ function protoFromRixMap(value, context = null) {
 
 function captureHook(value, context) {
     if (isCallable(value) && context?.getEnv) {
+        const captured = new Map();
+        for (const key of ["jsImportBaseDir", "scriptBaseDir"]) {
+            if (context.env?.has(key)) captured.set(key, context.getEnv(key, undefined));
+        }
         Object.defineProperty(value, "__rixCapturedEnv", {
-            value: new Map([
-                ["jsImportBaseDir", context.getEnv("jsImportBaseDir", undefined)],
-                ["scriptBaseDir", context.getEnv("scriptBaseDir", undefined)],
-            ]),
+            value: captured,
             configurable: true,
         });
     }
@@ -702,15 +707,16 @@ function installsFromRixMap(value, context = null) {
     ]));
 }
 
-export function registerTraitFromRixSpec(spec) {
+export function registerTraitFromRixSpec(spec, context = null) {
     if (!spec || spec.type !== "map" || !(spec.entries instanceof Map)) {
         throw new Error("TraitRegister expects a map spec");
     }
+    const proto = protoFromRixMap(mapGet(spec, "proto"), context) || makeProto();
     return registerTrait({
         name: colonName(mapGet(spec, "name")),
         implies: listNames(mapGet(spec, "implies")),
-        verify: mapGet(spec, "verify") || null,
-        proto: () => protoFromRixMap(mapGet(spec, "proto")) || makeProto(),
+        verify: captureHook(mapGet(spec, "verify") || null, context),
+        proto: () => proto,
         description: mapGet(spec, "description")?.value ?? "",
     });
 }
@@ -719,6 +725,7 @@ export function registerTypeFromRixSpec(spec, context = null) {
     if (!spec || spec.type !== "map" || !(spec.entries instanceof Map)) {
         throw new Error("TypeRegister expects a map spec");
     }
+    const proto = protoFromRixMap(mapGet(spec, "proto"), context) || makeProto();
     return registerType({
         name: colonName(mapGet(spec, "name")),
         aliases: listNames(mapGet(spec, "aliases")),
@@ -732,7 +739,7 @@ export function registerTypeFromRixSpec(spec, context = null) {
         validate: captureHook(mapGet(spec, "validate") || null, context),
         export: captureHook(mapGet(spec, "export") || null, context),
         import: captureHook(mapGet(spec, "import") || null, context),
-        proto: () => protoFromRixMap(mapGet(spec, "proto"), context) || makeProto(),
+        proto: () => proto,
         installs: installsFromRixMap(mapGet(spec, "installs"), context),
         display: captureHook(mapGet(spec, "display") || null, context),
     });

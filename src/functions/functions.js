@@ -160,7 +160,10 @@ function invokeUserCallable(fn, callArgs, context, evaluate, options = {}) {
     const restoredEnv = new Map();
     if (fn.__rixCapturedEnv && context?.setEnv) {
         for (const [key, value] of fn.__rixCapturedEnv) {
-            restoredEnv.set(key, context.getEnv(key, undefined));
+            restoredEnv.set(key, {
+                has: context.env?.has(key) === true,
+                value: context.getEnv(key, undefined),
+            });
             context.setEnv(key, value);
         }
     }
@@ -223,8 +226,9 @@ function invokeUserCallable(fn, callArgs, context, evaluate, options = {}) {
             scopeActive = true;
         }
     } finally {
-        for (const [key, value] of restoredEnv) {
-            context.setEnv(key, value);
+        for (const [key, entry] of restoredEnv) {
+            if (entry.has) context.setEnv(key, entry.value);
+            else context.env?.delete(key);
         }
         if (traceActive && tc) {
             tc.currentDepth--;

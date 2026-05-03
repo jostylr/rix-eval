@@ -1401,8 +1401,8 @@ export const coreFunctions = {
     },
 
     TRAIT_REGISTER: {
-        impl(args) {
-            registerTraitFromRixSpec(args[0]);
+        impl(args, context) {
+            registerTraitFromRixSpec(args[0], context);
             return args[0];
         },
         doc: "Register an immutable semantic trait from a RiX map spec",

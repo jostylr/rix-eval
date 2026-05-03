@@ -2,6 +2,8 @@ import { Rational, RationalInterval } from "@ratmath/core";
 import { isHole } from "./hole.js";
 import { isTensor, tensorOffsetForTuple, tensorSize } from "./tensor.js";
 import { irToText } from "./ir-to-text.js";
+import { resolveMethod } from "./methods.js";
+import { callWithConcreteArgs } from "./functions/functions.js";
 
 function tensorValueAtTuple(tensor, tuple) {
     const value = tensor.data[tensorOffsetForTuple(tensor, tuple)];
@@ -215,14 +217,41 @@ function formatMultifunctionPreview(multifn) {
     return `${prefix}${variants.map((variant) => `${variant},`).join("\n")}\n]`;
 }
 
-export function formatValue(val) {
+function isSemanticObject(value) {
+    return value && typeof value === "object" && value._ext instanceof Map && value._ext.has("__type");
+}
+
+function formatViaSemanticDisplay(value, options) {
+    if (!isSemanticObject(value) || !options?.context || !options?.evaluate) return null;
+    for (const methodName of ["ToString", "TOSTRING", "Value", "VALUE"]) {
+        let fn;
+        try {
+            fn = resolveMethod(value, methodName);
+        } catch {
+            continue;
+        }
+        try {
+            const displayed = fn?.type === "method_builtin"
+                ? fn.impl([value], options.context, options.evaluate, callWithConcreteArgs)
+                : callWithConcreteArgs(fn, [value], options.context, options.evaluate);
+            if (displayed === value) continue;
+            return formatValue(displayed, { ...options, semanticDisplay: false });
+        } catch {
+            continue;
+        }
+    }
+    return null;
+}
+
+export function formatValue(val, options = {}) {
+    const formatChild = (child) => formatValue(child, options);
     if (isHole(val)) return "undefined";
     if (val === null) return "_";
     if (val === undefined) return "undefined";
 
     if (typeof val === "object" && val !== null) {
         if (val.type === "string") return val.value;
-        if (isTensor(val)) return formatTensor(val, formatValue);
+        if (isTensor(val)) return formatTensor(val, formatChild);
         if (val.type === "sequence" && val._ext instanceof Map && val._ext.get("_type")?.value === "multifunction") {
             return formatMultifunctionPreview(val);
         }
@@ -230,18 +259,18 @@ export function formatValue(val) {
             const open = val.kind === "set" ? "{| " : val.kind === "tuple" ? "( " : "[";
             const close = val.kind === "set" ? " |}" : val.kind === "tuple" ? " )" : "]";
             const items = val.values || val.elements || [];
-            return open + items.map(formatValue).join(", ") + close;
+            return open + items.map(formatChild).join(", ") + close;
         }
         if (val.type === "set" || val.type === "tuple") {
             const open = val.type === "set" ? "{| " : "( ";
             const close = val.type === "set" ? " |}" : " )";
-            return open + val.values.map(formatValue).join(", ") + close;
+            return open + val.values.map(formatChild).join(", ") + close;
         }
         if (val.type === "map") {
             const entries = [];
             const mapObj = val.entries || val.elements || new Map();
             mapObj.forEach((entryValue, key) => {
-                entries.push(`${key}=${formatValue(entryValue)}`);
+                entries.push(`${key}=${formatChild(entryValue)}`);
             });
             return `{= ${entries.join(", ")} }`;
         }
@@ -249,7 +278,7 @@ export function formatValue(val) {
             const entries = [];
             const mapObj = val.entries || new Map();
             mapObj.forEach((cell, key) => {
-                entries.push(`${key}=${formatValue(cell?.value)}`);
+                entries.push(`${key}=${formatChild(cell?.value)}`);
             });
             return `{= ${entries.join(", ")} }`;
         }
@@ -279,6 +308,10 @@ export function formatValue(val) {
         }
         if (val.type === "interval") {
             return `${val.start || val.lo}:${val.end || val.hi}`;
+        }
+        if (options.semanticDisplay !== false) {
+            const semanticDisplay = formatViaSemanticDisplay(val, options);
+            if (semanticDisplay !== null) return semanticDisplay;
         }
         if (val.fn === "DEFER") {
             const inner = val.args && val.args[0];

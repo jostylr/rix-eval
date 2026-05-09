@@ -236,6 +236,10 @@ const LOWERERS = {
     return lowerNode(node.expression);
   },
 
+  SequenceExpression(node) {
+    return ir("SEQ", ...node.expressions.map(lowerNode));
+  },
+
   Comment() {
     return ir("NOP");
   },

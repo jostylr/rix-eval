@@ -115,6 +115,18 @@ function applyImports(imports, context) {
 export { evaluateShared };
 
 export const controlFunctions = {
+    SEQ: {
+        lazy: true,
+        impl(args, context, evaluate) {
+            let result = null;
+            for (const arg of args) {
+                result = evaluate(arg);
+            }
+            return result;
+        },
+        doc: "Expression sequence: evaluate arguments left-to-right in the current scope and return the last value",
+    },
+
     BLOCK: {
         lazy: true,
         impl(args, context, evaluate) {

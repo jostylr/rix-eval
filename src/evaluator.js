@@ -95,6 +95,7 @@ export function createDefaultSystemContext(options = {}) {
     ctx.register("CAPABILITYREGISTER", coreFunctions.CAPABILITY_REGISTER);
     ctx.register("IMPORTJS", coreFunctions.IMPORT_JS);
     ctx.register("JSCALL", coreFunctions.JS_CALL);
+    ctx.register("LOOP", controlFunctions.LOOP);
     for (const name of MATH_FUNCTION_NAMES) {
         ctx.register(name, {
             impl(args, _context, evaluate) {

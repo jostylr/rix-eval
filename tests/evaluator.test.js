@@ -563,6 +563,21 @@ describe("RiX Evaluator", () => {
             expect(() => evalRix("{@ i = 0; i < 3; _; i += 1 };", ctx)).toThrow("Loop exceeded max iteration count: 2");
         });
 
+        test("three-part loop uses body as the whole iteration step", () => {
+            const result = evalRix("total = 0; {@ i = 0; i < 4; {; @total += i; i += 1 } }; total;");
+            expect(result.value).toBe(6n);
+        });
+
+        test("three-part loop can be an update-only loop", () => {
+            const result = evalRix("{@ i = 0; i < 4; i += 1 };");
+            expect(result.value).toBe(4n);
+        });
+
+        test("@_LOOP system capability accepts three lazy arguments", () => {
+            const result = evalRix("total = 0; @_LOOP(i = 0, i < 4, {; @total += i; i += 1 }); total;");
+            expect(result.value).toBe(6n);
+        });
+
         test("explicit finite loop max overrides default", () => {
             const ctx = new Context();
             ctx.setEnv("defaultLoopMax", 1);

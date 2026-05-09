@@ -181,7 +181,8 @@ export const controlFunctions = {
     LOOP: {
         lazy: true,
         impl(args, context, evaluate) {
-            // LOOP(init, condition, body, update)
+            // LOOP(init, condition, body[, update])
+            // The 3-argument form uses the body as the whole iteration step.
             // All args are DEFER nodes
             const { imports, containerName, maxIterations: configuredMax, unlimited, bodyArgs } = splitScopedBlockArgs(args);
             const [initNode, condNode, bodyNode, updateNode] = bodyArgs.map(unwrapDefer);
@@ -232,7 +233,7 @@ export const controlFunctions = {
                 if (!shareCurrentScope) context.pop();
             }
         },
-        doc: "Loop construct with init, condition, body, update",
+        doc: "Loop construct with init, condition, body[, update]",
     },
 
     TERNARY: {

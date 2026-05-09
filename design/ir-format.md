@@ -62,7 +62,7 @@ Args can contain other IR nodes (nested calls), literal strings, numbers, or str
 |-------|--------|------|-------|
 | `BLOCK` | `{; a; b; c }`, `{{ a; b }}` | `[stmt1, stmt2, ...]` | Sequential execution |
 | `CASE` | `{? cond1; cond2 }` | `[DEFER(c1), DEFER(c2), ...]` | Case/conditional with deferred args |
-| `LOOP` | `{@ init; cond; body; upd }` | `[DEFER(init), DEFER(cond), ...]` | Loop with deferred args |
+| `LOOP` | `{@ init; cond; body; upd }`, `{@ init; cond; body }` | `[DEFER(init), DEFER(cond), ...]` | Loop with deferred args; the three-argument form has no separate update step |
 | `TERNARY` | `c ?? t ?: f` | `[condition, DEFER(true), DEFER(false)]` | Ternary conditional |
 | `DEFER` | `@{...}` | `[body_ir]` | Deferred (lazy) computation |
 

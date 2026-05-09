@@ -660,6 +660,13 @@ describe("Lowering Pass", () => {
       expect(ir.args[0].fn).toBe("DEFER");
     });
 
+    test("{@ init; cond; body } → LOOP without separate update", () => {
+      const ir = L("{@ i = 0; i < 3; i += 1 };");
+      expect(ir.fn).toBe("LOOP");
+      expect(ir.args.length).toBe(3);
+      expect(ir.args.every((arg) => arg.fn === "DEFER")).toBe(true);
+    });
+
     test("{@loop:7@ ... } → LOOP with metadata", () => {
       const ir = L("{@loop:7@ i := 0; i < 1; i; i += 1 };");
       expect(ir.fn).toBe("LOOP");

@@ -556,6 +556,8 @@ Loop forms:
 
 The `after` slot shares the loop scope, so it can read loop-local accumulators. `BREAK` exits the loop immediately and skips `after`; the break value is the loop result.
 
+Blank loop slots are preserved as no-op holes. For example, `{@ i = 0; i < 5; ; i += 1; i^2 }` has a blank body slot, still has five loop slots, and returns `25`.
+
 Break block targeting:
 
 - `{! expr }` — nearest enclosing breakable construct of any supported kind

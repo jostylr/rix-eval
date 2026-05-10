@@ -674,6 +674,14 @@ describe("Lowering Pass", () => {
       expect(ir.args.every((arg) => arg.fn === "DEFER")).toBe(true);
     });
 
+    test("{@ init; cond; ; update; after } → LOOP preserves blank body as HOLE", () => {
+      const ir = L("{@ i = 0; i < 3; ; i += 1; i };");
+      expect(ir.fn).toBe("LOOP");
+      expect(ir.args.length).toBe(5);
+      expect(ir.args[2].fn).toBe("DEFER");
+      expect(ir.args[2].args[0].fn).toBe("HOLE");
+    });
+
     test("{@loop:7@ ... } → LOOP with metadata", () => {
       const ir = L("{@loop:7@ i := 0; i < 1; i; i += 1 };");
       expect(ir.fn).toBe("LOOP");

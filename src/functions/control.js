@@ -24,6 +24,10 @@ function unwrapDefer(node) {
     return node;
 }
 
+function isHoleNode(node) {
+    return Boolean(node) && node.fn === "HOLE";
+}
+
 function splitScopedBlockArgs(args) {
     const first = args[0];
     if (
@@ -200,7 +204,12 @@ export const controlFunctions = {
             if (bodyArgs.length > 5) {
                 throw new Error(`LOOP expected at most 5 arguments, got ${bodyArgs.length}`);
             }
-            const [initNode, condNode, bodyNode, updateNode, afterNode] = bodyArgs.map(unwrapDefer);
+            const [rawInitNode, rawCondNode, rawBodyNode, rawUpdateNode, rawAfterNode] = bodyArgs.map(unwrapDefer);
+            const initNode = isHoleNode(rawInitNode) ? null : rawInitNode;
+            const condNode = isHoleNode(rawCondNode) ? null : rawCondNode;
+            const bodyNode = isHoleNode(rawBodyNode) ? null : rawBodyNode;
+            const updateNode = isHoleNode(rawUpdateNode) ? null : rawUpdateNode;
+            const afterNode = isHoleNode(rawAfterNode) ? null : rawAfterNode;
 
             const shareCurrentScope = context.consumeSharedBody("LOOP");
             if (!shareCurrentScope) context.push(undefined, { isolated: true });

@@ -584,6 +584,16 @@ describe("RiX Evaluator", () => {
             expect(result.value).toBe(6n);
         });
 
+        test("five-part loop with blank body still treats the fifth slot as after", () => {
+            const result = evalRix("{@ i = 0; i < 5; ; i += 1; i^2 };");
+            expect(result.value).toBe(25n);
+        });
+
+        test("five-part loop with blank update still treats the fifth slot as after", () => {
+            const result = evalRix("{@ i = 0; i < 5; i += 1; ; i^2 };");
+            expect(result.value).toBe(25n);
+        });
+
         test("five-part loop after slot runs in loop scope and can update outer scope", () => {
             const result = evalRix("done = 0; {@ i = 0; i < 0; _; i += 1; @done = 1, i + 10 }; done;");
             expect(result.value).toBe(1n);

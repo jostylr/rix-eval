@@ -579,9 +579,33 @@ describe("RiX Evaluator", () => {
             expect(result.value).toBe(4n);
         });
 
+        test("five-part loop returns the after slot on normal completion", () => {
+            const result = evalRix("{@ i = 0, total = 0; i < 4; total += i; i += 1; total };");
+            expect(result.value).toBe(6n);
+        });
+
+        test("five-part loop after slot runs in loop scope and can update outer scope", () => {
+            const result = evalRix("done = 0; {@ i = 0; i < 0; _; i += 1; @done = 1, i + 10 }; done;");
+            expect(result.value).toBe(1n);
+        });
+
+        test("loop break skips the five-part after slot", () => {
+            const result = evalRix('done = 0; {@ i = 0; i < 4; {!@ "stopped"}; i += 1; @done = 1 }; done;');
+            expect(result.value).toBe(0n);
+        });
+
+        test("loop rejects more than five slots", () => {
+            expect(() => evalRix("{@ a; b; c; d; e; f };")).toThrow("LOOP expected at most 5 arguments, got 6");
+        });
+
         test("@_LOOP system capability accepts three lazy arguments", () => {
             const result = evalRix("total = 0; @_LOOP(i = 0, i < 4, {; @total += i; i += 1 }); total;");
             expect(result.value).toBe(6n);
+        });
+
+        test("@_LOOP system capability accepts five lazy arguments", () => {
+            const result = evalRix("done = 0; @_LOOP(i = 0, i < 3, i, i += 1, @done = i); done;");
+            expect(result.value).toBe(3n);
         });
 
         test("explicit finite loop max overrides default", () => {

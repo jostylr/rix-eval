@@ -444,7 +444,7 @@ u \= {| 2 |}
 | `{ a; b; c }` | `BLOCK` | Sequential execution, returns last value. Optional top-of-block import header: `{ <...> ... }` |
 | `{; a; b; c }` | `BLOCK` | Sequential execution (explicit block). Optional top-of-block import header: `{; <...> ... }` |
 | `{? c1 ? v1; c2 ? v2; default }` | `CASE` | Conditional branching (if/elseif/else) |
-| `{@ init; cond; body; update }` | `LOOP` | Loop with init, condition, body, update. Loop headers also support `{@name@ ... }`, `{@:100@ ... }`, `{@name:100@ ... }`, `{@::@ ... }`, and `{@name::@ ... }`. Optional top-of-block import header: `{@ <...> ... }` |
+| `{@ init; cond; body; update }` | `LOOP` | Loop with init, condition, body, update. A fifth `after` slot may be added: `{@ init; cond; body; update; after }`; it runs on normal completion and supplies the loop result. Loop headers also support `{@name@ ... }`, `{@:100@ ... }`, `{@name:100@ ... }`, `{@::@ ... }`, and `{@name::@ ... }`. Optional top-of-block import header: `{@ <...> ... }` |
 | `{! expr }` | `BREAK` | Break the nearest matching block/case/loop and use `expr` as that target's final value |
 | `{#x,y:z# p = x + y }` | `SYSTEM_SPEC` | Symbolic system spec literal. Optional top-of-block import header: `{#x,y:z# <...> ... }` |
 | `{= k1=v1, (expr)=v2 }` | `MAP` | Map/object literal (`k1` identifier sugar or parenthesized key expression) |
@@ -548,6 +548,14 @@ If a finite cap is exceeded, evaluation throws:
 Loop exceeded max iteration count: 100
 ```
 
+Loop forms:
+
+- `{@ init; cond; body }` uses the body as the whole iteration step and returns the last body value.
+- `{@ init; cond; body; update }` runs update after each body execution and returns the last body value.
+- `{@ init; cond; body; update; after }` runs `after` once when `cond` becomes false and returns the `after` value.
+
+The `after` slot shares the loop scope, so it can read loop-local accumulators. `BREAK` exits the loop immediately and skips `after`; the break value is the loop result.
+
 Break block targeting:
 
 - `{! expr }` — nearest enclosing breakable construct of any supported kind
@@ -600,8 +608,8 @@ When a scope-creating construct (loop, `.Test`, etc.) evaluates a sub-part that 
 {@ x = 1; x < 4; x; x += 1 }          ## => 3
 {@ {; x = 1 }; x < 4; x; x += 1 }     ## => 3
 
-## All four loop parts can be code blocks:
-{@ {; i = 0; j = 10 }; {; i < 3 }; {; i + j }; {; i += 1 } }  ## => 12
+## All five loop parts can be code blocks:
+{@ {; i = 0; j = 10 }; {; i < 3 }; {; i + j }; {; i += 1 }; {; i + j } }  ## => 13
 ```
 
 To get a genuinely isolated block inside a construct position, use nested braces. The outer block shares the construct's scope, but the inner block creates its own:
@@ -1295,7 +1303,7 @@ Constraint forms such as `:=:`, `:<:`, and `:>:` remain separate and are not par
 |----------|-------------|----------------|
 | `BLOCK(stmts...)` | Execute sequentially, return last | `{ a; b }`, `{; a; b }` |
 | `CASE(branches...)` | If/elseif/else branching | `{? cond ? val; default }` |
-| `LOOP(init, cond, body, update)` | Loop with optional name/max metadata | `{@ init; cond; body; update }`, `{@name:100@ ... }`, `{@::@ ... }` |
+| `LOOP(init, cond, body, update, after)` | Loop with optional name/max metadata and optional completion slot | `{@ init; cond; body; update }`, `{@ init; cond; body; update; after }`, `{@name:100@ ... }`, `{@::@ ... }` |
 | `BREAK(meta, value)` | Structured break that exits the nearest matching target | `{! value }`, `{!@ value }`, `{!?name! value }` |
 | `SYSTEM_SPEC(meta)` | Create a symbolic system spec value | `{#x,y:p# p = x + y }` |
 | `TERNARY(cond, t, f)` | Ternary conditional | `cond ?? t ?: f` |

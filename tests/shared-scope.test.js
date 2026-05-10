@@ -57,13 +57,12 @@ describe("Shared scope: code blocks in construct positions", () => {
             expect(result.value).toBe(8n); // 1, 2, 4, 8 (next would be 16, fails condition)
         });
 
-        test("all four parts as code blocks", () => {
+        test("all five parts as code blocks", () => {
             const result = evalRix(`
                 total = 0;
-                {@ {; i = 1 }; {; i <= 3 }; {; @total += i }; {; i += 1 } };
-                total;
+                {@ {; i = 1 }; {; i <= 3 }; {; @total += i }; {; i += 1 }; {; @total + i } };
             `);
-            expect(result.value).toBe(6n);
+            expect(result.value).toBe(10n);
         });
 
         test("multi-statement init block shares scope", () => {

@@ -539,6 +539,11 @@ describe("RiX Evaluator", () => {
             expect(result.values[1].value).toBe(100n);
         });
 
+        test("import header names use normal identifier casing", () => {
+            const result = evalRix("maxIter = 5; {@ < maxIter > i = 0; i < maxIter; ; i += 1; i^2 };");
+            expect(result.value).toBe(25n);
+        });
+
         test("missing import source errors clearly", () => {
             expect(() => evalRix("{; <a~missing> a };")).toThrow("Undefined outer variable for import: missing");
         });

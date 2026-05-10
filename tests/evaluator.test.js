@@ -698,6 +698,11 @@ describe("RiX Evaluator", () => {
             const result = evalRix("5 != 6;");
             expect(result.value).toBe(1n);
         });
+
+        test("rational comparison uses numerator sign", () => {
+            expect(evalRix("1/2 < 2/3;").value).toBe(1n);
+            expect(evalRix("3/4 >= 5/6;")).toBeNull();
+        });
     });
 
     describe("Logic", () => {

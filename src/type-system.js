@@ -250,7 +250,18 @@ function boolResult(value) {
 
 function compareNumeric(a, b) {
     if (a && b && typeof a.subtract === "function" && typeof b.subtract === "function") {
-        return a.subtract(b).sign();
+        const diff = a.subtract(b);
+        if (typeof diff.sign === "function") return Number(diff.sign().value ?? diff.sign());
+        if (typeof diff.numerator === "bigint") {
+            if (diff.numerator < 0n) return -1;
+            if (diff.numerator > 0n) return 1;
+            return 0;
+        }
+        if (typeof diff.value === "bigint") {
+            if (diff.value < 0n) return -1;
+            if (diff.value > 0n) return 1;
+            return 0;
+        }
     }
     if (a < b) return -1;
     if (a > b) return 1;

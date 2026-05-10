@@ -11,7 +11,17 @@ function compare(a, b) {
     // Both have .equals and .subtract (ratmath types)
     if (a && b && typeof a.subtract === "function" && typeof b.subtract === "function") {
         const diff = a.subtract(b);
-        return diff.sign();
+        if (typeof diff.sign === "function") return Number(diff.sign().value ?? diff.sign());
+        if (typeof diff.numerator === "bigint") {
+            if (diff.numerator < 0n) return -1;
+            if (diff.numerator > 0n) return 1;
+            return 0;
+        }
+        if (typeof diff.value === "bigint") {
+            if (diff.value < 0n) return -1;
+            if (diff.value > 0n) return 1;
+            return 0;
+        }
     }
     const valA = a && a.type === "string" ? a.value : a;
     const valB = b && b.type === "string" ? b.value : b;

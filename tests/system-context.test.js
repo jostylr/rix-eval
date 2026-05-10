@@ -116,6 +116,23 @@ describe("Evaluator — .Name() system calls", () => {
         expect(() => evalRix('.PRINT("hello");')).not.toThrow();
     });
 
+    test(".PRINT uses replaceable IO hooks", () => {
+        const ctx = new Context();
+        const printed = [];
+        ctx.setEnv("__io__", {
+            format(value) {
+                return value?.type === "map" ? "formatted-map" : "formatted-other";
+            },
+            print(text, value) {
+                printed.push([text, value?.type ?? typeof value]);
+            },
+        });
+
+        const result = evalRix(".PRINT({= a=1 });", ctx);
+        expect(result).toBeNull();
+        expect(printed).toEqual([["formatted-map", "map"]]);
+    });
+
     test("unknown capability throws a helpful error", () => {
         expect(() => evalRix(".NONEXISTENT();")).toThrow("Unknown system capability: NONEXISTENT");
     });

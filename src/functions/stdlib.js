@@ -9,6 +9,51 @@ import { callWithConcreteArgs } from "./functions.js";
 import { formatValue } from "../format.js";
 import { deepSetMutable } from "./core.js";
 
+export const RIX_IO_ENV = "__io__";
+
+function defaultPrettyFormat(value, options = {}) {
+    const indent = options.indent ?? 0;
+    const seen = options.seen ?? new Set();
+    const pad = "  ".repeat(indent);
+    const child = (val) => defaultPrettyFormat(val, { indent: indent + 1, seen });
+    const childPad = "  ".repeat(indent + 1);
+
+    if (value === null || value === undefined) return "_";
+    if (typeof value !== "object") return formatValue(value);
+    if (seen.has(value)) return "<cycle>";
+
+    if (value.type === "string") return JSON.stringify(value.value);
+    if (value.type === "function" || value.type === "lambda" || value.type === "partial" || value.type === "arityCap" || value.type === "sysref") {
+        return formatValue(value);
+    }
+
+    if (value.type === "sequence" || value.type === "set" || value.type === "tuple") {
+        const values = value.values || [];
+        if (values.length === 0) return value.type === "tuple" ? "()" : value.type === "set" ? "{| |}" : "[]";
+        seen.add(value);
+        const open = value.type === "tuple" ? "(" : value.type === "set" ? "{|" : "[";
+        const close = value.type === "tuple" ? ")" : value.type === "set" ? "|}" : "]";
+        const body = values.map((item) => `${childPad}${child(item)}`).join(",\n");
+        seen.delete(value);
+        return `${open}\n${body}\n${pad}${close}`;
+    }
+
+    if ((value.type === "map" || value.type === "export_bundle") && value.entries instanceof Map) {
+        if (value.entries.size === 0) return "{= }";
+        seen.add(value);
+        const body = Array.from(value.entries, ([key, entry]) => {
+            const entryValue = value.type === "export_bundle" && entry && typeof entry === "object" && "value" in entry
+                ? entry.value
+                : entry;
+            return `${childPad}${key} = ${child(entryValue)}`;
+        }).join(",\n");
+        seen.delete(value);
+        return `{=\n${body}\n${pad}}`;
+    }
+
+    return formatValue(value);
+}
+
 export const stdlibFunctions = {
     // --- Collection Functions ---
     LEN: {
@@ -258,13 +303,21 @@ export const stdlibFunctions = {
 
     // --- I/O ---
     PRINT: {
-        impl(args) {
+        impl(args, context) {
+            const io = context?.getEnv?.(RIX_IO_ENV, null);
+            const formatter = typeof io?.format === "function"
+                ? io.format
+                : defaultPrettyFormat;
+            const printer = typeof io?.print === "function"
+                ? io.print
+                : (text) => console.log(text);
             for (const arg of args) {
-                console.log(formatValue(arg));
+                const text = formatter(arg, { formatValue, prettyFormat: defaultPrettyFormat, context });
+                printer(text, arg, { formatValue, prettyFormat: defaultPrettyFormat, context });
             }
             return null;
         },
-        doc: "Print each argument on a separate line to console",
+        doc: "Print each argument through the replaceable __io__ hook",
     },
 
     DEEPMUTABLE: {

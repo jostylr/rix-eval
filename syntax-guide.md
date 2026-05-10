@@ -1429,7 +1429,17 @@ The flag `_` (null) means "remove"; any non-null value (including `0`) means "ad
 
 | Function | Description |
 |----------|-------------|
-| `PRINT(args...)` | Print each argument on a separate line |
+| `PRINT(args...)` | Print each argument via the host IO hook (`context.env["__io__"]`) |
+
+Default `PRINT` formatting renders maps, arrays, sets, tuples, and export bundles
+over multiple lines. Hosts can replace either formatting or output by setting:
+
+```js
+context.setEnv("__io__", {
+  format(value, helpers) { return helpers.prettyFormat(value); },
+  print(text, value, helpers) { console.log(text); }
+});
+```
 
 ### Variables
 

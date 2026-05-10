@@ -496,6 +496,12 @@ describe("RiX Evaluator", () => {
             expect(evalRix("y;", context).value).toBe(15n);
         });
 
+        test("alias import can write through from null with ~=", () => {
+            const { result, context } = evalRixWithContext("y := _; {; <y=> y ~= 7; y };");
+            expect(result.value).toBe(7n);
+            expect(evalRix("y;", context).value).toBe(7n);
+        });
+
         test("alias import same-name: = rebinds (breaks alias)", () => {
             const { result, context } = evalRixWithContext("y := 10; {; <y=> y = y + 5; y };");
             expect(result.value).toBe(15n);

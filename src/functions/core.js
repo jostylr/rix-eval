@@ -901,6 +901,11 @@ function checkFrozenImmutable(value) {
     }
 }
 
+function refreshRuntimeMetadataIfObject(value) {
+    if (!value || typeof value !== "object") return value;
+    return refreshRuntimeMetadata(value, value?._ext?.get("_proto") ?? null);
+}
+
 /**
  * Perform in-place value replacement (~= / ~~=) on a local binding.
  * Preserves cell identity (binding slot) so aliases see the change.
@@ -917,7 +922,7 @@ function performUpdate(name, rhsValue, context, depth, evaluate = null) {
         transferMetaForUpdate(oldValue, newValue, rhsValue, depth);
         newValue = applyUpdateSemantics(oldValue, newValue, context, evaluate);
         attachBuiltinProto(newValue);
-        refreshRuntimeMetadata(newValue, newValue?._ext?.get("_proto") ?? null);
+        refreshRuntimeMetadataIfObject(newValue);
         recordTraceWrite(context, name, oldValue, newValue);
         cell.value = newValue;
         return newValue;
@@ -930,7 +935,7 @@ function performUpdate(name, rhsValue, context, depth, evaluate = null) {
     const newValue = copyFn(rhsValue);
     transferMetaForUpdate(null, newValue, rhsValue, depth);
     attachBuiltinProto(newValue);
-    refreshRuntimeMetadata(newValue, newValue?._ext?.get("_proto") ?? null);
+    refreshRuntimeMetadataIfObject(newValue);
     recordTraceWrite(context, name, null, newValue);
     context.setFresh(name, newValue);
     return newValue;
@@ -951,7 +956,7 @@ function performOuterUpdate(name, rhsValue, context, depth, evaluate = null) {
         transferMetaForUpdate(oldValue, newValue, rhsValue, depth);
         newValue = applyUpdateSemantics(oldValue, newValue, context, evaluate);
         attachBuiltinProto(newValue);
-        refreshRuntimeMetadata(newValue, newValue?._ext?.get("_proto") ?? null);
+        refreshRuntimeMetadataIfObject(newValue);
         recordTraceWrite(context, name, oldValue, newValue);
         cell.value = newValue;
         return newValue;

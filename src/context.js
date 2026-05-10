@@ -17,7 +17,7 @@ export class Context {
         // Global scope: Map<name, Cell>
         this.globalScope = new Map();
         // Stack of local scopes (innermost = last element).
-        // Each entry is { bindings: Map<name, Cell>, isolated, readThrough }.
+        // Each entry is { bindings: Map<name, Cell>, isolated, readThrough, callableBoundary }.
         this.localScopes = [];
         // User-defined functions: name → funcDef
         this.functions = new Map();
@@ -53,6 +53,7 @@ export class Context {
             bindings,
             isolated: options.isolated === true,
             readThrough: options.readThrough === true,
+            callableBoundary: options.callableBoundary === true,
         };
         this.localScopes.push(scope);
         return bindings;
@@ -63,6 +64,15 @@ export class Context {
      */
     pop() {
         return this.localScopes.pop();
+    }
+
+    captureClosureScopes() {
+        return this.localScopes.map((scope) => ({
+            bindings: scope.bindings,
+            isolated: scope.isolated === true,
+            readThrough: scope.readThrough === true,
+            callableBoundary: scope.callableBoundary === true,
+        }));
     }
 
     /**
@@ -203,7 +213,26 @@ export class Context {
     }
 
     getCallable(name) {
-        const cell = this._findCell(name, { respectIsolation: false });
+        for (let i = this.localScopes.length - 1; i >= 0; i--) {
+            const scope = this.localScopes[i];
+            const cell = scope.bindings.get(name);
+            if (cell) return cell.value;
+
+            if (scope.callableBoundary) {
+                return undefined;
+            }
+            if (scope.readThrough) {
+                const outerScope = this.localScopes[i - 1];
+                if (outerScope) {
+                    const outerCell = outerScope.bindings.get(name);
+                    return outerCell ? outerCell.value : undefined;
+                }
+                const globalCell = this.globalScope.get(name);
+                return globalCell ? globalCell.value : undefined;
+            }
+        }
+
+        const cell = this.globalScope.get(name);
         if (cell) {
             return cell.value;
         }
@@ -222,6 +251,7 @@ export class Context {
     _findCell(name, options = {}) {
         const skipInnermost = options.skipInnermost === true;
         const respectIsolation = options.respectIsolation !== false;
+        const respectCallableBoundary = options.respectCallableBoundary === true;
         const startIndex = this.localScopes.length - 1 - (skipInnermost ? 1 : 0);
 
         for (let i = startIndex; i >= 0; i--) {
@@ -229,6 +259,9 @@ export class Context {
             const cell = scope.bindings.get(name);
             if (cell) return cell;
 
+            if (respectCallableBoundary && scope.callableBoundary) {
+                return null;
+            }
             if (scope.readThrough) {
                 const outerScope = this.localScopes[i - 1];
                 if (outerScope) {

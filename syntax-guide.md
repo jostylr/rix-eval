@@ -1363,6 +1363,7 @@ Constraint forms such as `:=:`, `:<:`, and `:>:` remain separate and are not par
 
 Function-call lookup note:
 - `Name(args)` searches outward for a callable binding even across scoped block boundaries.
+- For functions exported from scripts, the outward callable search stops at that script module boundary. Module helpers can be called without `@`, but missing module helpers do not fall through to the importer.
 - Bare retrieval `Name` still follows normal lexical variable lookup rules.
 - This means `{; F(2) }` can call an outer `F`, while `{; G = F }` requires `{; G = @F }` if `F` is outside the block.
 
@@ -1469,6 +1470,7 @@ context.setEnv("__io__", {
 Scope note:
 - `RETRIEVE(Name)` remains lexical even for capitalized names.
 - Only direct call syntax `Name(...)` uses outward callable lookup.
+- Script module scopes are boundaries for that outward callable lookup.
 - Combo operators (`+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `^=`, `++=`, `\/=`, `/\=`, `\=`, `**=`, `/^=`, `/~=`) desugar to `ASSIGN_UPDATE` / `OUTER_UPDATE`, preserving cell identity so aliases track changes.
 
 ### Future Extensions (Stubs)

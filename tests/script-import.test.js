@@ -129,6 +129,24 @@ describe("script import execution", () => {
         expect(result.values[1].value).toBe(2n);
     });
 
+    test("exported functions retain private script-scope helper bindings", () => {
+        const dir = writeScripts({
+            helpers: "Helper(x) -> x + 1; Main(x) -> Helper(x) * 2; < Main=Main >",
+        });
+
+        const { result } = evalRix('<"helpers" ; Main=Main>; Main(4)', { scriptBaseDir: dir });
+        expect(result.value).toBe(10n);
+    });
+
+    test("exported function callable lookup stops at the script module boundary", () => {
+        const dir = writeScripts({
+            helpers: "Main(x) -> Helper(x) * 2; < Main=Main >",
+        });
+
+        expect(() => evalRix('Helper(x) -> x + 10; <"helpers" ; Main=Main>; Main(4)', { scriptBaseDir: dir }))
+            .toThrow("Undefined identifier: HELPER");
+    });
+
     test("copy exports stay isolated from live exports", () => {
         const dir = writeScripts({
             duo: "n := 0; < live=n, copy~n >",

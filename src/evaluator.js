@@ -478,7 +478,7 @@ function evaluateScriptImport(spec, context, registry, systemContext) {
     const scriptContext = new Context();
     scriptContext.env = context.env;
     installSymbolicBindings(scriptContext);
-    scriptContext.push(undefined, { isolated: true });
+    scriptContext.push(undefined, { isolated: true, callableBoundary: true });
 
     runtime.activeImports.push(resolvedPath);
     runtime.frameStack.push({

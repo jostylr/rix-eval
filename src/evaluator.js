@@ -31,7 +31,7 @@ import { installSymbolicBindings, symbolicFunctions } from "./functions/symbolic
 import { MATH_FUNCTION_NAMES, mathFunctions } from "./functions/math.js";
 import { installRegisteredTypes, registerBuiltinSemanticTypes } from "./type-system.js";
 import { parse } from "../../parser/src/parser.js";
-import { tokenize } from "../../parser/src/tokenizer.js";
+import { posToLineCol } from "../../parser/src/tokenizer.js";
 import { lower } from "./lower.js";
 
 /**
@@ -65,6 +65,8 @@ export function createDefaultRegistry(options = {}) {
 const OPERATOR_ALIAS_NAMES = ["ADD", "SUB", "MUL", "DIV", "INTDIV", "MOD", "POW", "POWPROD",
     "EQ", "NEQ", "LT", "GT", "LTE", "GTE", "SAME_CELL", "AND", "OR", "NOT"];
 const SCRIPT_RUNTIME_ENV_KEY = "__script_runtime__";
+const SOURCE_ENV_KEY = "__source__";
+const CURRENT_FILE_ENV_KEY = "__current_file__";
 
 /**
  * Create a default SystemContext with all stdlib capabilities, frozen by default.
@@ -273,18 +275,101 @@ function prepareScript(resolvedPath, runtime) {
         throw new Error(`Unable to load script '${resolvedPath}': ${error.message}`);
     }
 
-    const ast = parse(tokenize(source), runtime.systemLookup || defaultSystemLookup);
+    const ast = parse(source, runtime.systemLookup || defaultSystemLookup);
     const { inputContract, exportBindings, body } = extractScriptInterface(ast, resolvedPath);
+    const bodyIr = lower(body);
+    attachSourceInfo(bodyIr, source, resolvedPath);
     const prepared = {
         path: resolvedPath,
         dir: path.dirname(resolvedPath),
         inputContract,
         exportBindings,
-        bodyIr: lower(body),
+        bodyIr,
     };
 
     runtime.preparedScripts.set(resolvedPath, prepared);
     return prepared;
+}
+
+function attachHiddenProperty(target, key, value) {
+    Object.defineProperty(target, key, {
+        value,
+        enumerable: false,
+        configurable: true,
+    });
+}
+
+function attachSourceInfo(node, source, file = "<repl>", seen = new Set()) {
+    if (!node || typeof node !== "object" || seen.has(node)) {
+        return node;
+    }
+    seen.add(node);
+
+    if (Array.isArray(node)) {
+        for (const item of node) attachSourceInfo(item, source, file, seen);
+        return node;
+    }
+
+    if (node.fn) {
+        attachHiddenProperty(node, "__source", source);
+        attachHiddenProperty(node, "__file", file);
+    }
+
+    if (Array.isArray(node.args)) {
+        for (const arg of node.args) attachSourceInfo(arg, source, file, seen);
+    }
+    return node;
+}
+
+function getNodeLocation(irNode, context) {
+    if (!irNode?.pos) return null;
+
+    const source = irNode.__source ?? context?.getEnv?.(SOURCE_ENV_KEY, null);
+    if (!source) return null;
+
+    const file = irNode.__file ?? context?.getEnv?.(CURRENT_FILE_ENV_KEY, "<repl>");
+    let offset = irNode.pos[1] ?? irNode.pos[0];
+    if ((irNode.fn === "RETRIEVE" || irNode.fn === "OUTER_RETRIEVE") && typeof irNode.args?.[0] === "string") {
+        const nameOffset = findIdentifierOffset(source, irNode.args[0], offset);
+        if (nameOffset !== -1) {
+            offset = nameOffset;
+        }
+    }
+    const { line, col } = posToLineCol(source, offset);
+    const filePart = file && file !== "<repl>" ? `${file}:` : "";
+    return `${filePart}line ${line}, column ${col}`;
+}
+
+function findIdentifierOffset(source, name, approximateOffset) {
+    const isIdentChar = (ch) => /[A-Za-z0-9_]/.test(ch);
+    let offset = Math.max(0, Math.min(approximateOffset ?? source.length, source.length));
+    while (offset >= 0) {
+        const found = source.lastIndexOf(name, offset);
+        if (found === -1) return -1;
+        const before = found > 0 ? source[found - 1] : "";
+        const after = source[found + name.length] || "";
+        if (!isIdentChar(before) && !isIdentChar(after)) {
+            return found;
+        }
+        offset = found - 1;
+    }
+    return -1;
+}
+
+function annotateEvaluationError(error, irNode, context) {
+    if (!error || typeof error !== "object" || error.__rixLocationAttached) {
+        return error;
+    }
+
+    const location = getNodeLocation(irNode, context);
+    if (!location) return error;
+
+    error.message = `${error.message} (${location})`;
+    error.__rixLocationAttached = true;
+    if (!error.rixLocation) {
+        error.rixLocation = location;
+    }
+    return error;
 }
 
 function restrictSystemContext(systemContext, allowedNames) {
@@ -550,121 +635,125 @@ export function evaluate(irNode, context, registry, systemContext) {
         return irNode;
     }
 
-    if (fn === "SCRIPT_IMPORT") {
-        return evaluateScriptImport(args[0] || {}, context, registry, systemContext);
-    }
-
-    // Bind the recursive evaluator for callbacks
-    const evalFn = (node) => evaluate(node, context, registry, systemContext);
-
-    // --- System context operations (. prefix syntax) ---
-
-    // SYS_OBJ: bare `.` — returns a copy of the system context as a RiX value
-    if (fn === "SYS_OBJ") {
-        if (!systemContext) throw new Error("No system context available");
-        return systemContext.copy().toRixValue();
-    }
-
-    // SYS_GET: .Name — get a capability reference or meta flag
-    if (fn === "SYS_GET") {
-        const name = args[0];
-        if (!systemContext) throw new Error("No system context available");
-        // Meta flags
-        if (name === "FREEZE" || name === "freeze") {
-            return systemContext.frozen ? 1 : 0;
+    try {
+        if (fn === "SCRIPT_IMPORT") {
+            return evaluateScriptImport(args[0] || {}, context, registry, systemContext);
         }
-        // Capability reference — return as sysref for callWithConcreteArgs compatibility
-        if (!systemContext.has(name)) {
-            throw new Error(`Unknown system capability: ${name}`);
+
+        // Bind the recursive evaluator for callbacks
+        const evalFn = (node) => evaluate(node, context, registry, systemContext);
+
+        // --- System context operations (. prefix syntax) ---
+
+        // SYS_OBJ: bare `.` — returns a copy of the system context as a RiX value
+        if (fn === "SYS_OBJ") {
+            if (!systemContext) throw new Error("No system context available");
+            return systemContext.copy().toRixValue();
         }
-        return { type: "sysref", name };
-    }
 
-    // SYS_CALL: .Name(args) — call a system capability
-    // Handled lazily so placeholder detection works for partial application
-    if (fn === "SYS_CALL") {
-        const name = args[0];
-        const callArgNodes = args.slice(1);
-        if (!systemContext) throw new Error("No system context available");
-        const cap = systemContext.get(name);
-        if (!cap) {
-            throw new Error(`Unknown system capability: ${name}. Use .${name}() only if the capability exists.`);
+        // SYS_GET: .Name — get a capability reference or meta flag
+        if (fn === "SYS_GET") {
+            const name = args[0];
+            if (!systemContext) throw new Error("No system context available");
+            // Meta flags
+            if (name === "FREEZE" || name === "freeze") {
+                return systemContext.frozen ? 1 : 0;
+            }
+            // Capability reference — return as sysref for callWithConcreteArgs compatibility
+            if (!systemContext.has(name)) {
+                throw new Error(`Unknown system capability: ${name}`);
+            }
+            return { type: "sysref", name };
         }
-        // Partial application: if any arg is a placeholder, build a partial
-        const isPlaceholder = (n) => n && typeof n === "object" && n.fn === "PLACEHOLDER";
-        if (callArgNodes.some(isPlaceholder)) {
-            const template = callArgNodes.map((a) => evalFn(a));
-            return { type: "partial", fn: { type: "sysref", name }, template };
+
+        // SYS_CALL: .Name(args) — call a system capability
+        // Handled lazily so placeholder detection works for partial application
+        if (fn === "SYS_CALL") {
+            const name = args[0];
+            const callArgNodes = args.slice(1);
+            if (!systemContext) throw new Error("No system context available");
+            const cap = systemContext.get(name);
+            if (!cap) {
+                throw new Error(`Unknown system capability: ${name}. Use .${name}() only if the capability exists.`);
+            }
+            // Partial application: if any arg is a placeholder, build a partial
+            const isPlaceholder = (n) => n && typeof n === "object" && n.fn === "PLACEHOLDER";
+            if (callArgNodes.some(isPlaceholder)) {
+                const template = callArgNodes.map((a) => evalFn(a));
+                return { type: "partial", fn: { type: "sysref", name }, template };
+            }
+            if (cap.lazy) {
+                return cap.impl(callArgNodes, context, evalFn);
+            }
+            const callArgs = callArgNodes.map((a) => {
+                if (a === null || a === undefined) return a;
+                if (typeof a !== "object") return a;
+                if (Array.isArray(a)) return a;
+                if (!a.fn) return a;
+                return evalFn(a);
+            });
+            return cap.impl(callArgs, context, evalFn);
         }
-        if (cap.lazy) {
-            return cap.impl(callArgNodes, context, evalFn);
+
+        // SYS_SET: .Name = val — set a system context meta flag (only freeze/immutable)
+        if (fn === "SYS_SET") {
+            const name = args[0];
+            const value = evalFn(args[1]);
+            if (!systemContext) throw new Error("No system context available");
+            const normalised = name.toUpperCase ? name.toUpperCase() : name;
+            if (normalised === "FREEZE") {
+                if (value) systemContext.freeze();
+                return value;
+            }
+            throw new Error(`Cannot set system context property '${name}' via assignment. Use .Withhold() or .With() to create a modified copy.`);
         }
-        const callArgs = callArgNodes.map((a) => {
-            if (a === null || a === undefined) return a;
-            if (typeof a !== "object") return a;
-            if (Array.isArray(a)) return a;
-            if (!a.fn) return a;
-            return evalFn(a);
-        });
-        return cap.impl(callArgs, context, evalFn);
-    }
 
-    // SYS_SET: .Name = val — set a system context meta flag (only freeze/immutable)
-    if (fn === "SYS_SET") {
-        const name = args[0];
-        const value = evalFn(args[1]);
-        if (!systemContext) throw new Error("No system context available");
-        const normalised = name.toUpperCase ? name.toUpperCase() : name;
-        if (normalised === "FREEZE") {
-            if (value) systemContext.freeze();
-            return value;
+        // --- Internal registry dispatch ---
+
+        const funcDef = registry.get(fn);
+
+        if (!funcDef) {
+            throw new Error(`Unknown system function: ${fn}`);
         }
-        throw new Error(`Cannot set system context property '${name}' via assignment. Use .Withhold() or .With() to create a modified copy.`);
-    }
 
-    // --- Internal registry dispatch ---
+        // If the function is lazy, pass raw args (IR nodes)
+        if (funcDef.lazy) {
+            return funcDef.impl(args, context, evalFn);
+        }
 
-    const funcDef = registry.get(fn);
-
-    if (!funcDef) {
-        throw new Error(`Unknown system function: ${fn}`);
-    }
-
-    // If the function is lazy, pass raw args (IR nodes)
-    if (funcDef.lazy) {
-        return funcDef.impl(args, context, evalFn);
-    }
-
-    // Otherwise, evaluate all args first
-    const evaluatedArgs = [];
-    for (const arg of args) {
-        if (arg === null || arg === undefined) {
-            evaluatedArgs.push(arg);
-        } else if (typeof arg !== "object" || Array.isArray(arg) || !arg.fn) {
-            evaluatedArgs.push(arg);
-        } else if (arg.fn === "SPREAD") {
-            const spreadVal = evalFn(arg.args[0]);
-            if (spreadVal && (spreadVal.type === "tuple" || spreadVal.type === "sequence" || spreadVal.type === "array" || spreadVal.type === "set")) {
-                const items = spreadVal.values || spreadVal.elements || [];
-                evaluatedArgs.push(...items);
+        // Otherwise, evaluate all args first
+        const evaluatedArgs = [];
+        for (const arg of args) {
+            if (arg === null || arg === undefined) {
+                evaluatedArgs.push(arg);
+            } else if (typeof arg !== "object" || Array.isArray(arg) || !arg.fn) {
+                evaluatedArgs.push(arg);
+            } else if (arg.fn === "SPREAD") {
+                const spreadVal = evalFn(arg.args[0]);
+                if (spreadVal && (spreadVal.type === "tuple" || spreadVal.type === "sequence" || spreadVal.type === "array" || spreadVal.type === "set")) {
+                    const items = spreadVal.values || spreadVal.elements || [];
+                    evaluatedArgs.push(...items);
+                } else {
+                    throw new Error("Spread operator requires an iterable collection (array, tuple, sequence, set)");
+                }
             } else {
-                throw new Error("Spread operator requires an iterable collection (array, tuple, sequence, set)");
-            }
-        } else {
-            evaluatedArgs.push(evalFn(arg));
-        }
-    }
-
-    // Hole check: standard (non-hole-aware) operations cannot consume holes
-    if (!funcDef.holeAware) {
-        for (const arg of evaluatedArgs) {
-            if (isHole(arg)) {
-                throw new Error(`Cannot use undefined/hole value in computation (in ${fn})`);
+                evaluatedArgs.push(evalFn(arg));
             }
         }
-    }
 
-    return funcDef.impl(evaluatedArgs, context, evalFn);
+        // Hole check: standard (non-hole-aware) operations cannot consume holes
+        if (!funcDef.holeAware) {
+            for (const arg of evaluatedArgs) {
+                if (isHole(arg)) {
+                    throw new Error(`Cannot use undefined/hole value in computation (in ${fn})`);
+                }
+            }
+        }
+
+        return funcDef.impl(evaluatedArgs, context, evalFn);
+    } catch (error) {
+        throw annotateEvaluationError(error, irNode, context);
+    }
 }
 
 /**
@@ -688,10 +777,12 @@ export function parseAndEvaluate(code, options = {}) {
     const systemLookup = options.systemLookup || defaultSystemLookup;
     getScriptRuntime(context, { systemLookup });
     context.setEnv("__registry__", registry);
+    context.setEnv(SOURCE_ENV_KEY, code);
+    context.setEnv(CURRENT_FILE_ENV_KEY, options.file || "<repl>");
 
-    const tokens = tokenize(code);
-    const ast = parse(tokens, systemLookup);
+    const ast = parse(code, systemLookup);
     const irNodes = lower(ast);
+    attachSourceInfo(irNodes, code, options.file || "<repl>");
 
     let result = null;
     for (const irNode of irNodes) {

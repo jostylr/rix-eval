@@ -46,30 +46,39 @@ const getValues = (arg) => {
     return [arg];
 };
 
+const toRationalOrNull = (value) => {
+    if (value instanceof Rational) return value;
+    if (value instanceof Integer || (value && typeof value === 'object' && value.constructor.name === 'Integer')) {
+        return new Rational(value.value, 1n);
+    }
+    if (typeof value === 'bigint') {
+        return new Rational(value, 1n);
+    }
+    if (typeof value === 'number') {
+        if (!Number.isInteger(value)) return null;
+        return new Rational(BigInt(value), 1n);
+    }
+    if (typeof value === 'string') {
+        try {
+            return new Rational(value);
+        } catch (error) {
+            if (error instanceof SyntaxError || error instanceof RangeError || error instanceof TypeError) {
+                return null;
+            }
+            if (/Invalid|Cannot convert|Denominator cannot be zero/.test(error.message)) {
+                return null;
+            }
+            throw error;
+        }
+    }
+    return null;
+};
+
 const compare = (a, b) => {
-    let aRat, bRat;
-    try {
-        if (a && typeof a === 'object' && a.constructor.name === 'Integer') {
-            aRat = new Rational(a.value, 1n);
-        } else if (a instanceof Rational) {
-            aRat = a;
-        } else if (typeof a === 'number' || typeof a === 'bigint' || typeof a === 'string') {
-            aRat = new Rational(a);
-        }
-
-        if (b && typeof b === 'object' && b.constructor.name === 'Integer') {
-            bRat = new Rational(b.value, 1n);
-        } else if (b instanceof Rational) {
-            bRat = b;
-        } else if (typeof b === 'number' || typeof b === 'bigint' || typeof b === 'string') {
-            bRat = new Rational(b);
-        }
-
-        if (aRat && bRat) {
-            return aRat.compareTo(bRat);
-        }
-    } catch {
-        // Fallback to JS comparison below
+    const aRat = toRationalOrNull(a);
+    const bRat = toRationalOrNull(b);
+    if (aRat && bRat) {
+        return aRat.compareTo(bRat);
     }
     if (a < b) return -1;
     if (a > b) return 1;
@@ -289,26 +298,12 @@ export const collectionFunctions = {
                 const lo = args[0];
                 const hi = args[1];
 
-                // Try to create a proper RationalInterval if both are ratmath types
-                try {
-                    let loRat, hiRat;
-                    if (lo instanceof Integer) {
-                        loRat = new Rational(lo.value, 1n);
-                    } else if (lo instanceof Rational) {
-                        loRat = lo;
-                    }
-
-                    if (hi instanceof Integer) {
-                        hiRat = new Rational(hi.value, 1n);
-                    } else if (hi instanceof Rational) {
-                        hiRat = hi;
-                    }
-
-                    if (loRat && hiRat) {
-                        return new RationalInterval(loRat, hiRat);
-                    }
-                } catch {
-                    // Fall through to generic
+                // Use a proper RationalInterval when both endpoints are rational-convertible.
+                // Otherwise keep a generic interval for symbolic/string/mixed endpoints.
+                const loRat = toRationalOrNull(lo);
+                const hiRat = toRationalOrNull(hi);
+                if (loRat && hiRat) {
+                    return new RationalInterval(loRat, hiRat);
                 }
 
                 return { type: "interval", lo, hi };

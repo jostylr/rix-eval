@@ -974,17 +974,21 @@ Arity cap is simpler when you just want to drop trailing context args. Placehold
 - Works on any callable: lambdas, named functions, system references (`@+`, `.LEN`, etc.), partials, or nested arity-capped callables.
 - Ordinary collection indexing `collection[i]` is unaffected.
 
-| Syntax | Description | Example |
-|--------|-------------|---------|
-| `\|+n` | Add `n` to previous (arithmetic) | `[2, \|+2, \|; 5]` → `[2,4,6,8,10]` |
-| `\|*n` | Multiply previous by `n` (geometric) | `[1, \|*3, \|; 4]` → `[1,3,9,27]` |
-| `\|:f` | Generator by index | `[\|: (i) -> i^2, \|; 5]` → `[0,1,4,9,16]` |
-| `\|>f` | Pipe previous values (recursion) | `[1,1, \|>(a,b)->a+b, \|; 7]` |
-| `\|?p` | Filter predicate | `[1,2,3,4, \|? (x)->x%2==0]` |
-| `\|;n` | Stop after `n` elements (eager) | `[2, \|+2, \|; 5]` |
-| `\|;f` | Stop when `f` returns true | `[2, \|+2, \|; (x)->x>10]` |
-| `\|^n` | Lazy generator, limit `n` | `[1, \|+1, \|^ 1000]` |
-| `\|^f` | Lazy, stop when `f` true | `[2, \|+2, \|^ (x)->x>100]` |
+| Syntax | Current evaluator status | Example |
+|--------|--------------------------|---------|
+| `\|+n` | Partial eager support: add `n` to previous value | `[2, \|+2, \|; 5]` → `[2,4,6,8,10]` |
+| `\|*n` | Partial eager support: multiply previous value by `n` | `[1, \|*3, \|; 4]` → `[1,3,9,27]` |
+| `\|;n` | Partial eager support: stop after `n` elements | `[2, \|+2, \|; 5]` |
+| `\|;limit` | Partial eager support: stop when generated values exceed a simple limit | `[2, \|+2, \|; 10]` |
+| `\|:f` | Parser/design syntax; evaluator support incomplete | `[\|: (i) -> i^2, \|; 5]` |
+| `\|>f` | Parser/design syntax; evaluator support incomplete | `[1,1, \|>(a,b)->a+b, \|; 7]` |
+| `\|?p` | Parser/design syntax; evaluator support incomplete | `[1,2,3,4, \|? (x)->x%2==0]` |
+| `\|^n`, `\|^f` | Lazy generator syntax is not implemented yet | `[1, \|+1, \|^ 1000]` |
+
+Generator note: `GENERATOR` and `STEP` are still registered as future/stub
+functions. The array constructor contains partial eager generator support for
+simple arithmetic/geometric sequences, but lazy generators and function-driven
+forms should be treated as design syntax until the runtime is completed.
 
 ### Collection Syntax
 
@@ -1473,14 +1477,14 @@ Scope note:
 - Script module scopes are boundaries for that outward callable lookup.
 - Combo operators (`+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `^=`, `++=`, `\/=`, `/\=`, `\=`, `**=`, `/^=`, `/~=`) desugar to `ASSIGN_UPDATE` / `OUTER_UPDATE`, preserving cell identity so aliases track changes.
 
-### Future Extensions (Stubs)
+### Advanced Constructors and Future Extensions
 
 | Function | Description |
 |----------|-------------|
-| `DERIVATIVE(expr, var)` | Symbolic derivative (future) |
-| `INTEGRAL(expr, var)` | Symbolic integral (future) |
-| `GENERATOR(args...)` | Sequence generator (future) |
-| `STEP(start, end, step)` | Step/range generator (future) |
+| `DERIVATIVE(expr, var)` | Stub: returns a placeholder object |
+| `INTEGRAL(expr, var)` | Stub: returns a placeholder object |
+| `GENERATOR(args...)` | Stub: returns a placeholder object |
+| `STEP(start, end, step)` | Stub: returns a placeholder object |
 | `MATRIX(rows...)` | Matrix literal |
 | `TENSOR(data...)` | Legacy tensor constructor |
 | `TENSOR_LITERAL(shape, elems...)` | Explicit-shape tensor literal |
@@ -1536,6 +1540,12 @@ REPL-specific commands use all-lowercase dot notation. They are not part of the 
 ## Part 4: Diagnostics, Testing, and Debugging
 
 All diagnostic system capabilities produce structured RiX map values with at minimum: `kind`, `label`, `file`, `time`, `data`.
+
+Runtime errors include source locations when the evaluator has source text. This
+is automatic for `parseAndEvaluate(...)`, script imports, and the CLI paths that
+use those APIs. Direct calls to `evaluate(irNode, ...)` only include
+line/column locations if the caller has attached source metadata or set the
+source environment for the context.
 
 ### `.Warn(label, dataMap ?= {=})`
 

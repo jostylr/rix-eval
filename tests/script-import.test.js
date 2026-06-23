@@ -77,6 +77,16 @@ describe("script import execution", () => {
         expect(result.value).toBe(42n);
     });
 
+    test("errors inside imported scripts include script file line and column", () => {
+        const dir = writeScripts({
+            broken: "ok := 1;\nmissing + 1",
+        });
+        const scriptPath = path.join(dir, "broken.rix");
+
+        expect(() => evalRix('<"broken">', { scriptBaseDir: dir }))
+            .toThrow(new RegExp(`Undefined variable: missing \\(${scriptPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:line 2, column 1\\)`));
+    });
+
     test("explicit exports return an export bundle", () => {
         const dir = writeScripts({
             poly: "r := 9; d := 3; < result=r, deriv=d >",

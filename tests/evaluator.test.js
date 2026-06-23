@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach } from "bun:test";
 import { tokenize } from "../../parser/src/tokenizer.js";
 import { parse } from "../../parser/src/parser.js";
 import { lower } from "../src/lower.js";
-import { evaluate, createDefaultRegistry, createDefaultSystemContext } from "../src/evaluator.js";
+import { evaluate, createDefaultRegistry, createDefaultSystemContext, parseAndEvaluate } from "../src/evaluator.js";
 import { Context } from "../src/context.js";
 import { Integer, Rational, BaseSystem } from "@ratmath/core";
 import { getDiagnostics } from "../src/diagnostics.js";
@@ -565,6 +565,10 @@ describe("RiX Evaluator", () => {
 
         test("undefined variable throws", () => {
             expect(() => evalRix("undeclared;")).toThrow("Undefined variable");
+        });
+
+        test("parseAndEvaluate runtime errors include source line and column", () => {
+            expect(() => parseAndEvaluate("x = 1;\ny + 1;")).toThrow(/Undefined variable: y \(line 2, column 1\)/);
         });
 
         test("default loop max comes from runtime config/env", () => {
